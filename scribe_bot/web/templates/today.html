@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block body %}
+<div class="page-head">
+  <div><h1>Today</h1><div class="meta">{{ today_label }}</div></div>
+</div>
+
+{% if paused %}
+<div class="notice" role="status">{{ m.icon("alert") }}<div style="flex:1"><b>Processing is paused.</b> New recordings wait on the M14; nothing is transcribed or sent to the AI until you resume.</div>
+  <form method="post" action="/settings/pause"><input type="hidden" name="on" value="0"><button class="btn btn-primary">Resume</button></form></div>
+{% endif %}
+{% if spend_alert %}
+<a class="notice" href="/costs">{{ m.icon("dollar") }}<div><b>AI spend is ${{ '%.2f'|format(month_spend) }} of the ${{ '%.0f'|format(cap) }} monthly cap.</b>
+  {{ 'AI runs are stopped until next month.' if month_spend >= cap else 'Runs stop at the cap.' }} See Costs.</div></a>
+{% endif %}
+{% if not worker.alive %}
+<div class="notice">{{ m.icon("alert") }}<div><b>Scribe Bot needs attention.</b> The background worker isn't running, so new recordings wait. <a href="/status">See status</a></div></div>
+{% endif %}
+
+{% if show_help %}
+<section class="help-card" aria-labelledby="help-title">
+  <div class="help-head"><h2 id="help-title">How to use Scribe Bot</h2>
+    <div class="row"><button type="button" class="btn btn-primary" data-tour-start="{{ tour_conv or '' }}">Take the tour</button>
+      <form method="post" action="/help/dismiss"><button class="btn btn-ghost">Got it, hide this</button></form></div></div>
+  <ol>
+    <li><b>Record</b> in Google Recorder as usual. It syncs to the M14 in seconds.</li>
+    <li><b>Approve</b> it under <i>Needs you</i>, right here on Today: <i>Transcribe + AI</i> for a summary and tasks, or <i>Transcript Only (No AI)</i> to keep it fully private.</li>
+    <li><b>Read</b> it in <a href="/conversations">Conversations</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
+    <li><b>Fix</b> anything wrong right there: tap <i>Done</i>, or <i>⋯</i> for <i>Change person</i>, <i>Edit</i> and <i>Remove</i>. Tap a speaker's name to rename them. Every change can be undone.</li>
+    <li><b>Find</b> it later in <a href="/conversations">Talks</a> (conversations and people), <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
+  </ol>
+  <p class="meta">Corrections teach Scribe Bot: a named voice is recognised next time, and fixes count toward its quality score.</p>
+</section>
+{% endif %}
+
+{% include "_progress.html" %}
+
+{# Only what needs Brian: the Review items themselves (named, approved and skipped right here). Same rows as Review › Open. #}
+{% if needs_count %}
+<div id="needs-you">
+  <h2 class="group-title">Needs you · {{ needs_count }}<a class="aside" href="/review?tab=done" title="Everything you've handled: done and dismissed, with Restore">History</a></h2>
+  {% include "_review.html" %}
+</div>
+{% endif %}
+
+{% if snoozed %}
+<details class="section transcript" id="snoozed">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Snoozed</h2><span class="count meta">{{ snoozed|length }}</span></summary>
+  <p class="section-help">Each comes back under Needs you at its time. Bring one back now, or <a href="/review?tab=snoozed">act on it in Review</a>.</p>
+  {{ m.snoozed_list(snoozed) }}
+</details>
+{% endif %}
+
+<div id="sec-due">{% if due %}
+<section class="section">
+  {{ m.section("Next up", due|length, help="Everything due today or late, then your next tasks, soonest first. Swipe right on the phone to snooze.") }}
+  <div class="card">{% for t in due %}{{ m.task_row(t, [], show_conv=True, tgt="sec-due") }}{% endfor %}</div>
+</section>
+{% endif %}</div>
+
+{% if overdue_theirs %}
+<section class="section">
+  {{ m.section("Late promises to you", overdue_theirs|length, help="Others said they'd do these by now. Copy a nudge to paste into a text or email; Scribe Bot never sends anything.") }}
+  <div class="card">{% for t in overdue_theirs %}
+    <div class="item{{ ' tap-row' if t.conversation_id }}"><div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.title }}</a>{% else %}<div class="item-title">{{ t.title }}</div>{% endif %}
+      <div class="item-sub"><b>{{ t.owner_name }}</b>{{ m.due(t) }}{% if t.conv_title %}<span>{{ t.conv_title }}</span>{% endif %}</div></div>
+      <div class="item-actions"><button type="button" class="btn" data-copy="#nudge-{{ t.id }}"
+        title="Copies a friendly reminder to paste into a text or email. Nothing is sent.">Copy nudge</button>
+        <textarea id="nudge-{{ t.id }}" hidden readonly aria-hidden="true">{{ t.nudge }}</textarea></div></div>
+  {% endfor %}</div>
+</section>
+{% endif %}
+
+<section class="section" id="your-week">
+  {{ m.section("Your week", help="The last 7 days. Tap a tile for the details.") }}
+  {% set sp = week.speaking %}{% set lv = speaking_levels(sp) if sp else {} %}
+  <div class="tiles">
+    {{ m.stat_tile("Conversations", week.conversations, sub="since " ~ week.since|local_date, href="/conversations?start=" ~ week.since) }}
+    {{ m.stat_tile("Tasks you finished", week.done, sub="see Done", href="/tasks?show=done") }}
+    {{ m.stat_tile("Your speaking", (sp.wpm|round|int ~ " words/min") if sp else "No numbers yet", lv.pace if sp else None,
+                   sub=(sp.conversations ~ " conversation" ~ ('s' if sp.conversations != 1 else '') ~ " · pace, fillers, questions") if sp else "after your next conversation",
+                   href="/speaking") }}
+  </div>
+</section>
+
+{% if not (needs_count or due or overdue_theirs or awaiting or jobs or paused or spend_alert or not worker.alive) %}
+<section class="section">
+  <div class="card">{{ m.empty("check-circle", "All clear", "Nothing needs you right now. New recordings, due tasks and late promises show up here.") }}</div>
+  <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Conversations</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>
+    · <a href="/review?tab=done">History (done and dismissed)</a></p>
+</section>
+{% endif %}
+{% endblock %}

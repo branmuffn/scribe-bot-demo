@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}People · Scribe Bot{% endblock %}
+{% block body %}
+{{ m.talks_head("people") }}
+<form class="quick-add" method="post" action="/people">
+  <input name="name" placeholder="Add a person" required class="grow" aria-label="Name">
+  <select name="area" aria-label="Area"><option value="both">Work + home</option><option value="work">Work</option><option value="personal">Home</option></select>
+  <button class="btn btn-primary">{{ m.icon("plus") }} Add</button>
+</form>
+{% if duplicates %}
+<section class="section">
+  {{ m.section("Possibly the same person", duplicates|length + [more_duplicates, 0]|max, help="Same first name or a matching alias. Merge them so tasks, notes and voices are in one place.") }}
+  <div class="card">
+    {% for d in duplicates %}
+    <div class="item tap-row"><div class="item-main"><a class="item-link" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">{{ d.from_name }} and {{ d.into_name }}</a>
+      <div class="item-sub">See what would move before anything changes</div></div>
+      <div class="item-actions"><a class="btn" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">Review merge</a></div></div>
+    {% endfor %}
+  </div>
+  {% if more_duplicates > 0 %}<p class="meta" style="margin-top:var(--s2)">…and {{ more_duplicates }} more. Merge these first; the list updates.</p>{% endif %}
+</section>
+<div class="section"></div>
+{% endif %}
+<form class="toolbar" method="get" action="/people" role="search" {{ m.live("/people") }}>
+  <input type="search" id="people-q" name="q" value="{{ q }}" placeholder="Find a person" aria-label="Find a person" class="grow">
+  <label class="inline-label">Sort <select name="sort">{% for k, (label, _) in sorts.items() %}
+    <option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select></label>
+  <noscript><button class="btn">Find</button></noscript>{% if q %}<a class="btn btn-ghost" href="/people{{ '?sort=' ~ sort if sort != 'recent' }}">Clear</a>{% endif %}
+</form>
+<div class="card" id="people-list">
+  {% for p in rows %}
+  <div class="item tap-row"><div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
+      <div class="item-sub">{% if sort == 'talked' and p.talked %}<span>talked {{ p.talked|hours }}</span>{% endif %}
+        {% if p.last_spoken_at %}<span>last spoke {{ p.last_spoken_at|local_date }}</span>{% endif %}<span>{{ p.n_facts }} note{{ 's' if p.n_facts != 1 }}</span>
+        {% if p.id == 1 %}{% if p.n_owed %}<span>{{ p.n_owed }} open task{{ 's' if p.n_owed != 1 }}</span>{% endif %}
+        {% else %}{% if p.n_i_owe %}<span>you owe {{ p.n_i_owe }}</span>{% endif %}{% if p.n_owed %}<span>owes you {{ p.n_owed }}</span>{% endif %}{% endif %}</div></div>
+    <div class="item-actions badges">{% if p.area != 'both' %}{{ m.area_badge(p.area) }}{% endif %}</div></div>
+  {% else %}{% if q %}{{ m.empty("search", "Nobody matches “" ~ q ~ "”", "Try part of the name.") }}
+  {% else %}{{ m.empty("users", "Nobody yet", "Name a speaker in a conversation and they're added here.") }}{% endif %}{% endfor %}
+  {{ m.more("people-list", rows|length, total) }}
+</div>
+{% endblock %}

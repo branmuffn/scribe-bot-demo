@@ -1,0 +1,94 @@
+{% import "macros.html" as m with context %}<!doctype html>
+{% set theme = request.cookies.get('theme') if request.cookies.get('theme') in ('light', 'dark') else 'system' %}
+<html lang="en"{% if theme != 'system' %} data-theme="{{ theme }}"{% endif %}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+{# Phone status-bar color: follows Brian's pick, or the system when he hasn't picked. app.js keeps it in sync on toggle. #}
+{% if theme == 'system' %}<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1917" media="(prefers-color-scheme: dark)">
+{%- else %}<meta name="theme-color" content="{{ '#1c1917' if theme == 'dark' else '#fafaf9' }}">{% endif %}
+<meta name="htmx-config" content='{"globalViewTransitions": true, "scrollIntoViewOnBoost": false}'>
+<title>{% block title %}Scribe Bot{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+<script src="/static/htmx.min.js?v={{ asset_v }}" defer></script>
+<script src="/static/app.js?v={{ asset_v }}" defer></script>
+</head>
+<body hx-boost="true" hx-indicator=".progress">
+<div class="progress" aria-hidden="true"></div>
+<a class="skip" href="#content">Skip to content</a>
+{% include "icons.html" %}
+
+{# 3 tabs (Today · Talks · Tasks). Pages that live under a tab light it up: People is in Talks, Decisions in Tasks, Review in Today. #}
+{% set tab_on = {"conversations": "talks", "people": "talks", "decisions": "tasks", "review": "today"}.get(nav, nav) %}
+{% set tabs = [("today", "/", "sun", "Today"), ("talks", "/conversations", "chat", "Talks"), ("tasks", "/tasks", "check", "Tasks")] %}
+
+{# Desktop sidebar #}
+<aside class="sidebar" aria-label="Main">
+  <div class="side-top"><a class="brand" href="/"><img src="/static/icon.svg" alt=""> Scribe Bot</a>
+    {{ m.bell() }}{{ m.more_menu(head_alert) }}<a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a></div>
+  {{ m.area_toggle(area) }}
+  <form class="side-search" method="get" action="/search" role="search">{{ m.icon("search") }}
+    <input type="search" name="q" placeholder="Search everything" aria-label="Search" value="{{ request.query_params.get('q', '') if nav == 'search' }}"></form>
+  <ul class="navlist">
+    {% for key, href, icon, label in tabs %}
+    <li><a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }} {{ label }}
+      {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}</a></li>
+    {% endfor %}
+  </ul>
+  <div class="side-foot">Private · runs on the M14</div>
+</aside>
+
+{# Phone top bar #}
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="/" aria-label="Scribe Bot home"><img src="/static/icon.svg" alt=""> <span class="brand-text">Scribe</span></a>
+  {{ m.area_toggle(area, short=True) }}
+  <a class="icon-btn" href="/search" aria-label="Search" title="Search">{{ m.icon("search") }}</a>
+  {{ m.bell() }}
+  {{ m.more_menu(head_alert) }}
+  <a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a>
+</div></header>
+
+{% if people %}<template id="people-options">{% for p in people %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</template>{% endif %}
+
+<main class="main{% block main_class %}{% endblock %}" id="content">
+{% block back %}{% endblock %}{# nested pages: "‹ Section" to their parent, no browser Back needed #}
+{% block body %}{% endblock %}
+</main>
+
+{# Undo bar: shown just after an undoable action. Undo is a plain (boosted) form post that reloads the page in place. #}
+<div id="undo-bar" class="undo-bar" role="status" aria-live="polite"{% if not undo %} hidden{% endif %}>
+  {% if undo %}<span class="undo-label">{{ undo.label }}</span>
+  <form method="post" action="/undo/{{ undo.id }}"><button class="btn btn-ghost undo-btn">Undo</button></form>
+  <button type="button" class="icon-btn" data-dismiss-undo aria-label="Dismiss" title="Hide this bar">{{ m.icon("x") }}</button>{% endif %}
+</div>
+
+{# 5-step tour (app.js): a card pinned at the bottom; each step opens a page and outlines one spot on it. #}
+<div id="tour" class="tour" role="dialog" aria-labelledby="tour-title" aria-live="polite" hidden>
+  <div class="tour-step meta" id="tour-count"></div>
+  <h2 id="tour-title"></h2>
+  <p id="tour-text"></p>
+  <div class="row"><button type="button" class="btn btn-ghost" data-tour="skip">Skip tour</button>
+    <span class="grow"></span>
+    <button type="button" class="btn" data-tour="back">Back</button>
+    <button type="button" class="btn btn-primary" data-tour="next">Next</button></div>
+</div>
+
+<dialog id="shortcuts" class="dialog" aria-labelledby="shortcuts-title">
+  <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+  {{ m.shortcut_list() }}
+  <form method="dialog"><button class="btn btn-primary">Close</button></form>
+</dialog>
+
+{# Phone tab bar: the three daily places. Status, Costs and Help are under ⋯; Settings is ⚙. #}
+<nav class="tabbar" aria-label="Main">
+  {% for key, href, icon, label in tabs %}
+  <a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }}{{ label }}
+    {% if key == 'today' and needs_count %}<span class="dot" aria-label="{{ needs_count }} need you">{{ needs_count }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+</body>
+</html>

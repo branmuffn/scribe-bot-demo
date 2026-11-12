@@ -1,0 +1,20 @@
+{# M14 health tiles. On page open: the last 5-minute sample, then a live reading (~1 s), again every 10 s while the page is on screen. #}
+{% import "macros.html" as ui %}
+{% set m = mc %}
+{% set light = ui.light %}
+<div id="machine" hx-get="/status/machine" hx-swap="outerHTML"
+  hx-trigger="{{ "every 10s [document.visibilityState === 'visible']" if mc_live else 'load' }}">
+  {% set flagged = tiles|rejectattr("level", "in", ["ok", "unknown"])|list %}
+  <div class="overall card lv-{{ m.overall }}">{{ light(m.overall if tiles else 'unknown') }}
+    <span>{% if not tiles %}No readings yet{% elif flagged %}{% for t in flagged %}{{ t.name }}{{ ', ' if not loop.last }}{% endfor %}{% else %}Everything looks normal{% endif %}</span></div>
+  <div class="tiles">
+    {% for t in tiles %}
+    {{ ui.stat_tile(t.name, t.value, t.level, t.tip, href="#chart-" ~ t.key if t.key in chart_keys else None) }}
+    {% endfor %}
+  </div>
+  <p class="meta tiles-foot">
+    {% if m.uptime_s is not none %}Running for {{ uptime_label(m.uptime_s) }} · {% endif %}
+    {% for name, p in (m.procs or {}).items() %}{{ name|capitalize }} {% if p.running %}{{ p.cpu_pct }}% CPU, {{ p.mem_mb }} MB{% else %}<span class="bad">not running</span>{% endif %} · {% endfor %}
+    Last recording {{ mc_last_recording|local_datetime if mc_last_recording else 'none yet' }} ·
+    {% if mc_live %}live reading, {{ mc_live_at }} · updates every 10 s{% elif mc_ts %}from the {{ mc_ts|local_datetime }} check, loading a live reading…{% else %}loading…{% endif %}</p>
+</div>

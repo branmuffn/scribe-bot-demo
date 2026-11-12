@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Merge people · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/people">‹ People</a>{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Merge people</h1><div class="meta">Use this when two entries are the same person.</div></div></div>
+<div class="card pad stack">
+  <p>Merge <b>{{ pv.from_name }}</b> into <b>{{ pv.into_name }}</b>:
+    {{ pv.tasks }} task{{ 's' if pv.tasks != 1 }}, {{ pv.notes }} note{{ 's' if pv.notes != 1 }},
+    {{ pv.conversations }} conversation{{ 's' if pv.conversations != 1 }}{% if pv.decisions %}, {{ pv.decisions }} decision{{ 's' if pv.decisions != 1 }}{% endif %}
+    {% if pv.has_voice %}and their voiceprint{% endif %} move over.</p>
+  <p class="meta">"{{ pv.from_name }}" is kept as an alias of {{ pv.into_name }}, then removed from People. This can't be undone.</p>
+  <div class="row">
+    <form method="post" action="/people/{{ from_id }}/merge"><input type="hidden" name="into" value="{{ into_id }}">
+      <button class="btn btn-primary">Merge</button></form>
+    <a class="btn" href="/people/{{ from_id }}">Cancel</a>
+  </div>
+</div>
+{% endblock %}

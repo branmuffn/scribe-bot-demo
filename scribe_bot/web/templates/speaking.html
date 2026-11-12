@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Your speaking · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/people/1">‹ Me</a>{% endblock %}
+{% block body %}
+<div class="page-head"><h1>Your speaking</h1></div>
+{{ m.my_speaking(speaking) }}
+<p class="meta" style="margin-top:var(--s4)">Each conversation has its own numbers and tips under <i>Your speaking</i> on its page.
+  <a href="/conversations">Conversations →</a></p>
+{% endblock %}

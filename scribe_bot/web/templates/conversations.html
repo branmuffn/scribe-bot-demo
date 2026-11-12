@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Conversations · Scribe Bot{% endblock %}
+{% block body %}
+{{ m.talks_head("conversations") }}
+{% if trash %}
+<div class="section-head"><h2>Trash</h2><span class="count">{{ rows|length }}</span></div>
+<p class="section-help">Conversations you moved to Trash, with their tasks and notes. Each one is removed for good {{ trash_days }} days
+  after it was trashed. The recording itself is always kept.</p>
+<div class="card">
+  {% for c in rows %}
+  <div class="item"><div class="item-main"><div class="item-title">{{ c.title }}</div>
+    <div class="item-sub"><span>{{ (c.started_at or c.created_at)|local_date }}</span><span>trashed {{ c.deleted_at|local_date }}</span>
+      <span>removed for good {{ c.gone_on|local_date }}</span></div></div>
+    <div class="item-actions"><form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn">Restore</button></form></div></div>
+  {% else %}{{ m.empty("trash", "Trash is empty") }}{% endfor %}
+</div>
+<p class="meta" style="margin-top:var(--s3)"><a href="/conversations">← Conversations</a></p>
+{% elif unsorted %}
+<div class="section-head"><h2>Not sorted</h2><span class="count">{{ total }}</span></div>
+<p class="section-help">Finished conversations not filed as Work or Home yet. Tap one to file it; its tasks move with it.</p>
+<div class="card" id="conv-list">
+  {% for c in rows %}{{ m.conv_row(c, sort=True) }}{% else %}{{ m.empty("check-circle", "All sorted") }}{% endfor %}
+  {{ m.more("conv-list", rows|length, total) }}
+</div>
+<p class="meta" style="margin-top:var(--s3)"><a href="/conversations">← Conversations</a></p>
+{% else %}
+{% if n_unsorted %}<a class="notice" href="/conversations?unsorted=1" style="margin-bottom:var(--s3)">{{ m.icon("inbox") }}
+  <span><b>Not sorted · {{ n_unsorted }}</b><br><span class="meta">Not filed as Work or Home yet. Tap to sort.</span></span></a>{% endif %}
+<form class="toolbar" method="get" action="/conversations" {{ m.live("/conversations") }}>
+  <select name="person" aria-label="Person"><option value="">Anyone</option>
+    {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if f.person == p.id }}>{{ p.name }}</option>{% endfor %}</select>
+  <select name="type" aria-label="Type"><option value="">Any type</option>
+    {% for t, label in [("1:1", "1:1"), ("multi", "Group"), ("intro", "Intro"), ("personal", "Personal"), ("voice_note", "Voice note"), ("learning", "Learning")] %}
+    <option value="{{ t }}" {{ 'selected' if f.type == t }}>{{ label }}</option>{% endfor %}</select>
+  <label class="inline-label">From <input type="date" name="start" value="{{ f.start }}"></label>
+  <label class="inline-label">To <input type="date" name="end" value="{{ f.end }}"></label>
+  <label class="inline-label">Sort <select name="order">
+    {% for k, (label, _) in orders.items() %}<option value="{{ k }}" {{ 'selected' if f.order == k }}>{{ label }}</option>{% endfor %}</select></label>
+  <noscript><button class="btn">Filter</button></noscript>
+  {% set qs = request.query_params|string %}<span class="row" role="group" aria-label="Export these">
+  {{ m.download("/conversations/export.md?" ~ qs, "Export .md", "Up to 100 of these conversations: summaries, tasks, decisions and notes") }}
+  {{ m.download("/conversations/export.pdf?" ~ qs, "PDF", "The same as a PDF file") }}
+  {{ m.download("/conversations/export.md?" ~ qs ~ ("&" if qs else "") ~ "transcript=1", "+ transcripts", "The .md with full transcripts (much longer)") }}</span>
+  {% if f.person or f.type or f.start or f.end or f.order != 'newest' %}<a class="btn btn-ghost" href="/conversations">Clear</a>{% endif %}
+</form>
+<div class="card" id="conv-list">
+  {% for c in rows %}{{ m.conv_row(c) }}
+  {% else %}
+    {% if f.person or f.type or f.start or f.end %}{{ m.empty("search", "No conversations match", "Try clearing a filter.") }}
+    {% else %}{{ m.empty("mic", "No conversations yet", "Recordings from Google Recorder appear here automatically.") }}{% endif %}
+  {% endfor %}
+  {{ m.more("conv-list", rows|length, total) }}
+</div>
+{% if n_older or n_trash %}<p class="meta row" style="margin-top:var(--s3)">
+  {% if n_older %}<a href="/review#older">{{ m.icon("inbox") }} Older recordings · {{ n_older }}</a>{% endif %}
+  {% if n_trash %}<a href="/conversations?trash=1">{{ m.icon("trash") }} Trash · {{ n_trash }}</a>{% endif %}</p>{% endif %}
+{% endif %}
+{% endblock %}

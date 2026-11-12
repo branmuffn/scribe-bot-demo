@@ -1,0 +1,71 @@
+# --- Privacy: real data never goes into git (CLAUDE.md rule 1) ---
+scribe-bot-data/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Audio and video
+*.m4a
+*.mp3
+*.wav
+*.opus
+*.ogg
+*.flac
+*.aac
+*.webm
+*.mp4
+# Synthetic test audio is allowed
+!tests/fixtures/synthetic/**
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+secrets/
+recovery-sheet*
+
+# Models (large, downloaded on the M14)
+models/
+*.gguf
+*.onnx
+
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Claude Code local state (agent worktrees)
+.claude/
+
+# Brian's local previews (not part of the repo)
+docs/*.html
+.Rhistory
+
+# Public demo: the local demo data folder made by scripts/demo.sh
+demo-data/
+# Kept local: lists the private files and phrases it leaves out
+scripts/export_from_private.sh

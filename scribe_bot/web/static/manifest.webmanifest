@@ -1,0 +1,26 @@
+{
+  "name": "Scribe Bot",
+  "short_name": "Scribe",
+  "description": "Private transcripts, tasks, decisions, and people notes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafaf9",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml"}
+  ],
+  "share_target": {
+    "action": "/capture/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [{"name": "files", "accept": ["image/*", "audio/*", "text/plain"]}]
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}{{ p.name }} · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/people">‹ People</a>{% endblock %}
+{% block body %}
+<div class="page-head"><div>
+  <h1>{{ p.name }}{{ ' (me)' if p.id == 1 }}</h1>
+  <div class="conv-meta">
+    <span class="badges">{% if p.area == 'both' %}<span class="badge badge-outline">Work + home</span>{% else %}{{ m.area_badge(p.area) }}{% endif %}
+      {% if voice %}<span class="badge badge-ok">{{ m.icon("mic") }}Voice known · {{ voice }} sample{{ 's' if voice != 1 }}</span>
+      {% else %}<span class="badge badge-outline">{{ m.icon("mic") }}Voice not learned yet</span>{% endif %}</span>
+    {% if p.last_spoken_at %}<span>last spoke {{ p.last_spoken_at|local_date }}</span>{% endif %}
+  </div></div>
+</div>
+
+{# One tap each; the buttons never move: the chosen one is highlighted and its panel opens under the row (app.js
+   [data-panel]). Edit saves each field as you leave it (no Save button). #}
+<div class="person-actions" role="group" aria-label="Actions">
+  {{ m.download("/people/" ~ p.id ~ "/export.md", ".md", "Notes, open items and every conversation summary, as one Markdown file", "btn") }}
+  {{ m.download("/people/" ~ p.id ~ "/export.pdf", "PDF", "The same as a tidy PDF file", "btn") }}
+  <button type="button" class="btn" data-panel="pa-edit" aria-expanded="false">{{ m.icon("pencil") }} Edit</button>
+  {% if p.id != 1 %}<button type="button" class="btn" data-panel="pa-merge" aria-expanded="false">Merge…</button>
+  <button type="button" class="btn" data-panel="pa-delete" aria-expanded="false">{{ m.icon("trash") }} Delete…</button>{% endif %}
+</div>
+<div class="action-panel" id="pa-edit" hidden>
+  <form method="post" action="/people/{{ p.id }}/edit" hx-post="/people/{{ p.id }}/edit" hx-trigger="change" hx-swap="none" data-autosave
+        style="display:grid;gap:var(--s3);max-width:32rem">
+    <label class="field"><span>Name</span><input name="name" value="{{ p.name }}" required></label>
+    <label class="field"><span>Aliases</span><input name="aliases" value="{{ aliases }}" placeholder="Comma separated"></label>
+    <label class="field"><span>Area</span><select name="area">{% for a, l in [("both", "Work + home"), ("work", "Work"), ("personal", "Home")] %}<option value="{{ a }}" {{ 'selected' if p.area == a }}>{{ l }}</option>{% endfor %}</select></label>
+    <label class="field"><span>Notes</span><textarea name="notes">{{ p.notes or '' }}</textarea></label>
+    <p class="meta save-state" aria-live="polite">Changes save when you leave a field.</p>
+    <noscript><button class="btn btn-primary">Save</button></noscript>
+  </form>
+</div>
+{% if p.id != 1 %}
+<div class="action-panel" id="pa-merge" hidden>
+  <form method="get" action="/people/{{ p.id }}/merge" class="picker-form">
+    <label class="sr-only" for="merge-into">Merge into</label>
+    <select id="merge-into" name="into" required><option value="">Same person as…</option>
+      {% for o in people if o.id != p.id %}<option value="{{ o.id }}">{{ 'Me (Brian)' if o.id == 1 else o.name }}</option>{% endfor %}</select>
+    <button class="btn">Preview merge</button>
+  </form>
+</div>
+<div class="action-panel" id="pa-delete" hidden>
+  <form method="post" action="/people/{{ p.id }}/delete" style="display:grid;gap:var(--s3);max-width:32rem">
+    <p class="meta">Their lines become an unnamed speaker, their voiceprint is removed, and tasks they owned go to your Inbox.
+      You can Undo for 10 minutes. Same person as someone else? Merge instead.</p>
+    <div><button class="btn btn-danger">{{ m.icon("trash") }} Delete {{ p.name }}</button></div>
+  </form>
+</div>
+{% endif %}
+
+{{ m.jump_bar(([] if p.id == 1 else [("person-open", "Open items")]) + ([("my-speaking", "Your speaking")] if speaking else [])
+               + [("person-facts", "Notes"), ("sec-convs", "Conversations")]) }}
+{% if p.id != 1 %}
+{% set late_mine = i_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
+{% set late_theirs = they_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
+<div class="tiles section">
+  {% if talk_time %}{{ m.stat_tile("Talk time", talk_time.seconds|hours ~ " together", tip="Counted from the transcript lines, on the M14.", id="talk-time",
+      sub=talk_time.conversations ~ " conversation" ~ ('s' if talk_time.conversations != 1 else '') ~ " · " ~ p.name ~ " " ~ (talk_time.their_share * 100)|round|int ~ "%, you " ~ (talk_time.my_share * 100)|round|int ~ "%") }}{% endif %}
+  {{ m.stat_tile("You owe", i_owe|length, 'warn' if late_mine else None, level_text=(late_mine ~ " overdue") if late_mine else None,
+      href="#person-open", sub="your open tasks from your talks") }}
+  {{ m.stat_tile("Owes you", they_owe|length, 'warn' if late_theirs else None, level_text=(late_theirs ~ " late") if late_theirs else None,
+      href="#person-open", sub="their open promises") }}
+  {{ m.stat_tile("Notes", facts|length, href="#person-facts", sub="birthdays, family, preferences") }}
+</div>
+
+<section class="section" id="person-open">
+  {{ m.section("Open items", i_owe|length + they_owe|length, help="Everything still open between you and " ~ p.name ~ ". Tap Done as things get finished.") }}
+  <div class="card" data-limit="5">
+    <h3 class="group-label">You owe {{ p.name }}</h3>
+    {% for t in i_owe %}{{ m.task_row(t, people, show_conv=True, tgt="person-open") }}{% else %}{{ m.none_found() }}{% endfor %}
+    <h3 class="group-label">{{ p.name }} owes you</h3>
+    {% for t in they_owe %}{{ m.task_row(t, people, show_conv=True, tgt="person-open") }}{% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+  <p class="meta">“You owe” lists your open tasks from conversations {{ p.name }} was in.</p>
+</section>
+{% endif %}
+
+{% if speaking %}<section class="section" id="my-speaking">{{ m.my_speaking(speaking) }}</section>{% endif %}
+
+<section class="section" id="person-facts">
+  {{ m.section("Notes", facts|length, help="Facts from your conversations. Remove wrong ones, or move one to the right person.") }}
+  <div class="card" data-limit="5">{% for f in facts %}{{ m.fact_row(f, people, show_source=True, tgt="person-facts") }}
+    {% else %}{{ m.empty("note", "No notes yet", "Birthdays, family, trips and preferences mentioned in conversations collect here.") }}{% endfor %}</div>
+</section>
+
+<section class="section" id="sec-convs">
+  {{ m.section("Conversations", n_convs) }}
+  <div class="card" id="person-convs">{% for c in convs %}{{ m.conv_row(c) }}{% else %}{{ m.empty("chat", "No conversations yet") }}{% endfor %}
+    {{ m.more("person-convs", convs|length, n_convs) }}</div>
+</section>
+{% endblock %}

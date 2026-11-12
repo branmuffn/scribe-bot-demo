@@ -1,0 +1,136 @@
+{# Needs you: the M14 line, review items (recordings to OK, speakers to name, inbox, cloud approvals, glossary), older
+   recordings and old tasks. Shown on Today (on_today) and as Review › Open (old Discord links open /review); Review ›
+   Snoozed shows the snoozed review items the same way, ready to act on. #}
+{% import "macros.html" as m with context %}
+{% if m14 %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/status"><span class="status-dot bad"></span>The M14 needs attention</a>
+  <div class="item-sub">{{ m14|join(' · ')|capitalize }}</div></div>
+  <div class="item-actions">{{ m.snooze_menu("/needs/m14/later") }}</div></div></div></section>{% endif %}
+{% if not (speakers or inbox or approvals or glossary or recordings or older or m14 or stale or reminders) %}{% if not on_today and tab == 'open' %}
+<div class="card">{{ m.empty("check-circle", "All caught up", "New recordings, speakers to name, unsure tasks and glossary suggestions appear here.") }}</div>{% endif %}
+{% else %}
+
+{% if reminders %}
+<section class="section">
+  {{ m.section("Reminders", reminders|length, help="Tasks you asked to be reminded about. Done, remind me again with the clock, or Got it.") }}
+  <div class="card">{% for t in reminders %}{{ m.task_row(t, people, show_owner=True, show_conv=True, reminder=True) }}{% endfor %}</div>
+</section>
+{% endif %}
+{% if recordings %}
+<section class="section">
+  {{ m.section("Recordings waiting for your OK", recordings|length) }}
+  <p class="section-help">Most of the time is speech and speakers on the M14; the AI step adds only about {{ ai_step_s|duration }}.
+    {% if m14_wait %}The M14 is busy: one you approve now starts in about {{ m14_wait|duration }}.{% endif %}</p>
+  <div class="card">
+    {% for x in recordings %}
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.title|recorder_title }}</div>
+        <div class="item-sub"><span>{{ x.payload.minutes }} min recording</span>
+          {% if x.payload.private %}<span class="badge badge-private">{{ m.icon("lock") }}Private · no AI</span>{% endif %}</div>
+        {{ m.est_choices(x.est, x.payload.private) }}</div>
+      <div class="item-actions">
+        <select name="meeting_type" id="mt-{{ x.r.id }}" form="ta-{{ x.r.id }}" aria-label="Meeting type" title="Meeting type: Auto lets the AI spot talks and classes">
+          <option value="">Type: Auto</option>{% for k, label in meeting_types.items() %}<option value="{{ k }}" {{ 'selected' if k == x.type_guess }}>{{ label }}</option>{% endfor %}</select>
+        {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Transcribe + AI", "rc-" ~ x.r.id, include="#mt-" ~ x.r.id) }}{% endif %}
+        <form method="post" action="/review/{{ x.r.id }}/approve" id="ta-{{ x.r.id }}"><input type="hidden" name="ai" value="0"><button class="btn" title="Transcript and speakers only. Nothing leaves the M14, and it's locked as Private.">{{ m.icon("lock") }} Transcript Only (No AI)</button></form>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Skip</button></form>{{ m.later_menu(x.r) }}</div>
+      {{ m.confirm_slot("rc-" ~ x.r.id) }}</div>
+    {% else %}{{ m.none_found() }}{% endfor %}
+    {% if recordings_total %}<div class="item est-total">{{ m.est_choices(recordings_total, label="All " ~ recordings|length) }}</div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if speakers %}
+<section class="section">
+  {{ m.section("Speakers to name or check", speakers|length) }}
+  <div class="card">
+    {% for x in speakers %}
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}
+      <div><a class="item-link" href="/conversations/{{ x.r.conversation_id }}">{{ x.r.conv_title or 'Conversation' }}</a></div>
+      <div class="item-sub"><span>{{ (x.s.talk_seconds / 60)|round(1) }} min of talking</span>{% if x.payload.guess %}<span>sounds like {{ x.payload.guess }}</span>{% endif %}{% if x.payload.guess_id %}<span class="badge badge-outline">Check: voice match {{ (x.payload.score * 100)|round|int }}%, not sure</span>{% endif %}</div>
+      {% if x.s.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ x.s.id }}"></audio>{% endif %}
+      <form class="row" method="post" action="/speakers/{{ x.s.id }}/name" style="margin-top:var(--s2)">
+        <select name="person_id" aria-label="Pick a person"><option value="">Who is this?</option>{% for p in people %}<option value="{{ p.id }}"{% if p.id == x.payload.guess_id %} selected{% endif %}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</select>
+        <input name="new_name" placeholder="or a new name" aria-label="New name" class="grow"><button class="btn btn-primary">{{ 'Confirm' if x.payload.guess_id else 'Save' }}</button>
+      </form></div>
+      <div class="item-actions"><form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Skip</button></form>{{ m.later_menu(x.r) }}</div></div>
+    {% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if inbox %}
+<section class="section">
+  {{ m.section("Inbox", inbox|length) }}
+  <div class="card">
+    {% for x in inbox %}
+    <div class="item{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is not none %}#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
+        {% else %}<div class="item-title">{{ x.t.title if x.t else x.payload.title or 'Item' }}</div>{% endif %}
+        <div class="item-sub"><span>{{ x.payload.reason or "The AI wasn't sure" }}</span>{% if x.r.conv_title %}<span>{{ x.r.conv_title }}</span>{% endif %}</div></div>
+      <div class="item-actions">
+        {% if x.t %}{% for a in ("work", "personal") %}
+        <form method="post" action="/tasks/{{ x.t.id }}/file"><input type="hidden" name="area" value="{{ a }}"><button class="btn btn-ok">{{ m.icon("check") }} Keep · {{ a|area_label }}</button></form>
+        {% endfor %}
+        <form method="post" action="/tasks/{{ x.t.id }}/delete"><button class="btn btn-no">{{ m.icon("x") }} Wrong, remove</button></form>
+        {% else %}<form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn">Dismiss</button></form>{% endif %}
+      {{ m.later_menu(x.r) }}</div></div>
+    {% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if approvals %}
+<section class="section">
+  {{ m.section("Cloud approvals", approvals|length) }}
+  <div class="card">
+    {% for x in approvals %}
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
+        <div class="item-sub">
+          {% if x.payload.model %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ x.payload.model }}</span>{% endif %}
+          {% if x.payload.account %}<span>{{ x.payload.account }}</span>{% endif %}
+          {% if x.cost is not none %}<span>est. ${{ '%.3f'|format(x.cost) }}</span>{% endif %}
+          {% if x.payload.training_policy %}<span>{{ x.payload.training_policy }}</span>{% endif %}</div>
+        {% if x.payload.sent %}<div class="item-sub">Sends: {{ x.payload.sent }}</div>{% endif %}</div>
+      <div class="item-actions">
+        {{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Approve", "rc-" ~ x.r.id) }}
+        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Decline</button></form>{{ m.later_menu(x.r) }}</div>
+      {{ m.confirm_slot("rc-" ~ x.r.id) }}</div>
+    {% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if glossary %}
+<section class="section">
+  {{ m.section("Glossary suggestions", glossary|length) }}
+  <div class="card">
+    {% for x in glossary %}
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
+        {% if x.g %}<div class="item-sub">heard as {{ x.variants|join(', ') }}</div>{% endif %}</div>
+      <div class="item-actions">
+        <form method="post" action="/review/{{ x.r.id }}/approve"><button class="btn btn-ok">{{ m.icon("check") }} Add</button></form>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-no">{{ m.icon("x") }} Dismiss</button></form>{{ m.later_menu(x.r) }}</div></div>
+    {% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% if older and on_today %}
+<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/review#older">{{ older|length }} older recording{{ 's' if older|length != 1 }} not processed yet</a>
+  <div class="item-sub">Synced before Scribe Bot started. Use them to test Scribe Bot, one at a time, like new recordings.</div></div>
+  <div class="item-actions">{{ m.snooze_menu("/needs/older/later") }}</div></div></div></section>
+{% elif older %}
+<section class="section" id="older">
+  {{ m.section("Older recordings", older|length, help="Recordings that synced before Scribe Bot started; nothing has been done with them. Each one can be a test meeting: Use as a new recording puts it under Needs you exactly like one that just arrived (with its time and cost estimate, and a Discord ping). Nothing runs until you approve it there; then speech, speakers, AI and the Ready ping happen as usual.") }}
+  <p class="section-help">Times are on the M14, mostly speech and speakers; the AI step adds only about {{ ai_step_s|duration }}.
+    {% if m14_wait %}The M14 is busy: one you use now starts in about {{ m14_wait|duration }} after you approve it.{% endif %}</p>
+  <div class="card">{% if older_total %}<div class="item est-total">{{ m.est_choices(older_total, label="All " ~ older|length) }}</div>{% endif %}
+    {% for r in older %}
+    <div class="item"><div class="item-main"><div class="item-title">{{ r.title|recorder_title }}</div>
+      <div class="item-sub"><span>{{ ((r.duration_s or 0) / 60)|round(1) }} min recording</span><span>synced {{ r.received_at|local_datetime }}</span></div>
+      {{ m.est_choices(r.est) }}</div>
+      <div class="item-actions"><form method="post" action="/recordings/{{ r.id }}/review"><button class="btn" title="Goes under Needs you like a recording that just arrived; nothing runs until you approve it">Use as a new recording</button></form></div></div>
+  {% endfor %}</div>
+</section>
+{% endif %}
+{% if stale %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/tasks?show=old">{{ stale }} old task{{ 's' if stale != 1 }} to check</a>
+  <div class="item-sub">Open for a month with no activity. Still need {{ 'them' if stale != 1 else 'it' }}?</div></div></div></div></section>{% endif %}

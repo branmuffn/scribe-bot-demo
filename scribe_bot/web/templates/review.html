@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Review · Scribe Bot{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Review</h1><div class="meta">Everything that needed you, like an inbox. Nothing just disappears:
+  dismissed items can be restored.</div></div></div>
+<nav class="tabs" aria-label="Review">
+  {% for key, label in [("open", "Open"), ("snoozed", "Snoozed"), ("done", "Done"), ("dismissed", "Dismissed")] %}
+  <a href="/review?tab={{ key }}" class="{{ 'on' if tab == key }}" {{ 'aria-current=page' if tab == key }}>{{ label }}
+    <span class="n">{{ needs_count if key == 'open' else counts[key] }}</span></a>{% endfor %}
+</nav>
+{% if tab == 'open' %}{% include "_review.html" %}
+{% elif tab == 'snoozed' %}
+  {% if lines %}<section class="section">{{ m.snoozed_list(lines) }}</section>{% endif %}
+  {% include "_review.html" %}
+  {% if not (lines or speakers or inbox or approvals or glossary or recordings) %}
+  <div class="card">{{ m.empty("clock", "Nothing snoozed", "Use the clock on any Needs you item to be reminded later.") }}</div>{% endif %}
+{% else %}
+<p class="section-help">{{ 'What you approved, named, kept or added, newest first.' if tab == 'done' else
+  'What you skipped, declined or removed, newest first. Restore puts one back under Needs you.' }}</p>
+<div class="card" id="review-log">
+  {% for x in log %}
+  <div class="item{{ ' tap-row' if x.href }}"><div class="item-main">
+    {% if x.href %}<a class="item-link" href="{{ x.href }}">{{ x.title }}</a>{% else %}<div class="item-title">{{ x.title }}</div>{% endif %}
+    <div class="item-sub"><span>{{ x.what }}</span><span><b>{{ x.did }}</b> {{ x.at|local_datetime }}</span></div></div>
+    {% if x.status == 'dismissed' %}<div class="item-actions"><form method="post" action="/review/{{ x.id }}/restore">
+      <button class="btn" title="Put it back under Needs you">Restore</button></form></div>{% endif %}</div>
+  {% else %}{{ m.empty("archive", "Nothing here yet", "Items move here as you deal with them under Needs you.") }}{% endfor %}
+  {{ m.more("review-log", log|length, total) }}
+</div>
+{% endif %}
+{% endblock %}

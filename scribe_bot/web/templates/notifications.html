@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Notifications · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
+{% block body %}
+<div class="page-head"><h1>Notifications</h1>
+  <form method="post" action="/notifications/test"><button class="btn" title="Sends one harmless line to each Discord channel">{{ m.icon("bell") }} Send a test</button></form></div>
+<p class="section-help">Alerts (the M14, backups, AI spend) also go to your Discord #scribe-alerts, and "New recording waiting
+  for your OK" and "Ready" to #scribe-bot; the Discord app on your phone shows them as push notifications. Processing
+  started, the morning briefing and the weekly review stay here in the app.
+  This list is the record. Titles and links only, never meeting content.</p>
+{% if sent %}<div class="notice ok" role="status" style="margin-bottom:var(--s3)">{{ m.icon("check-circle") }}<span><b>Test sent to the queue.</b>
+  It reaches Discord within about 5 seconds{% if quiet %}; the #scribe-bot one waits until 7 AM (quiet hours){% endif %}.
+  Nothing on your phone? See the tips below.</span></div>{% endif %}
+<nav class="tabs" aria-label="Notifications">
+  {% for key, href, label, count in [("current", "/notifications", "Current", n_current), ("dismissed", "/notifications?tab=dismissed", "Dismissed", n_dismissed)] %}
+  <a href="{{ href }}" class="{{ 'on' if tab == key }}" {{ 'aria-current=page' if tab == key }}>{{ label }} <span class="n">{{ count }}</span></a>{% endfor %}
+</nav>
+{% if tab == 'current' and rows %}<form class="row history-foot" method="post" action="/notifications/dismiss-all" style="margin-bottom:var(--s2)">
+  <button class="btn btn-ghost">{{ m.icon("check") }} Dismiss all</button></form>{% endif %}
+<div class="card" id="bell-list">
+  {% for n in rows %}<div class="item{{ ' tap-row' if n.link }}{{ ' swipeable' if tab == 'current' }}"><div class="item-main">
+    {% if n.link %}<a class="item-link" href="{{ '/notifications/%d/open'|format(n.id) if tab == 'current' else n.link }}">{{ n.title }}</a>{% else %}<div class="item-title">{{ n.title }}</div>{% endif %}
+    <div class="item-sub">{% if tab == 'current' and n.created_at > seen %}<span class="badge badge-warn">New</span>{% endif %}
+      <span>{{ '#scribe-alerts' if n.channel == 'alerts' else '#scribe-bot' if n.sent_at else 'In the app' }}</span><span>{{ n.created_at|local_datetime }}</span>
+      {% if n.status != 'sent' %}<span class="badge badge-outline" title="Waiting for quiet hours to end or for Discord to answer">not sent yet</span>{% endif %}</div></div>
+    <div class="item-actions">{% if tab == 'current' %}<form method="post" action="/notifications/{{ n.id }}/dismiss" data-swipe="both" data-swipe-label="Dismiss">
+      <button class="btn btn-ghost btn-icon" title="Dismiss (kept under Dismissed)" aria-label="Dismiss “{{ n.title }}”">{{ m.icon("x") }}</button></form>
+      {% else %}<form method="post" action="/notifications/{{ n.id }}/restore"><button class="btn btn-ghost">Restore</button></form>{% endif %}</div></div>
+  {% else %}
+    {% if tab == 'dismissed' %}{{ m.empty("bell", "Nothing dismissed", "Notifications you dismiss with ✕ wait here.") }}
+    {% elif n_dismissed %}{{ m.empty("check-circle", "All caught up", "Dismissed ones are under Dismissed.") }}
+    {% else %}{{ m.empty("bell", "No notifications yet", "Ready pings, briefings and alerts show here.") }}{% endif %}
+  {% endfor %}
+  {{ m.more("bell-list", rows|length, total) }}
+</div>
+<details class="card pad" style="margin-top:var(--s4)"><summary><b>Not getting them on your phone?</b></summary>
+  <ol class="stack" style="margin-top:var(--s2)">
+    <li>Install Discord on the phone and sign in.</li>
+    <li>In Discord, long-press the server with #scribe-alerts and #scribe-bot › Notifications › <b>All messages</b> (these posts never @mention you).</li>
+    <li>Android Settings › Apps › Discord › Notifications: on.</li>
+    <li>Tapping a link opens Scribe Bot only while Tailscale is on.</li>
+    <li>Between 11 PM and 7 AM, #scribe-bot waits until morning; #scribe-alerts always comes through.</li>
+  </ol></details>
+{% endblock %}

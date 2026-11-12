@@ -1,0 +1,35 @@
+[project]
+name = "scribe-bot"
+version = "0.1.0"
+description = "Private, self-hosted conversation scribe (runs on the M14)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.148.0",
+    "fpdf2>=2.8.9",
+    "jinja2>=3.1.6",
+    # Pinned exactly (uv.lock holds hashes). 1.82.7/1.82.8 were malicious (CVE-2026-33634, Mar 2026). 1.103.4
+    # (2026-10-07) is 12 days old at pinning (cooldown against fresh poisoned uploads), above every fixed
+    # version in OSV (latest fix 1.96.2), with no advisory since 2026-10-02. Bump only after checking OSV.
+    "litellm==1.103.4",
+    "numpy>=2.0",
+    "python-multipart>=0.0.32",
+    "sherpa-onnx==1.13.8",
+    "sherpa-onnx-core==1.13.8",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scribe_bot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

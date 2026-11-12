@@ -1,0 +1,29 @@
+# Tests on synthetic data only (CLAUDE.md rule 1). Real data never exists in this repo or in CI.
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest  # Keychain calls are faked in tests; macOS runners burn private-repo minutes 10x
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv run --group dev pytest -q
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --redact --exit-code 1 .

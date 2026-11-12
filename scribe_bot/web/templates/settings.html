@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Settings · Scribe Bot{% endblock %}
+{% block body %}
+{# Claude-settings style: on wide screens the groups stay listed on the left (icons), the open one on the right.
+   On a phone: the list, then one group per page with "‹ Settings". #}
+<div class="settings-grid{{ ' at-home' if group == 'home' }}">
+<nav class="settings-nav" aria-label="Settings"><div class="settings-nav-title">Settings</div>
+  {% for g in settings_groups %}<a href="{{ g.href }}" class="{{ 'on' if g.href == '/settings/' ~ group }}" {{ 'aria-current=page' if g.href == '/settings/' ~ group }}>{{ m.icon(g.icon) }} {{ g.title }}</a>{% endfor %}
+</nav>
+<div class="settings-pane">
+{% if group == 'home' %}
+<div class="page-head"><h1>Settings</h1></div>
+{# A short home: one row per group, each its own page, so no page gets long. #}
+<div class="card">
+  {% for g in settings_groups %}
+  <div class="item tap-row"><div class="item-main"><a class="item-link" href="{{ g.href }}">{{ m.icon(g.icon) }} {{ g.title }}</a>
+    <div class="item-sub"><span>{{ g.sub }}</span></div></div><span class="chev meta">{{ m.icon("chev") }}</span></div>
+  {% endfor %}
+</div>
+{% else %}
+<a class="back-link settings-back" href="/settings">‹ Settings</a>
+<div class="page-head"><h1>{{ group_title }}</h1></div>
+{% endif %}
+
+{% for n in (tested, added) if n %}
+<div class="notice {{ 'ok' if n.ok else '' }}" role="status">{{ m.icon("check-circle" if n.ok else "alert") }}<div>{{ n.message }}</div></div>
+{% endfor %}
+
+{% set theme = request.cookies.get('theme') if request.cookies.get('theme') in ('light', 'dark') else 'system' %}
+{% if group == 'appearance' %}
+<section class="section">
+  {{ m.section("", id="appearance") }}
+  <div class="card">
+    <div class="item"><div class="item-main"><div class="item-title">Theme</div>
+      <div class="item-sub">System follows this device's light or dark mode. Dark mode in the ⋯ menu switches Light and Dark.
+        Saved on this device only.</div></div>
+      <div class="item-actions"><span class="seg" role="group" aria-label="Theme">
+        {% for t in ("light", "dark", "system") %}<button type="button" data-theme-set="{{ t }}" class="{{ 'on' if theme == t }}"
+          aria-pressed="{{ 'true' if theme == t else 'false' }}">{{ t|capitalize }}</button>{% endfor %}</span></div></div>
+  </div>
+</section>
+{% endif %}
+
+{% if group == 'ai' %}
+<section class="section">
+  {{ m.section("", id="ai") }}
+  <div class="card">
+    <div class="item"><div class="item-main"><div class="item-title">Meetings</div>
+      <div class="item-sub">Speech and speakers on the M14 · summary, tasks and people notes by Claude Sonnet</div></div>
+      <span class="badge badge-cloud">{{ m.icon("cloud") }}Cloud default</span></div>
+    <div class="item"><div class="item-main"><div class="item-title">Private meetings</div>
+      <div class="item-sub">“private” in the recording title, or marked Private: transcript only, never leaves the M14</div></div>
+      <span class="badge badge-private">{{ m.icon("lock") }}Local only</span></div>
+    <div class="item"><div class="item-main"><div class="item-title">AI profile</div>
+      <div class="item-sub">Which provider and models the AI uses. Mixes fall back to the next provider if one fails.</div></div>
+      <div class="item-actions"><form method="post" action="/settings/profile" class="inline-form">
+        <select name="profile" aria-label="AI profile">{% for key, p in profiles.items() %}
+          <option value="{{ key }}" {{ 'selected' if key == profile }}>{{ p.label }}{{ ' (default)' if key == 'all_claude' }}</option>{% endfor %}</select>
+        <button class="btn">Save</button></form></div></div>
+    {% if offline %}<div class="item"><div class="item-main"><div class="item-title">Offline switch is on</div>
+      <div class="item-sub">No AI runs until it's turned off in <a href="#privacy">Privacy</a></div></div>
+      <span class="badge badge-warn">On · AI blocked</span></div>{% endif %}
+    <div class="item"><div class="item-main"><div class="item-title">Processing</div>
+      <div class="item-sub">{{ 'Paused: new recordings wait on the M14' if paused else 'New recordings are picked up automatically' }}</div></div>
+      <div class="item-actions">
+        {% if paused %}<span class="badge badge-warn">Paused</span>{% else %}<span class="badge badge-ok">Running</span>{% endif %}
+        <form method="post" action="/settings/pause"><input type="hidden" name="on" value="{{ 0 if paused else 1 }}">
+          <button class="btn {{ 'btn-primary' if paused else '' }}">{{ 'Resume' if paused else 'Pause' }}</button></form></div></div>
+    {% set pct = (month / cap * 100) if cap else 0 %}
+    <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} this month of the ${{ '%.0f'|format(cap) }} cap</a>
+      <div class="meter {{ 'bad' if pct >= 100 else 'warn' if pct >= 50 }}"><span style="width:{{ [pct, 100]|min }}%"></span></div>
+      <div class="item-sub">Alerts at 50%, 80% and 100%. Runs stop at the cap. Tap for every call and its cost.</div></div></div>
+  </div>
+</section>
+{% endif %}
+
+{% if group == 'keys' %}
+<section class="section">
+  {{ m.section("", id="keys") }}
+  {% for prov in providers %}
+  <div class="card" style="margin-bottom:var(--s3)">
+    <div class="group-label" style="display:flex;align-items:center;gap:var(--s2)">{{ m.icon("key") }} {{ prov.label }}</div>
+    {% for a in prov.accounts %}
+    <div class="item"><div class="item-main"><div class="item-title">{{ a.nickname }}</div>
+        <div class="item-sub">
+          <span class="badge badge-outline">{{ a.type|capitalize }}</span>
+          {% if a.may_train %}<span class="badge badge-bad">May train · demo only</span>{% endif %}
+          {% if not a.enabled %}<span class="badge badge-outline">Disabled</span>{% endif %}
+          <span>Owner {{ a.owner }}</span>
+          {% if a.monthly_cap_usd %}<span>cap ${{ '%.0f'|format(a.monthly_cap_usd) }}/month</span>{% endif %}
+          {% if a.expires_at %}<span>expires {{ a.expires_at[:10] }}</span>{% endif %}
+          <span>{{ a.training_policy }}</span></div></div>
+      <div class="item-actions">
+        {% if a.key_present %}<span class="badge badge-ok">{{ m.icon("check") }}Key stored</span>
+        {% elif a.key_present is none %}<span class="badge badge-outline">Can't check</span>
+        {% else %}<span class="badge badge-bad">No key</span>{% endif %}
+        {% if a.key_present %}{{ m.spend_button("/settings/accounts/" ~ a.id ~ "/test/confirm", "Test", "kt-" ~ a.id, "btn") }}{% endif %}
+      </div>{{ m.confirm_slot("kt-" ~ a.id) }}</div>
+    {% else %}
+    <div class="empty compact">No {{ prov.label }} account yet. Add a key with <code>set_api_key.sh {{ prov.arg }}</code> (see below).</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <form class="quick-add" method="post" action="/settings/accounts" aria-label="Add an account">
+    <label class="field"><span>Provider</span><select name="provider">{% for p in providers %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></label>
+    <label class="field"><span>Nickname</span><input name="nickname" required placeholder="e.g. Brian personal" size="14"></label>
+    <label class="field"><span>Owner</span><input name="owner" value="Brian" size="8"></label>
+    <label class="field"><span>Type</span><select name="type">{% for t in account_types %}<option value="{{ t }}" {{ 'selected' if t == 'paid' }}>{{ t|capitalize }}</option>{% endfor %}</select></label>
+    <label class="field"><span>Monthly cap ($)</span><input name="monthly_cap_usd" inputmode="decimal" placeholder="optional" size="6"></label>
+    <button class="btn btn-primary" style="align-self:end">{{ m.icon("plus") }} Add account</button>
+  </form>
+  <p class="meta">Adding an account never asks for its key. A Google “free” account may train on data, so it is blocked for real meetings.</p>
+  <div class="notice info">{{ m.icon("shield") }}<div>Keys are never typed into this app. To add or replace one, open Terminal <b>on the M14</b> and run
+    <code>bash ~/scribe-bot/scripts/setup/set_api_key.sh anthropic</code> (or <code>google</code>, <code>openai</code>). It saves the key in the Keychain through a hidden prompt.</div></div>
+</section>
+{% endif %}
+
+{% if group == 'privacy' %}
+<section class="section">
+  {{ m.section("", id="privacy") }}
+  <div class="card">
+    <div class="item"><div class="item-main"><div class="item-title">Offline switch</div><div class="item-sub">When on, nothing is sent to any AI service.</div></div>
+      <div class="item-actions">{% if offline %}<span class="badge badge-warn">On · AI blocked</span>{% else %}<span class="badge badge-ok">Off</span>{% endif %}
+        <form method="post" action="/settings/offline"><input type="hidden" name="on" value="{{ 0 if offline else 1 }}">
+        <button class="btn {{ 'btn-danger' if not offline else 'btn-primary' }}">{{ 'Turn offline on' if not offline else 'Turn offline off' }}</button></form></div></div>
+    <div class="item"><div class="item-main"><div class="item-title">Left the M14 today</div></div><b>{{ left_today }} AI call{{ 's' if left_today != 1 }}</b></div>
+  </div>
+  <div class="section-head" style="margin-top:var(--s4)" id="ledger"><h3>Data Ledger</h3><span class="count">last {{ ledger|length }}</span></div>
+  <div class="card">
+    {% if ledger %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>When</th><th>What was sent</th><th>Where</th><th class="num">Cost</th></tr></thead>
+      <tbody>{% for l in ledger %}
+      <tr><td data-label="When">{{ l.time|local_datetime }}</td>
+        <td data-label="What was sent">{{ l.task }}: {{ l.sent_summary }}{% if l.status != 'ok' %} <span class="badge badge-bad">{{ l.status }}</span>{% endif %}
+          {% if l.conversation_id %}<div class="meta">{% if l.conv_title %}<a href="/conversations/{{ l.conversation_id }}">{{ l.conv_title }}</a>{% else %}conversation deleted{% endif %}</div>{% endif %}</td>
+        <td data-label="Where"><span title="{{ l.model }}">{{ l.model|model_label }}</span><div class="meta">{{ l.nickname or l.provider }}{% if l.training_policy %} · {{ l.training_policy }}{% endif %}</div></td>
+        <td data-label="Cost" class="num">${{ '%.4f'|format(l.cost_usd) }}</td></tr>
+      {% endfor %}</tbody></table></div>
+    {% else %}{{ m.empty("shield", "Nothing has left the M14 yet") }}{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if group == 'glossary' %}
+<section class="section">
+  {{ m.section("", id="glossary") }}
+  <form class="quick-add" method="post" action="/settings/glossary">
+    <input name="term" placeholder="Correct term" required aria-label="Term">
+    <input name="variants" placeholder="Mis-hearings, comma separated" class="grow" aria-label="Mis-hearings">
+    <button class="btn btn-primary">{{ m.icon("plus") }} Add</button>
+  </form>
+  <div class="card">
+    {% for g in glossary %}
+    <div class="item"><div class="item-main"><b>{{ g.term }}</b>
+        <div class="item-sub">{% if g.variant_list %}<span>heard as {{ g.variant_list|join(', ') }}</span>{% endif %}{% if not g.approved %}<span class="badge badge-warn">Suggested</span>{% endif %}</div></div>
+      <div class="item-actions"><form method="post" action="/settings/glossary/{{ g.id }}/delete" hx-confirm="Delete the glossary term “{{ g.term }}”? Future AI runs stop fixing its mis-hearings.">
+        <button class="btn btn-icon btn-no" aria-label="Delete {{ g.term }}" title="Delete {{ g.term }}">{{ m.icon("trash") }}</button></form></div></div>
+    {% else %}{{ m.empty("book", "No terms yet", "Names and jargon the speech engine mishears, fixed automatically.") }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% if group == 'templates' %}
+<section class="section" id="templates">
+  {{ m.section("", help="What the AI is told for each meeting type, on top of the standard instructions. Applies to new recordings and re-runs; nothing re-runs by itself. {me} means you.") }}
+  <div class="card">{% for t in summary_templates %}
+    <details class="item template"><summary class="item-main"><span class="chev">{{ m.icon("chev") }}</span><b>{{ t.label }}</b>{% if t.custom %} <span class="badge">Edited</span>{% endif %}
+      <div class="item-sub">{{ (t.text or 'Standard instructions only (the 1:1 layout you rated 28/28).')|truncate(110) }}</div></summary>
+      <form method="post" action="/settings/templates/{{ t.kind }}" class="stack" style="margin-top:var(--s2)">
+        <textarea name="text" rows="4" aria-label="{{ t.label }} template">{{ t.text }}</textarea>
+        <div class="row"><button class="btn btn-primary">Save</button>{% if t.custom %}<button class="btn btn-ghost" name="reset" value="1">Reset to default</button>{% endif %}</div>
+      </form></details>{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if group == 'backups' %}
+<div id="system"></div>
+<section class="section">
+  {{ m.section("Backups", id="backups") }}
+  <div class="card">
+    {% for b in backups %}<div class="item"><div class="item-main"><div class="item-title">{{ b.destination }}</div>
+      <div class="item-sub"><span>{{ b.kind|replace('_', ' ')|capitalize }}</span><span>{{ b.started_at|local_datetime }}</span>{% if b.bytes %}<span>{{ (b.bytes / 1e9)|round(2) }} GB</span>{% endif %}</div></div>
+      <span class="badge {{ 'badge-ok' if b.status == 'ok' else 'badge-outline' if b.status == 'running' else 'badge-bad' }}">{{ b.status }}</span></div>
+    {% else %}{{ m.empty("archive", "No backups yet", "Nightly encrypted backups to your Google Drive accounts.") }}{% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  {{ m.section("Schedules", id="schedules") }}
+  <div class="card">
+    {% for s in schedules %}{% set info = schedule_info.get(s.job_name, (s.job_name, "")) %}
+    <div class="item"><div class="item-main"><div class="item-title">{{ info[0] }}</div>
+      <div class="item-sub">{% if info[1] %}<span>{{ info[1] }}</span>{% endif %}
+        <span>{{ 'not run yet' if s.status == 'new' else 'last ran ' ~ (s.last_success_at|local_datetime if s.last_success_at else 'never') }}</span></div></div>
+      {% if s.status == 'new' %}<span class="badge badge-outline">Waiting</span>
+      {% elif s.status == 'ok' %}<span class="badge badge-ok">OK</span>
+      {% elif s.status == 'running' %}<span class="badge badge-warn">Running</span>
+      {% else %}<span class="badge badge-bad" title="{{ s.status }}">Failed</span>{% endif %}</div>
+    {% else %}{{ m.empty("clock", "No schedules yet") }}{% endfor %}
+  </div>
+  <p class="meta" style="margin-top:var(--s2)">Quiet hours 11 PM–7 AM. Anything missed while the M14 was off runs once when it's back.</p>
+</section>
+{% endif %}
+
+
+</div></div>
+{% endblock %}

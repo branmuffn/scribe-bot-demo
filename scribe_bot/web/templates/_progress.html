@@ -1,0 +1,12 @@
+{# Live Processing card for Today (DECISION S). Polls itself every 15 s only while something is running. #}
+{% import "macros.html" as m %}
+<div id="progress-live"{% if jobs %} hx-get="/progress/active" hx-trigger="every 15s" hx-swap="outerHTML"{% endif %}>
+{% if jobs %}
+<section class="section">
+  {{ m.section("Processing", jobs|length) }}
+  <div class="card">
+    {% for j in jobs %}{{ m.progress_item(j) }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+</div>

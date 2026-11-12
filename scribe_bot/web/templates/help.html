@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Help · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Help</h1><div class="meta">What each screen is for, in plain English.</div></div>
+  <button type="button" class="btn btn-primary" data-tour-start="{{ tour_conv or '' }}">Take the 1-minute tour</button></div>
+
+<section class="section">
+  {{ m.section("Try it safely") }}
+  <div class="card pad stack">
+    <p>Load a made-up <b>DEMO</b> conversation (fake names, fake content) to click around without touching your real meetings.
+      Nothing is sent anywhere.</p>
+    <div class="row">
+      {% if demo_id %}<a class="btn btn-primary" href="/conversations/{{ demo_id }}">Open the demo</a>
+        <form method="post" action="/demo/remove"><button class="btn btn-ghost">Remove demo data</button></form>
+      {% else %}<form method="post" action="/demo/load"><button class="btn btn-primary">Load demo data</button></form>{% endif %}
+    </div>
+    <p><b>Test with your own meetings:</b> the recordings that synced before Scribe Bot started are under
+      <a href="/review#older">Older recordings</a> (⋯, or the bottom of Conversations). <i>Use as a new recording</i> sends one through every step a new
+      recording takes (Needs you, your OK with the time and cost, speech, speakers, AI, the Ready ping). Before you approve,
+      each one shows two estimates side by side: <i>Transcript + AI</i> and <i>Transcript only</i>, with the time on the M14
+      and the cost.</p>
+  </div>
+</section>
+
+<section class="section">
+  {{ m.section("Screens") }}
+  <div class="card">
+    {% for ic, title, href, text in [
+      ("sun", "Today (tab)", "/", "Only what needs you. Needs you: recordings to approve (nothing is transcribed until you do), speakers to name, items the AI wasn't sure about, glossary suggestions and old tasks. The clock on each one reminds you later, at a time you pick; until then it waits under Snoozed. History (next to Needs you) keeps everything you handled, and Restore brings back anything dismissed. Task reminders you set show up here at their time. Then tasks due, late promises to you (Copy nudge copies a friendly reminder to paste; nothing is sent) and Your week: conversations, tasks finished and your speaking, each a tap away."),
+      ("chat", "Talks (tab)", "/conversations", "Two sub-tabs. Conversations: every recording, with the summary, what you owe, what they owe you, decisions, notes and the transcript with audio; New marks the ones you haven't opened. The AI files each one as Work or Home; ones it isn't sure about wait under Not sorted, its guess on the first button. People: everyone you've talked to, with Find and Sort (last spoke, most talked, name). ＋ adds a recording by hand."),
+      ("check", "Tasks (tab)", "/tasks", "Mine = you agreed to do it. Waiting on = someone agreed to do it for you. Inbox = the AI wasn't sure. Decisions = everything settled, linked to the moment it was said. The clock on a task reminds you about it on Today at a time you pick."),
+      ("search", "Search (🔍 at the top)", "/search", "Find any word across transcripts, summaries, tasks, people and notes. Results come one card per conversation (its best 3 hits; All N for the rest), with tabs per kind and Filters: with whom, who said it, dates and sort. ✕ in the box clears a search and shows your recent searches (✕ on one forgets it; Clear all and Turn off history are under the list). Tapping the box after a search drops your recent searches down."),
+      ("bell", "Notifications (🔔 at the top)", "/notifications", "Recording pings, briefings and alerts, newest first. Alerts, new recordings waiting for your OK, and Ready pings also go to your Discord, and the Discord app on your phone shows them as push notifications. ✕ dismisses one (or Dismiss all); they wait under Dismissed, where Restore brings one back. Send a test checks that alerts reach your phone. A blue dot means something new."),
+      ("dots", "More (⋯ at the top)", "/more", "Status (the M14's health; tap a reading for its chart), Costs and Help, plus Older recordings while there are any. A red dot means the M14 needs attention. Everything else sits where you use it: Your speaking and History on Today, Decisions in Tasks, Trash at the bottom of Conversations, recent searches in Search, the Data Ledger and Dark mode in Settings."),
+      ("gear", "Settings (⚙ at the top)", "/settings", "A short list; each group opens its own page: Appearance (Light, Dark or System), AI & processing, Accounts & keys, Privacy & Data Ledger, Glossary, Summary templates, Backups & schedules."),
+      ] %}
+    <div class="item tap-row"><div class="item-main"><a class="item-link" href="{{ href }}">{{ m.icon(ic) }} {{ title }}</a><div class="item-sub">{{ text }}</div></div></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  {{ m.section("Fixing what the AI got wrong") }}
+  <div class="card pad stack">
+    <p>Secondary actions live under the <b>⋯</b> button on each row, so screens stay clean.</p>
+    <p><b>Wrong, remove</b>: removes a task, decision or note. An <b>Undo</b> bar appears for a few seconds.</p>
+    <p><b>Change person</b>: moves a task or note to the right person. Moving a task to or from you switches it between <i>You owe</i> and <i>They owe you</i>.</p>
+    <p><b>Speaker names</b>: tap a name under the conversation title to rename that speaker everywhere, or use the <b>⋯</b> on one transcript line to change just that line's speaker or words. When fixing a mis-heard word,
+      <i>Also teach the glossary</i> makes future AI runs fix it automatically.</p>
+    <p><b>Merge</b>: on a person's page, use <i>Merge into another person</i> when two entries are the same person.</p>
+    <p><b>Nothing just disappears</b>: <i>Move to Trash</i> (a conversation's ⋯) keeps it, with its tasks and notes, for 30 days
+      under Trash (at the bottom of Conversations), where <i>Restore</i> brings it back; after that it's removed for good with its tasks. Dismissed Needs you
+      items stay in History with <i>Restore</i>.</p>
+    <p class="meta">Every fix counts toward Scribe Bot's quality score, and a named voice is recognised next time.</p>
+  </div>
+</section>
+
+<section class="section">
+  {{ m.section("Privacy and money") }}
+  <div class="card pad stack">
+    <p>Audio never leaves the M14. Only transcript <i>text</i> goes to the AI, and only when you approve it.
+      <b>Transcript Only (No AI)</b> keeps a recording fully private.</p>
+    <p>Anything that costs money asks you to confirm first, with the price. There's a hard monthly cap (Settings › AI &amp; processing).</p>
+  </div>
+</section>
+
+<section class="section">
+  {{ m.section("Keyboard shortcuts (computer)") }}
+  <div class="card pad">{{ m.shortcut_list() }}</div>
+</section>
+{% endblock %}

@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}{{ c.title }} · Scribe Bot{% endblock %}
+{% block main_class %} wide{% endblock %}
+{% block back %}<a class="back-link" href="/conversations">‹ Conversations</a>{% endblock %}
+{% block body %}
+{# Layout approved in OUTPUT_DESIGN.md v1 §1: header, summary, you owe, they owe you, decisions, people notes, transcript.
+   Wide screens: items on the left, transcript beside them. Item actions refresh only their section (no scroll jump). #}
+<div id="conv">
+<header class="conv-head">
+  <div class="editable-row"><h1 class="conv-title" {{ m.editable("/conversations/" ~ c.id ~ "/summary", "title", c.title, "title", "conv", single=True) }}>{{ c.title }}</h1>{{ m.pencil("title") }}</div>
+  <div class="conv-meta">
+    <span>{{ (c.started_at or c.created_at)|local_datetime }}{% if c.duration_s %} · {{ (c.duration_s / 60)|round|int }} min{% endif %}</span>
+    {% set ai_cost = ai_calls|sum(attribute='cost') %}
+    <a class="cost-chip" href="/costs" title="What this conversation cost in AI calls">AI cost ${{ '%.3f'|format(ai_cost) }}</a>
+    <span class="badges">{{ m.status_badge(c.status) }}{{ m.type_badge(c.type) }}{{ m.privacy_badge(c) }}</span>
+  </div>
+  {% if recording_title and recording_title != c.title %}<div class="conv-source meta">Recording: {{ recording_title|recorder_title }}</div>{% endif %}
+
+  {% if speakers %}
+  <div class="talk" role="img" aria-label="Who talked how much">{% for s in speakers %}<span style="width:{{ (s.share * 100)|round(1) }}%{% if s.color %};background:{{ s.color }}{% endif %}"></span>{% endfor %}</div>
+  <div class="legend speakers" id="speakers">
+    {% for s in speakers %}
+    <details class="speaker-chip">
+      <summary><i aria-hidden="true"{% if s.color %} style="background:{{ s.color }}"{% endif %}></i><span class="speaker-name">{{ s.name }}</span> {{ (s.share * 100)|round|int }}%
+        <span class="meta">· {{ s.seconds|duration }}{% if s.turns %} · {{ s.turns }} turn{{ 's' if s.turns != 1 }}{% endif %}</span>
+        {% if s.seconds < short_speaker_s and speakers|length > 1 %}<span class="badge badge-outline">Merge?</span>{% endif %}
+        <span class="chip-edit">{{ 'Rename' if s.person_id else 'Who is this?' }}</span></summary>
+      <div class="chip-panel">
+        {% if s.seconds < short_speaker_s and speakers|length > 1 %}<form method="post" action="/speakers/{{ s.id }}/fold" class="picker-form">
+          <p class="meta">Only {{ s.seconds|duration }} of talking: probably part of someone else. Move these lines to:</p>
+          <select name="into" aria-label="Whose lines these are">{% for o in speakers if o.id != s.id %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select>
+          <button class="btn">Move lines</button></form>{% endif %}
+        <form {{ m.hx("/speakers/" ~ s.id ~ "/name", "conv") }} class="picker-form">
+          <label class="sr-only" for="sp-{{ s.id }}">Person</label>
+          <select id="sp-{{ s.id }}" name="person_id"><option value="">Pick a person…</option>
+            {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if p.id == s.person_id }}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</select>
+          <input name="new_name" placeholder="or type a new name" aria-label="New name" class="grow">
+          <button class="btn btn-primary">Save</button>
+        </form>
+        {% if s.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ s.id }}"></audio>{% endif %}
+        <form {{ m.hx("/speakers/" ~ s.id ~ "/color", "conv") }} class="swatches" aria-label="Color in this conversation">
+          <span class="meta">Color</span>{% for hex, l in person_colors.items() %}<button name="color" value="{{ hex }}" class="swatch{{ ' on' if s.color == hex }}" style="background:{{ hex }}" aria-label="{{ l }}" title="{{ l }}"></button>{% endfor %}
+          <button name="color" value="" class="btn btn-ghost" title="Back to the automatic color">Auto</button></form>
+        {% if s.person_id %}<form {{ m.hx("/speakers/" ~ s.id ~ "/unassign", "conv") }}><button class="btn btn-ghost">This isn't {{ s.name }}</button></form>{% endif %}
+        <p class="meta">Naming a speaker relabels all their lines and teaches Scribe Bot their voice for next time.</p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="conv-controls">
+    <span class="seg" role="group" aria-label="Area">
+      {% for a in ("work", "personal") %}
+      <form method="post" action="/conversations/{{ c.id }}/area" style="display:contents"><input type="hidden" name="area" value="{{ a }}">
+        <button class="{{ 'on' if c.area == a }}" aria-pressed="{{ 'true' if c.area == a else 'false' }}">{{ a|area_label }}{% if c.area == a and c.area_confidence is not none and c.area_confidence < 1 %} · auto{% elif c.area is none and c.area_guess == a %} · AI guess{% endif %}</button></form>
+      {% endfor %}
+    </span>
+    <form method="post" action="/conversations/{{ c.id }}/type" class="inline-form" title="Meeting type: picks the summary template">
+      <select name="type" aria-label="Meeting type" onchange="this.form.requestSubmit()">{% for k, label in meeting_types.items() %}
+        <option value="{{ k }}" {{ 'selected' if c.type == k }}>{{ label }}</option>{% endfor %}</select>
+      <noscript><button class="btn">Set</button></noscript></form>
+    {% if rerun_pending %}<span class="badge badge-outline">{{ m.icon("clock") }}AI re-run queued</span>{% endif %}
+    {{ m.download("/conversations/" ~ c.id ~ "/export.md", ".md", "Summary, tasks, decisions, notes and the transcript as one Markdown file (for a chatbot)") }}
+    {{ m.download("/conversations/" ~ c.id ~ "/export.pdf", "PDF", "The same as a tidy PDF file") }}
+    {% call m.menu("this conversation") %}
+      {% if c.private and preview and not rerun_pending %}
+      {{ m.spend_button("/conversations/" ~ c.id ~ "/rerun/confirm", "Run AI now (ends Private) · ~$" ~ ('%.3f'|format(preview.cost_usd_est)), "rerun-confirm", "menu-item", "cloud") }}
+      {% elif preview and not rerun_pending and not c.private %}
+      {{ m.spend_button("/conversations/" ~ c.id ~ "/rerun/confirm", "Re-run AI · ~$" ~ ('%.3f'|format(preview.cost_usd_est)), "rerun-confirm", "menu-item", "cloud") }}
+      {% endif %}
+      {% if not c.private %}
+      <form method="post" action="/conversations/{{ c.id }}/private" title="From now on nothing from this conversation goes to the AI. Notes it already made stay.">
+        <button class="menu-item">{{ m.icon("lock") }} Mark private</button></form>
+      {% endif %}
+      {% if not c.deleted_at %}<form method="post" action="/conversations/{{ c.id }}/delete">
+        <button class="menu-item danger">{{ m.icon("trash") }} Move to Trash</button></form>{% endif %}
+    {% endcall %}
+    <span class="meta">{{ 'Processed only on the M14' if c.private or not c.processed_by or c.processed_by in ('local', 'demo') else 'Speech on the M14 · AI: ' ~ (c.processed_by|ai_label) }}</span>
+  </div>
+  {{ m.confirm_slot("rerun-confirm") }}
+</header>
+
+{% if c.deleted_at %}
+<div class="notice" role="status">{{ m.icon("trash") }}<div style="flex:1"><b>This conversation is in Trash.</b> Its tasks and notes are hidden
+  everywhere else. It's removed for good on {{ gone_on|local_date }}.</div>
+  <form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn btn-primary">Restore</button></form></div>
+{% endif %}
+{% if rerun_queued %}
+<div class="notice ok" role="status">{{ m.icon("check-circle") }}<div>AI re-run queued. Results appear here in a minute or two.</div></div>
+{% endif %}
+
+<nav class="check-strip" id="check-strip" aria-label="What to check">
+  <span class="check-label">What to check</span>
+  <a href="#sec-owe">{{ check.mine }} you owe</a>
+  <a href="#sec-owe">{{ check.theirs }} they owe you</a>
+  <a href="#sec-facts">{{ check.notes }} note{{ 's' if check.notes != 1 }}</a>
+  {% if check.unsure %}<a class="warn" href="#sec-owe">{{ check.unsure }} unsure</a>{% endif %}
+  {% if check.unnamed %}<a class="warn" href="#speakers">{{ check.unnamed }} speaker{{ 's' if check.unnamed != 1 }} to name</a>{% endif %}
+</nav>
+
+{% set learning = c.type == 'learning' %}{# Learning: key ideas only, no tasks or decisions (Brian 2026-10-21) #}
+{{ m.jump_bar([("sec-summary", "Summary")] + ([] if learning else [("sec-mine", "You owe"), ("sec-theirs", "They owe you"), ("sec-decisions", "Decisions")])
+              + [("sec-facts", "People notes")] + ([("sec-speaking", "Your speaking")] if speaking else [])
+              + [("processing", "How it was processed"), ("transcript", "Transcript")]) }}
+<div class="conv-grid">
+<div class="conv-items">
+{% if processing and not processing.done %}{# still processing: the live card, refreshed every 15 s #}
+<div id="conv-progress" hx-get="{{ request.url.path }}" hx-trigger="every 15s" hx-select="#conv-progress" hx-swap="outerHTML">
+  <section class="section"><div class="card">{{ m.progress_item(processing) }}</div></section></div>
+{% endif %}
+{% if c.private and c.summary %}<div class="notice" role="note">{{ m.icon("lock") }}<div><b>Private conversation.</b> These notes were made before it was marked Private; nothing from it goes to the AI again. Want an AI update after all? ⋯ › Run AI now.</div></div>{% endif %}
+<section class="section" id="sec-summary">
+  {{ m.section("Summary", help="What the conversation was about, in a paragraph.") }}
+  <div class="card">
+    {% if c.summary %}
+    <div class="summary">
+      {% if c.summary_type and c.type and c.summary_type != c.type and not c.private %}<p class="meta" id="template-hint">This summary used the {{ meeting_types.get(c.summary_type, c.summary_type) }} template. Re-run AI (under ⋯) to use the {{ meeting_types.get(c.type, c.type) }} template.</p>{% endif %}
+      <div class="editable-row"><p class="summary-text" {{ m.editable("/conversations/" ~ c.id ~ "/summary", "summary", c.summary, "summary", "conv", required=False) }}>{{ c.summary }}</p>{{ m.pencil("summary") }}</div>
+      <div class="editable-row"><ul class="takeaways" {{ m.editable("/conversations/" ~ c.id ~ "/summary", "takeaways", takeaways|join('\n'), "key points (one per line)", "conv", required=False) }}>
+        {% for t in takeaways %}<li>{{ t }}</li>{% else %}<li class="meta">No key points. Tap ✎ to add some.</li>{% endfor %}</ul>{{ m.pencil("key points") }}</div></div>
+    {# Plain-text recap for pasting into an email or chat. People notes are left out on purpose. #}
+    <textarea id="recap" hidden readonly aria-hidden="true">{{ c.title }} ({{ (c.started_at or c.created_at)|local_datetime }})
+
+{{ c.summary }}
+{% if takeaways %}
+Key points:
+{% for t in takeaways %}- {{ t }}
+{% endfor %}{% endif %}{% if mine %}
+Brian will:
+{% for t in mine %}- {{ t.title }}{% if t.due %} (by {{ t.due|day }}){% endif %}
+{% endfor %}{% endif %}{% if theirs %}
+Others will:
+{% for t in theirs %}- {{ t.owner_name }}: {{ t.title }}{% if t.due %} (by {{ t.due|day }}){% endif %}
+{% endfor %}{% endif %}{% if decisions %}
+Decisions:
+{% for d in decisions %}- {{ d.text }}
+{% endfor %}{% endif %}</textarea>
+    <div class="row" style="margin-top:var(--s3)"><button type="button" class="btn btn-ghost" data-copy="#recap">Copy summary</button>
+      <span class="meta">Summary, tasks and decisions as plain text. People notes aren't included.</span></div>
+    {% elif c.private %}{{ m.empty("lock", "Private conversation", "No AI summary. The transcript stays on the M14. Want one after all? ⋯ › Run AI now.") }}
+    {% elif c.status in ('transcribing', 'transcribed') %}{{ m.empty("clock", "Summary on its way", "It appears a minute or so after the transcript is ready.") }}
+    {% else %}{{ m.empty("note", "No summary yet") }}{% endif %}
+  </div>
+</section>
+
+{% if not learning %}<div id="sec-owe">
+<section class="section" id="sec-mine">
+  {{ m.section("You owe", mine|length, help="Things you agreed to do. Tap Done when finished, or Change person if it's someone else's.") }}
+  <div class="card" data-limit="5">{% for t in mine %}{{ m.task_row(t, people, tgt="sec-owe", oob="check-strip") }}{% else %}{{ m.none_found() }}{% endfor %}</div>
+</section>
+
+<section class="section" id="sec-theirs">
+  {{ m.section("They owe you", theirs|length, help="Things other people agreed to do for you.") }}
+  <div class="card" data-limit="5">{% for t in theirs %}{{ m.task_row(t, people, show_owner=True, tgt="sec-owe", oob="check-strip") }}{% else %}{{ m.none_found() }}{% endfor %}</div>
+</section>
+</div>
+
+<section class="section" id="sec-decisions">
+  {{ m.section("Decisions", decisions|length, help="What was settled.") }}
+  <div class="card" data-limit="5">
+    {% for d in decisions %}{{ m.decision_row(d, tgt="sec-decisions") }}{% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<details class="section transcript" id="sec-facts" data-remember="conv-facts">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>People notes</h2><span class="count meta">{{ n_facts }}</span></summary>
+  <p class="section-help">Facts about people, saved to their profile. Remove any that are wrong.</p>
+  <div class="card">
+    {% for who, rows in facts.items() %}
+    <h3 class="group-label">{{ who }}</h3>
+    {% for f in rows %}{{ m.fact_row(f, people, tgt="sec-facts", oob="check-strip") }}{% endfor %}
+    {% else %}{{ m.none_found() }}{% endfor %}
+  </div>
+</details>
+{% if speaking %}
+<details class="section transcript" id="sec-speaking" data-remember="conv-speaking">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Your speaking</h2></summary>
+  <p class="section-help">Counted on the M14 from your lines; no AI. Filler counts are a minimum: the speech engine drops some “um”s.</p>
+  {{ m.speak_tiles(speaking, others_pace) }}
+  {% if speaking_tips %}<div class="card pad" style="margin-top:var(--s2)"><ul class="tips">{% for t in speaking_tips %}<li>{{ t }}</li>{% endfor %}</ul></div>{% endif %}
+</details>
+{% endif %}
+
+{% if processing %}
+<details class="section transcript" id="processing">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>How it was processed</h2>
+    <span class="count meta">{% if processing.done %}took {{ processing.elapsed }}{% else %}step {{ processing.step }} of {{ processing.steps }} · ready ~{{ processing.eta }}{% endif %}</span></summary>
+  <div class="card">
+    {% for s in processing.stages %}
+    <div class="item"><div class="item-main"><div class="item-title">{{ s.label }}</div>
+      <div class="item-sub">
+        {% if s.started %}<span>{{ s.started }}{% if s.finished %} → {{ s.finished }}{% endif %}</span>{% endif %}
+        {% if s.took %}<span><b>{{ s.took }}</b></span>
+        {% elif s.status == 'running' %}<span class="badge badge-warn">running · est. {{ s.estimate_s|duration }}</span>
+        {% elif s.status == 'failed' %}<span class="badge badge-bad">failed</span>
+        {% else %}<span>est. {{ s.estimate_s|duration }}</span>{% endif %}
+        {% if s.ends and not s.took and s.status != 'failed' %}<span>ends {{ s.ends }}</span>{% endif %}</div></div></div>
+    {% endfor %}
+    <div class="item"><div class="item-main"><div class="item-title">Total</div>
+      <div class="item-sub">{% if processing.started %}<span>{{ processing.started }} → {{ processing.eta if processing.done else ('~' ~ processing.eta) }}</span>{% endif %}
+        <span><b>{{ processing.elapsed or '—' }}</b> for a {{ processing.minutes }} min recording</span></div></div></div>
+    <div class="item"><div class="item-main"><div class="item-title">AI</div>
+      <div class="item-sub">{% for a in ai_calls %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ a.model }}</span><span>{{ a.calls }} call{{ 's' if a.calls != 1 }} · ${{ '%.3f'|format(a.cost) }}</span>
+        {% else %}<span>{{ 'None: Private, stays on the M14' if c.private else 'None yet (or transcript only)' }}</span>{% endfor %}</div></div></div>
+  </div>
+</details>
+{% endif %}
+</div>
+
+<div class="conv-side">
+<details class="section transcript" id="transcript">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Transcript</h2><span class="count meta">{{ segments|length }} lines</span></summary>
+  {% if segments %}<p class="section-help">Double-tap a line to fix its words, or use its ⋯ to change who said it.</p>{% endif %}
+  {% if has_audio %}<div class="player"><audio id="player" controls preload="none" src="/audio/conversation/{{ c.id }}"></audio></div>{% endif %}
+  <div class="card pad lines">
+    {% set palette = person_colors.keys()|list %}{% set sp_color = {} %}
+    {% for sp in speakers %}{% set _ = sp_color.update({sp.id: sp.color or palette[loop.index0 % 8]}) %}{% endfor %}
+    {% for s in segments %}
+    <div class="line" id="L{{ s.idx }}" data-start="{{ s.start_s }}" data-end="{{ s.end_s }}">
+      {% set ts = '%d:%02d'|format(s.start_s // 60, s.start_s % 60) %}
+      {% if has_audio %}<button type="button" class="t" data-seek="{{ s.start_s }}" aria-label="Play from {{ ts }}" title="Play from here">{{ ts }}</button>
+      {% else %}<span class="t">{{ ts }}</span>{% endif %}
+      <div><span class="who" style="--c:{{ sp_color.get(s.speaker_id, 'currentColor') }}">{{ s.name }}</span><span {{ m.editable("/segments/" ~ s.id ~ "/text", "text", s.text, "line " ~ (s.idx + 1), "L" ~ s.idx) }}>{{ s.text }}</span></div>
+      <details class="line-edit" hx-get="/segments/{{ s.id }}/edit" hx-trigger="toggle once" hx-target="find .chip-panel" hx-swap="outerHTML">
+        <summary class="icon-btn" aria-label="Fix line {{ s.idx + 1 }}" title="Fix this line">{{ m.icon("dots") }}</summary>
+        <div class="chip-panel"><p class="meta">Loading…</p></div>{# filled on first open: 250 hidden forms made the page 840 KB #}
+      </details>
+    </div>
+    {% else %}{{ m.empty("clock", "No transcript yet", "Speech-to-text runs on the M14, about 13 minutes per hour of audio.") }}{% endfor %}
+  </div>
+</details>
+
+</div>
+</div>
+
+</div>
+{% endblock %}

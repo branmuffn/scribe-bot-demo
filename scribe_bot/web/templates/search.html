@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Search · Scribe Bot{% endblock %}
+{# One hit: the snippet opens the exact spot (the transcript line it was said on, the summary, the person, Capture or Tasks). #}
+{% macro hit(h, title=None) %}
+{% set kinds = {'segment': 'Line', 'summary': 'Summary', 'task': 'Task', 'decision': 'Decision', 'fact': 'Note', 'person': 'Person', 'capture': 'Capture'} %}
+{% if h.kind == 'person' %}{% set href = "/people/" ~ h.ref_id %}{% elif h.kind == 'capture' %}{% set href = "/capture" %}
+{% elif h.cid %}{% set href = "/conversations/" ~ h.cid ~ ('#L' ~ h.line if h.line is defined and h.line is not none else '#sec-summary' if h.kind == 'summary' else '') %}
+{% else %}{% set href = "/tasks" %}{% endif %}
+<div class="item tap-row hit"><div class="item-main">
+  <a class="item-link snip" href="{{ href }}">{{ h.snip|e|replace('[[', '<mark>'|safe)|replace(']]', '</mark>'|safe) }}</a>
+  <div class="item-sub"><span class="badge badge-outline">{{ kinds.get(h.kind, h.kind|capitalize) }}</span>
+    {% if title %}<span>{{ title }}</span>{% endif %}{% if h.said_by %}<span>{{ h.said_by }}</span>{% endif %}
+    {% if h.line is defined and h.line is not none %}<span>line {{ h.line + 1 }}</span>{% endif %}</div>
+</div></div>
+{% endmacro %}
+{% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
+{% block body %}
+<div class="page-head"><h1>Search</h1></div>
+{% set nf = (1 if f.person else 0) + (1 if f.said else 0) + (1 if f.start else 0) + (1 if f.end else 0) + (1 if f.sort != 'best' else 0) %}
+{# The box: ✕ clears the search (back to your recent searches); tapping it after a search drops recent ones down (app.js). #}
+<form class="searchbar" method="get" action="/search" role="search">
+  <div class="search-field">
+    <input type="search" name="q" value="{{ q }}" placeholder="Transcripts, tasks, people, notes" aria-label="Search" {{ 'autofocus' if not q }}
+           autocomplete="off" enterkeyhint="search"{% if recent %} data-recent aria-controls="recent-pop" aria-expanded="false"{% endif %}>
+    {% if q %}<a class="icon-btn search-clear" href="/search" aria-label="Clear the search" title="Clear the search">{{ m.icon("x") }}</a>{% endif %}
+    {% if recent %}<div class="recent-pop" id="recent-pop" hidden><div class="menu-label">Recent searches</div>
+      {% for r in recent %}<a class="menu-item" href="/search?q={{ r.q|urlencode }}" data-q="{{ r.q }}">{{ m.icon("clock") }} {{ r.q }}</a>{% endfor %}
+    </div>{% endif %}
+  </div>
+  {% for k in ('person', 'said', 'start', 'end') if f[k] %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
+  {% if f.sort != 'best' %}<input type="hidden" name="sort" value="{{ f.sort }}">{% endif %}
+  {% if tab != 'all' %}<input type="hidden" name="type" value="{{ tab }}">{% endif %}
+  <button class="btn btn-primary" title="Search">{{ m.icon("search") }}<span class="sr-only">Search</span></button>
+</form>
+{% if q %}
+<nav class="tabs" aria-label="Kinds of results">
+  {% for key, label in search_tabs.items() %}
+  <a href="{{ request.url.remove_query_params(['n', 'conv']).include_query_params(type=key) }}" class="{{ 'on' if tab == key }}"
+     {{ 'aria-current=page' if tab == key }}>{{ label }}{% if counts %} <span class="n">{{ counts.get(key, 0) }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+<details class="filters"{{ ' open' if nf }}>
+  <summary class="btn btn-ghost">{{ m.icon("filter") }} Filters{% if nf %} · {{ nf }}{% endif %}</summary>
+  <form class="toolbar" method="get" action="/search" {{ m.live("/search") }}>
+    <input type="hidden" name="q" value="{{ q }}">{% if tab != 'all' %}<input type="hidden" name="type" value="{{ tab }}">{% endif %}
+    <label class="inline-label">With <select name="person"><option value="">Anyone</option>
+      {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if f.person == p.id }}>{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="inline-label">Said by <select name="said"><option value="">Anyone</option>
+      {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if f.said == p.id }}>{{ 'Me' if p.id == 1 else p.name }}</option>{% endfor %}</select></label>
+    <label class="inline-label">From <input type="date" name="start" value="{{ f.start }}"></label>
+    <label class="inline-label">To <input type="date" name="end" value="{{ f.end }}"></label>
+    <label class="inline-label">Sort <select name="sort">{% for k, l in [("best", "Best match"), ("new", "Newest"), ("old", "Oldest")] %}
+      <option value="{{ k }}" {{ 'selected' if f.sort == k }}>{{ l }}</option>{% endfor %}</select></label>
+    <noscript><button class="btn">Apply</button></noscript>
+    {% if nf %}<a class="btn btn-ghost" href="/search?q={{ q|urlencode }}{{ '&type=' ~ tab if tab != 'all' }}">Clear</a>{% endif %}
+  </form>
+</details>
+
+{% if conv is defined %}
+<div class="section-head"><h2>“{{ q }}” in {{ conv.title if conv else 'this conversation' }}</h2><span class="count">{{ total }}</span>
+  <a class="aside meta" href="{{ request.url.remove_query_params(['conv', 'n']) }}">← All results</a></div>
+<div class="card" id="conv-hits">
+  {% for h in hits %}{{ hit(h) }}{% else %}{{ m.empty("search", "Nothing found here") }}{% endfor %}
+  {{ m.more("conv-hits", hits|length, total) }}
+</div>
+{% elif common %}
+<div class="notice" style="margin-bottom:var(--s3)">“{{ q }}” is in {{ '{:,}'.format(common) }} places, so these are just the newest 100.
+  Add another word or a filter to narrow it down.</div>
+<div class="card">{% for h in hits %}{{ hit(h, h.conv_title) }}{% else %}{{ m.empty("search", "Nothing matches these filters") }}{% endfor %}</div>
+{% else %}
+<div class="meta" style="margin-bottom:var(--s2)">{{ counts[tab] }} hit{{ 's' if counts[tab] != 1 }}{% if n_groups %} in {{ n_groups }} conversation{{ 's' if n_groups != 1 }}{% endif %}</div>
+{% if other %}
+<div class="card result-group">
+  {% for r in other %}{{ hit(r) }}{% endfor %}
+</div>
+{% endif %}
+<div id="search-groups">
+  {% for g in groups %}
+  <div class="card result-group">
+    <div class="item tap-row group-head"><div class="item-main">
+      <a class="item-link" href="/conversations/{{ g.id }}">{{ g.title }}</a>
+      <div class="item-sub"><span>{{ g.at|local_date }}</span>{% if g.people %}<span>{{ g.people }}</span>{% endif %}</div></div>
+      <div class="item-actions badges">{{ m.area_badge(g.area, g.status == 'done') }}<span class="badge badge-outline">{{ g.hits }} hit{{ 's' if g.hits != 1 }}</span></div></div>
+    {% for h in g.rows %}{{ hit(h) }}{% endfor %}
+    {% if g.hits > g.rows|length %}<a class="item show-more" href="{{ request.url.remove_query_params(['n']).include_query_params(conv=g.id) }}">
+      All {{ g.hits }} in this conversation →</a>{% endif %}
+  </div>
+  {% else %}{% if not other %}<div class="card">{{ m.empty("search", "Nothing found for “" ~ q ~ "”", "Try fewer or different words, or clear a filter.") }}</div>{% endif %}
+  {% endfor %}
+  {{ m.more("search-groups", groups|length, n_groups or 0, 20) }}
+</div>
+{% endif %}
+{% elif history %}
+<div class="section-head"><h2>Recent searches</h2><span class="count">{{ history_total }}</span></div>
+<div class="card" id="history-list">{% for r in history %}{{ m.history_row(r) }}{% endfor %}
+  {{ m.more("history-list", history|length, history_total) }}</div>
+<div class="row history-foot">
+  <form method="post" action="/search/history/clear"><button class="btn btn-ghost">Clear all</button></form>
+  <form method="post" action="/search/history/keep" hx-confirm="Stop remembering searches? This also clears the list.">
+    <input type="hidden" name="on" value="off"><button class="btn btn-ghost">Turn off history</button></form>
+  <span class="meta">Kept on the M14 only.</span></div>
+{% else %}
+<div class="card">{{ m.empty("search", "Search everything", "Every transcript, summary, task, decision, person and note, all on the M14.") }}</div>
+<div class="row history-foot"><span class="meta">Search history is {{ 'on: your searches will show here' if history_on else 'off' }}.</span>
+  <form method="post" action="/search/history/keep"><input type="hidden" name="on" value="{{ 'off' if history_on else 'on' }}">
+    <button class="btn btn-ghost">{{ 'Turn off history' if history_on else 'Turn on history' }}</button></form></div>
+{% endif %}
+{% endblock %}

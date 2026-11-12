@@ -1,0 +1,25 @@
+{% extends layout %}
+{% import "macros.html" as m with context %}
+{% block title %}Confirm · Scribe Bot{% endblock %}
+{% block body %}
+{# Step 2 of anything that costs money: shown inline (htmx) or as its own page (no JS). The money is spent only by the
+   Confirm button below, never by the first tap. #}
+<div class="confirm-panel" role="alertdialog" aria-labelledby="confirm-title" aria-describedby="confirm-cost">
+  <h2 id="confirm-title">{{ heading }}</h2>
+  <p id="confirm-cost" class="confirm-cost">This will cost about <b>${{ '%.2f'|format(cost) if cost >= 0.01 else '%.3f'|format(cost) }}</b>
+    {%- if model %} ({{ model }}{% if tokens %}, ~{{ tokens }} tokens{% endif %}){% endif %}.</p>
+  {% if detail %}<p class="meta">{{ detail }}</p>{% endif %}
+  {% if blocked %}<div class="notice">{{ m.icon("alert") }}<div>Can't run right now: {{ blocked }}</div></div>{% endif %}
+  <div class="row">
+    <form method="post" action="{{ action }}">
+      {% for k, v in fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="confirm" value="1">
+      {% if type_pick is not none %}<label class="inline-label" style="margin-bottom:var(--s2)">Meeting type
+        <select name="meeting_type"><option value="">Auto (AI spots talks and classes)</option>{% for k, label in meeting_types.items() %}
+          <option value="{{ k }}" {{ 'selected' if k == type_pick }}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+      <button class="btn btn-primary" {{ 'disabled' if blocked }}>Confirm</button>
+    </form>
+    <a class="btn" href="{{ cancel }}" data-cancel>Cancel</a>
+  </div>
+</div>
+{% endblock %}

@@ -7,9 +7,11 @@ Code, and it runs on a 2014 MacBook Pro at home.
 > This repo is the public version. It has the full app code and tests, plus made-up sample meetings so you can try it
 > in Demo mode. My real recordings, transcripts, and setup notes stay in a separate private repo.
 
-<!-- VIDEO: 2-minute walkthrough (placeholder, link goes here once the pitch video is cleared for public use) -->
+| Today (laptop) | A conversation (phone) |
+| --- | --- |
+| ![Today page: next tasks and late promises](docs/screenshots/today-desktop.png) | ![A made-up conversation with its summary and tasks](docs/screenshots/conversation-phone.png) |
 
-<!-- SCREENSHOTS: docs/screenshots/ (Demo mode, synthetic meetings only) -->
+Screenshots are from Demo mode: made-up meetings only. More in [`docs/screenshots/`](docs/screenshots/).
 
 ## The problem
 
@@ -134,4 +136,4 @@ a written spec and a decision log. The highlights are in [`docs/HOW_IT_WAS_BUILT
 
 ## License
 
-<!-- LICENSE: to be chosen by Brian (MIT like Frontline Squad is the suggestion) -->
+MIT. See [LICENSE](LICENSE).

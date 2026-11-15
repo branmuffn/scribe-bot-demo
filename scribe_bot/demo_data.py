@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from scribe_bot.core import db
+from scribe_bot.core.settings import DEMO_MARKER
 from scribe_bot.web import demo
 
 MARKER = "DEMO: 1:1 with Priya, Q3 budget review"
@@ -184,6 +185,7 @@ def main(argv: list[str]) -> int:
         return 1
     finally:
         conn.close()
+    (folder / DEMO_MARKER).write_text("Demo mode data folder: made-up meetings only. Delete this folder to start over.\n")
     print(f"demo data ready in {folder}: {n} made-up conversations")
     return 0
 

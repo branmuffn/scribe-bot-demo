@@ -6,6 +6,10 @@ import pytest
 
 from scribe_bot.pipeline.recorder_names import fallback_title, parse_recorder_datetime, started_at
 
+# These tests switch the process time zone with time.tzset(), which some Python builds (e.g. some uv-managed ones)
+# don't have. Skip cleanly there instead of erroring; python.org and Homebrew Pythons run them.
+pytestmark = pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset() is not available on this Python build")
+
 
 @pytest.fixture(autouse=True)
 def boston_time(monkeypatch):

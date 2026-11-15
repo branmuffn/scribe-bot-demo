@@ -13,7 +13,7 @@
 <a class="notice" href="/costs">{{ m.icon("dollar") }}<div><b>AI spend is ${{ '%.2f'|format(month_spend) }} of the ${{ '%.0f'|format(cap) }} monthly cap.</b>
   {{ 'AI runs are stopped until next month.' if month_spend >= cap else 'Runs stop at the cap.' }} See Costs.</div></a>
 {% endif %}
-{% if not worker.alive %}
+{% if not worker.alive and not demo_mode %}{# Demo mode has no worker by design #}
 <div class="notice">{{ m.icon("alert") }}<div><b>Scribe Bot needs attention.</b> The background worker isn't running, so new recordings wait. <a href="/status">See status</a></div></div>
 {% endif %}
 
@@ -83,7 +83,7 @@
   </div>
 </section>
 
-{% if not (needs_count or due or overdue_theirs or awaiting or jobs or paused or spend_alert or not worker.alive) %}
+{% if not (needs_count or due or overdue_theirs or awaiting or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
 <section class="section">
   <div class="card">{{ m.empty("check-circle", "All clear", "Nothing needs you right now. New recordings, due tasks and late promises show up here.") }}</div>
   <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Conversations</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>

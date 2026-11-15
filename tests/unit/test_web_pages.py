@@ -117,6 +117,16 @@ def test_today_all_clear_and_spend_alert(env):
     assert "AI spend is $0.07 of the $0 monthly cap" in page and "All clear" not in page
 
 
+def test_demo_mode_hides_the_worker_warning(env):
+    client, conn, cfg = env
+    conn.execute("UPDATE task SET status = 'done'")
+    conn.execute("UPDATE review_item SET status = 'done'")
+    assert "worker isn't running" in client.get("/").text            # a real folder with no heartbeat warns
+    (cfg.data_dir / "DEMO_MODE").write_text("demo")                   # what scribe_bot.demo_data writes
+    page = client.get("/").text
+    assert "worker isn't running" not in page and "All clear" in page
+
+
 def test_conversation_page_follows_output_design(env):
     page = env[0].get("/conversations/1").text
     order = [page.index(f"<h2>{h}</h2>") for h in ("Summary", "You owe", "They owe you", "Decisions", "People notes", "Transcript")]

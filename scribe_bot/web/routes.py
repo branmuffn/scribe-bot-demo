@@ -339,6 +339,7 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
                   on_today=True, people=people(conn),
                   jobs=progress.active_jobs(conn), awaiting=awaiting, month_spend=month, cap=cap,
                   spend_alert=cap and month / cap >= 0.8, worker=worker_status(request.app.state.cfg),
+                  demo_mode=request.app.state.cfg.demo,
                   paused=setting(conn, "pipeline_paused", "0") == "1", show_help=setting(conn, "help_dismissed") != "1",
                   tour_conv=tour_conversation(conn))
 

@@ -24,7 +24,7 @@
       <button name="mode" value="{{ k }}" class="seg-opt{% if speed == k %} on{% endif %}" aria-pressed="{{ 'true' if speed == k else 'false' }}" title="{{ sub }}">{{ label }}</button>
       {% endfor %}
     </form>
-    <p class="meta speed-note">Auto = gentle while you use the Mac. Pauses itself if hot.</p>
+    <p class="meta speed-note">Auto = half speed while you use the Mac. Half speed if it gets warm (90 °C), pauses if hot (95 °C).</p>
   </div>
   {% for r in rows if r.p %}<div class="card" style="margin-top:8px">{{ m.progress_item(r.p) }}</div>{% endfor %}
 </section>

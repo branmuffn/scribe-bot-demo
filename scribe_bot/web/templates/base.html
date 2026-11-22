@@ -39,12 +39,14 @@
       {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>
     {% endfor %}
   </ul>
+  {# Desktop: "Add recording" lives here instead of the round + button, which covered the right edge of rows #}
+  <a class="btn side-add" href="/capture">{{ m.icon("plus") }} Add recording</a>
   <div class="side-foot">Runs on the M14</div>
 </aside>
 
 {# Phone top bar #}
 <header class="topbar"><div class="topbar-in">
-  <a class="brand" href="/" aria-label="Scribe Bot home"><img src="/static/icon.svg" alt=""> <span class="brand-text">Scribe</span></a>
+  <a class="brand" href="/" aria-label="Scribe Bot home"><img src="/static/icon.svg" alt=""> <span class="brand-text">Scribe Bot</span></a>
   {{ m.area_toggle(area, short=True) }}
   <a class="icon-btn" href="/search" aria-label="Search" title="Search">{{ m.icon("search") }}</a>
   {{ m.bell() }}

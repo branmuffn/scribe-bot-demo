@@ -393,7 +393,7 @@ details.edit > summary { min-height: var(--tap) }   /* 44px touch target */
 .side-top { display: flex; align-items: center; gap: var(--s1) }
 .side-top .brand { margin-right: auto; white-space: nowrap }
 .side-top .icon-btn { width: 36px; height: 36px }   /* brand + 🔔 + ⋯ + ⚙ fit the sidebar (the ⚙ touched its edge) */
-@media (max-width: 419px) { .topbar .brand-text { display: none } .topbar-in { gap: 0 } }
+@media (max-width: 539px) { .topbar .brand-text { display: none } .topbar-in { gap: 0 } }
 
 /* Settings: a heading over a group of sections */
 .group-title { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: var(--s8) 0 var(--s2);
@@ -1448,3 +1448,47 @@ summary .count, .section-head .count { white-space: nowrap; overflow: hidden; te
 .sw-b { width: 84px; border: 0; color: #fff; font: inherit; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 6px; text-align: center; line-height: 1.2; cursor: pointer }
 .sw-red { background: #c53030 } .sw-ink { background: #718096 } .sw-blue { background: #2b6cb0 } .sw-dark { background: #4a5568 } .sw-green { background: #2f855a }
 .sw-host:not(.sw-on) > .sw-layer { visibility: hidden }
+
+/* Desktop + every-size audit (Brian, 2026-11-22: "check all the pop-ups on desktop; nothing cut off") */
+@media (min-width: 960px) {
+  /* a later rule (.fx-body width:100%) shrank every desktop drop-down to its button's width (Status was 36px wide) */
+  .fx-body { width: 380px; max-width: calc(100vw - var(--side) - 32px) }
+  .in-row .fx-body { width: 400px }
+  /* Status in the sidebar opens beside the sidebar, so the sidebar can't crop it */
+  .sidebar .st-sheet .fx-body { position: fixed; left: calc(var(--side) + 8px); right: auto; top: 12px; bottom: auto;
+    max-height: calc(100dvh - 24px) }
+  /* All / Work / Home / School / Other fit the sidebar ("Other" was cut off) */
+  .sidebar { overflow-x: hidden }
+  .sidebar .seg { gap: 0 } .sidebar .seg a { padding-inline: 5px; font-size: .8rem; min-width: 0 }
+}
+/* An open menu sits above the rows around it (the next row used to paint over it) */
+.item:has(details[open]), .row1:has(details[open]), .lines .line:has(details[open]) { position: relative; z-index: 20 }
+/* No room below (bottom of the screen or the tab bar): menus open upward instead; pop-ups that open upward and would
+   go past the top open downward */
+.menu-panel.flip-up, .fx-body.flip-up { top: auto; bottom: calc(100% + 4px) }
+.chip-menu[open] .chip-pop.flip-down { bottom: auto; top: calc(100% + 6px) }
+.menu-panel, .chip-pop, .fx-body, .chip-panel { scroll-margin: 72px 0 96px }
+.item-sub { text-overflow: ellipsis }
+/* A person's ⋯ (next to Edit) opened ~750px below its button: anchor it to the action row, under the ⋯ */
+.person-actions { position: relative }
+.person-actions .menu-panel { top: calc(100% + 4px); left: 0; right: auto; width: min(20rem, calc(100vw - 32px)) }
+/* Desktop: Add recording sits in the sidebar; the round + button only on phones and tablets */
+.side-add { display: none }
+@media (min-width: 960px) {
+  .fab { display: none }
+  .sidebar .side-add { display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); margin-top: auto }
+  .sidebar .side-add + .side-foot { margin-top: 0 }
+  /* Settings home: the list is the page, so the same list isn't repeated on the left */
+  .settings-grid.at-home { grid-template-columns: minmax(0, 1fr) }
+  .settings-grid.at-home .settings-nav { display: none }
+}
+/* Settings rows: icon and name on one line, centred */
+.settings-pane .item-link { display: inline-flex; align-items: center; gap: var(--s2) }
+.settings-pane .item-link .icon { flex: none; width: 18px; height: 18px }
+nav.tabs.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent) }
+nav.tabs.fade-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent) }
+nav.tabs.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent) }
+/* The A-Z / scroll rail showed on top of open pop-ups (over the task pop-up's 🗑): hide it while one is open */
+html.pop-lock .rail, html.pop-lock .rail-out, body:has(details.row-menu[open]) .rail, body:has(details.chip-menu[open]) .rail { visibility: hidden }
+/* Stat tiles: the number is never cut ("144 words…" on phones); a long value wraps instead */
+.tile-value, .tile-name { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere }

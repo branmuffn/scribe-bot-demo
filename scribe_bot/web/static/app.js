@@ -1606,13 +1606,44 @@ document.addEventListener("click", function (e) {
       var dx = b.right > W - 8 ? W - 8 - b.right : (b.left < 8 ? 8 - b.left : 0);
       if (dx) p.style.translate = Math.round(dx) + "px 0";
     });
+    [].forEach.call(d.querySelectorAll(POP), function (p) {
+      if (p.closest("details:not([open])") || p.dataset.fitY) return;
+      p.dataset.fitY = "1"; fitY(p);
+    });
+  }
+  // Up and down too (2026-11-22 audit): a menu that would go under the bottom tab bar or past the screen bottom opens
+  // upward when there's more room above; otherwise it gets a max height and scrolls inside.
+  function fitY(p) {
+    var cs = getComputedStyle(p); if (cs.position !== "absolute") return;
+    var bar = document.querySelector(".tabbar"), barH = bar && bar.getBoundingClientRect().height && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().height : 0;
+    var lo = window.innerHeight - 8 - barH, d = p.closest("details"), s = d && d.querySelector(":scope > summary");
+    var sr = s ? s.getBoundingClientRect() : null, b = p.getBoundingClientRect();
+    if (p.classList.contains("chip-pop")) {
+      if (b.top < 8 && sr && lo - sr.bottom > sr.top) p.classList.add("flip-down");
+      return;
+    }
+    if (b.bottom > lo && sr && sr.top - 8 > lo - sr.bottom && b.height < sr.top - 8) p.classList.add("flip-up");
+    else if (b.bottom > lo) { p.style.maxHeight = Math.max(160, lo - b.top) + "px"; p.style.overflowY = "auto"; }
   }
   function sync() {
     var lock = !!document.querySelector(OPEN);
     document.documentElement.classList.toggle("pop-lock", lock);
     document.querySelectorAll("details[open]").forEach(fit);
   }
-  document.addEventListener("toggle", function () { requestAnimationFrame(sync); }, true);
+  document.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (d.tagName === "DETAILS" && !d.open) [].forEach.call(d.querySelectorAll(POP), function (p) {   // fresh fit next time
+      delete p.dataset.fitY; p.classList.remove("flip-up", "flip-down"); p.style.maxHeight = ""; p.style.overflowY = ""; });
+    requestAnimationFrame(function () {
+      sync();
+      // a panel that opens in the page (a speaker's "Who is it?", a line's edit panel, + Tag, Edit) is scrolled into view
+      // when it would end under the tab bar or below the screen
+      if (d.tagName === "DETAILS" && d.open && d.matches(".speaker-chip, .line-edit, .tag-add, details.edit")) {
+        var c = d.querySelector(":scope > .chip-panel, :scope > :not(summary)");
+        if (c && getComputedStyle(c).position !== "absolute" && getComputedStyle(c).position !== "fixed") c.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    });
+  }, true);
   ["click", "htmx:afterSettle", "htmx:historyRestore", "pageshow", "close"].forEach(function (ev) {
     document.addEventListener(ev, function () { requestAnimationFrame(sync); }, true);
   });
@@ -1717,4 +1748,24 @@ document.addEventListener("click", function (e) {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") document.querySelectorAll(OPEN).forEach(function (d) { d.open = false; });
   });
+})();
+
+/* Tab rows that don't fit (phone Search / Review): a soft fade on the side where more tabs are hidden, so it's clear the
+   row can be swiped (Brian, 2026-11-22: nothing should look cut off). The selected tab is scrolled into view. */
+(function () {
+  function mark(n) {
+    var more = n.scrollWidth - n.clientWidth > 2;
+    n.classList.toggle("fade-r", more && n.scrollLeft + n.clientWidth < n.scrollWidth - 2);
+    n.classList.toggle("fade-l", more && n.scrollLeft > 2);
+  }
+  function all() {
+    document.querySelectorAll("nav.tabs").forEach(function (n) {
+      if (!n.dataset.fadeOn) { n.dataset.fadeOn = "1"; n.addEventListener("scroll", function () { mark(n); }, { passive: true });
+        var on = n.querySelector(".on, [aria-current]"); if (on && n.scrollWidth > n.clientWidth) n.scrollLeft = Math.max(0, on.offsetLeft - 16); }
+      mark(n);
+    });
+  }
+  ["DOMContentLoaded", "htmx:afterSettle", "pageshow"].forEach(function (ev) { document.addEventListener(ev, all); });
+  window.addEventListener("resize", all);
+  if (document.readyState !== "loading") all();
 })();

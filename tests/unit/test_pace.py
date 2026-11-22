@@ -37,16 +37,16 @@ def test_parsers():
 
 def test_in_use_sees_chats_and_input(tmp_path):
     idle = {"ioreg": '"HIDIdleTime" = 999000000000'}
-    assert pace.in_use(fake_run(idle), home=tmp_path, night=False) == ""
+    assert pace.in_use(fake_run(idle), home=tmp_path) == ""
     assert pace.in_use(fake_run({"ioreg": '"HIDIdleTime" = 5000000000'}), home=tmp_path) == "keyboard or mouse"
     chat = tmp_path / ".claude/projects/x"
     chat.mkdir(parents=True)
     (chat / "s.jsonl").write_text("{}")
     busy = dict(idle, ps="  0 200.0 node")   # 2026-11-22: a chat counts only while the Mac is busy
-    assert pace.in_use(fake_run(busy), home=tmp_path, night=False) == "a busy Claude chat"
+    assert pace.in_use(fake_run(busy), home=tmp_path) == "a busy Claude chat"
     old = time.time() - 3600
     os.utime(chat / "s.jsonl", (old, old))
-    assert pace.in_use(fake_run(busy), home=tmp_path, night=False) == ""
+    assert pace.in_use(fake_run(busy), home=tmp_path) == ""
 
 
 def test_auto_goes_gentle_while_used_and_back_after_10_min(tmp_path):

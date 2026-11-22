@@ -42,15 +42,28 @@ def fake_run(outputs):
     return run
 
 
-def test_chat_counts_only_when_the_mac_is_busy_and_never_at_night(tmp_path):
+def test_chat_counts_only_when_the_mac_is_busy_day_or_night(tmp_path):
     chat = tmp_path / ".claude/projects/x"
     chat.mkdir(parents=True)
     (chat / "s.jsonl").write_text("{}")
     idle = '"HIDIdleTime" = 999000000000'
     calm = {"ioreg": idle, "ps": "  0  12.0 /usr/bin/claude\n 10 390.0 python\n  0 300.0 com.docker.virtualization\n"}
     busy = {"ioreg": idle, "ps": "  0 180.0 node\n  0  30.0 claude\n"}
-    assert pace.in_use(fake_run(calm), home=tmp_path, night=False) == ""            # chat open, Mac calm
-    assert pace.in_use(fake_run(busy), home=tmp_path, night=False) == "a busy Claude chat"
-    assert pace.in_use(fake_run(busy), home=tmp_path, night=True) == ""             # 1-7 AM: chats never count
-    assert pace.in_use(fake_run({"ioreg": '"HIDIdleTime" = 5000000000'}), home=tmp_path, night=True) == "keyboard or mouse"
+    assert pace.in_use(fake_run(calm), home=tmp_path) == ""            # chat open, Mac calm: full speed
+    assert pace.in_use(fake_run(busy), home=tmp_path) == "a busy Claude chat"
     assert pace.parse_busy(busy["ps"]) == 210.0 and pace.parse_busy(calm["ps"]) == 12.0
+
+
+def test_warm_steps_down_to_half_before_any_pause(env):
+    _, conn, _ = env
+    pace._state.update(warm_seen=None, warm_cool=None, hot_seen=None, cool_since=None, last_use=0.0)
+    pace.set_mode(conn, "full")
+    t = 1_000_000.0
+    assert pace.heat_step(conn, 91.0, t) is None and pace.threads_for(conn, "", t) == 4      # one warm reading: no change
+    assert pace.heat_step(conn, 91.0, t + 301) == "warm" and pace.threads_for(conn, "", t + 301) == 2
+    assert not pace.heat_paused(conn)
+    assert pace.heat_step(conn, 85.0, t + 400) is None and pace.threads_for(conn, "", t + 400) == 2   # 80-90: stays half
+    pace.heat_step(conn, 75.0, t + 500)
+    assert pace.heat_step(conn, 75.0, t + 801) == "cool" and pace.threads_for(conn, "", t + 801) == 4
+    pace.heat_step(conn, 96.0, t + 900); pace.heat_step(conn, 96.0, t + 1201)                 # still hotter: pause
+    assert pace.heat_paused(conn) and pace.threads_for(conn, "", t + 1201) == 2

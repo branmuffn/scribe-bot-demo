@@ -5,12 +5,16 @@ Speed setting 'processing_mode':
          after they stop. "Someone uses the Mac" = any of: keyboard or mouse in the last 5 min, an SSH session typed in
          within 30 min, a Screen Sharing or RustDesk connection, or a Claude / Codex chat that wrote in the last 10 min
          WHILE the Mac is busy with other work (Brian, 2026-11-22: a chat is almost always open; it only counts when it
-         runs something heavy, like tests). From 1 to 7 AM chats never count.
+         runs something heavy, like tests; same rule day and night).
          Overnight backlog (Brian, 2026-11-22): every night 1-7 AM the Inbox is worked through, oldest first, as
          Transcript only (no AI, no cost): see control.overnight_next.
   full   always all 4 cores.
   gentle always half the cores (about twice as long, cooler).
   night  new recordings wait until 1 AM (then full speed until done; nothing new starts after 7 AM).
+
+Warm step-down (Brian, 2026-11-22: "full speed overnight, but throttle back if it heats up"): the hottest core at 90 °C
+or more on 2 checks 5 minutes apart drops to half the cores ("Half speed: the Mac is warm") until it has stayed under
+80 °C for 5 minutes. This comes before the heat guard's pause, in every speed setting.
 
 Heat guard (separate from Brian's M14 health watcher, which never pauses Scribe Bot): the hottest core at 95 °C or more
 on 2 checks 5 minutes apart pauses processing at the next safe point (the same safe points as ❚❚ Pause) and posts
@@ -39,6 +43,7 @@ CHAT_S = 10 * 60                   # a Claude / Codex chat file written this rec
 BUSY_PCT = 150.0                   # other apps' CPU (100 = one core) above this = the Mac is busy
 NIGHT_START, NIGHT_END = 1, 7      # Night only: 1 AM to 7 AM local
 HOT_C, COOL_C = 95.0, 80.0
+WARM_C = 90.0                      # step down to half the cores first
 HOT_CHECK_S = 5 * 60               # two hot checks this far apart pause
 COOL_FOR_S = 5 * 60
 HEAT_MAX_PAUSE_S = 2 * 3600
@@ -47,7 +52,7 @@ TEMP_TOOL = "/usr/local/bin/osx-cpu-temp"
 HOME = Path.home()
 
 _state = {"threads": FULL, "last_use": 0.0, "why": "", "hot_since": None, "hot_seen": None, "cool_since": None,
-          "heat_paused_at": None}
+          "heat_paused_at": None, "warm_seen": None, "warm_cool": None}
 
 
 def _get(conn: sqlite3.Connection, key: str) -> str | None:
@@ -149,10 +154,9 @@ def _run(args: list[str], run=subprocess.run) -> str:
         return ""
 
 
-def in_use(run=subprocess.run, now: float | None = None, home: Path = HOME, night: bool | None = None) -> str:
+def in_use(run=subprocess.run, now: float | None = None, home: Path = HOME) -> str:
     """'' if nobody seems to be using the Mac, else a short reason ('keyboard or mouse', 'SSH', 'a busy Claude chat', ...)."""
     now = now or time.time()
-    night = night_window(datetime.fromtimestamp(now)) if night is None else night
     idle = parse_hid_idle(_run(["ioreg", "-c", "IOHIDSystem", "-d", "4"], run))
     if idle is not None and idle < IDLE_S:
         return "keyboard or mouse"
@@ -161,8 +165,6 @@ def in_use(run=subprocess.run, now: float | None = None, home: Path = HOME, nigh
     remote = parse_remote(_run(["ps", "-axo", "command"], run), _run(["netstat", "-an", "-p", "tcp"], run))
     if remote:
         return remote[0]
-    if night:
-        return ""   # 1-7 AM: an open chat never slows the overnight work
     chat = ("a busy Claude chat" if _recent_file(home / ".claude/projects", CHAT_S, now) else
             "a busy Codex chat" if _recent_file(home / ".codex/sessions", CHAT_S, now, depth=4) else "")
     if chat and parse_busy(_run(["ps", "-axo", "nice=,pcpu=,comm="], run)) >= BUSY_PCT:
@@ -195,6 +197,26 @@ def heat_step(conn: sqlite3.Connection, temp: float | None, now: float | None = 
     paused = _get(conn, "heat_paused") == "1"
     if temp is None:
         return None
+    warm = _get(conn, "heat_warm") == "1"   # half speed first, before any pause
+    if not warm and temp >= WARM_C:
+        if s["warm_seen"] is None:
+            s["warm_seen"] = now
+        elif now - s["warm_seen"] >= HOT_CHECK_S:
+            _set(conn, "heat_warm", "1")
+            s["warm_seen"], s["warm_cool"] = None, None
+            if not paused and temp < HOT_C:
+                return "warm"
+    elif not warm and temp < WARM_C - 5:
+        s["warm_seen"] = None
+    elif warm and temp < COOL_C:
+        s["warm_cool"] = s["warm_cool"] or now
+        if now - s["warm_cool"] >= COOL_FOR_S:
+            _set(conn, "heat_warm", None)
+            s["warm_cool"] = None
+            if not paused:
+                return "cool"
+    elif warm:
+        s["warm_cool"] = None
     if not paused:
         if temp >= HOT_C:
             if s["hot_seen"] is None:
@@ -251,7 +273,7 @@ def next_night(now: datetime | None = None) -> datetime:
 def threads_for(conn: sqlite3.Connection, use_reason: str, now: float | None = None) -> int:
     """Cores to use right now, from the setting, who's using the Mac and the heat guard's after-pause half speed."""
     now = now or time.time()
-    if float(_get(conn, "heat_gentle_until") or 0) > now:
+    if float(_get(conn, "heat_gentle_until") or 0) > now or _get(conn, "heat_warm") == "1":
         return HALF
     m = mode(conn)
     if m == "gentle":
@@ -273,6 +295,8 @@ def update(conn: sqlite3.Connection, run=subprocess.run, notify=None, now: float
     _state["threads"] = t
     if heat_paused(conn):
         label = "Paused: the Mac is hot"
+    elif _get(conn, "heat_warm") == "1":
+        label = "Half speed: the Mac is warm"
     elif mode(conn) == "night" and not night_window():
         label = "Night only: waits until 1 AM"
     elif t == HALF:

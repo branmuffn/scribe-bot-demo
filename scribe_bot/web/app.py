@@ -6,6 +6,7 @@ Form posts from other sites are refused (Origin check), so a web page can't driv
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import subprocess
 
@@ -23,8 +24,10 @@ from scribe_bot.core.secrets import KeychainStore
 
 WEB = Path(__file__).parent
 WORKER_STALE_SECONDS = 180  # the worker beats every ~30 s
-AREAS = ("all", "work", "personal")
+AREAS = ("all", "work", "personal", "school", "other")   # Brian, 2026-11-20: + School, Other
+AREA_LABELS = {"work": "Work", "personal": "Home", "school": "School", "other": "Other"}
 templates = Jinja2Templates(directory=WEB / "templates")
+templates.env.globals["area_labels"] = AREA_LABELS
 from scribe_bot.ai.prompts import MEETING_TYPES  # noqa: E402  (review cards and the confirm step list them)
 templates.env.globals["meeting_types"] = MEETING_TYPES
 # Fingerprint of the page code: base.html adds ?v=<this> to the CSS/JS links, so phones fetch the new files right after a
@@ -81,6 +84,152 @@ def day_label(d: str | None) -> str:
 
 
 templates.env.filters["day"] = day_label
+
+_MONTHS = {m: m[:3] for m in ("January", "February", "March", "April", "May", "June", "July", "August", "September",
+                              "October", "November", "December")}
+_NUMS = {w: str(i) for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
+
+
+def short_due(d: str | None) -> str:
+    """Q5 (Brian, 2026-11-21): a due date the AI wrote in words, made short for lists: 'before November 15th' ->
+    'by Nov 15', 'for the next four to six weeks' -> '4-6 wks', 'mid-July at the earliest' -> 'mid-Jul+'.
+    A real date ('2026-11-28') reads 'due Nov 28' (or today / tomorrow). Free rules, no AI."""
+    if not d:
+        return ""
+    if re.match(r"\d{4}-\d{2}-\d{2}", d):
+        return "due " + day_label(d)
+    s = " " + d.strip().rstrip(".") + " "
+    s = re.sub(r"(?i)^\s*due\s+", " ", s)
+    for long, short in _MONTHS.items():
+        s = re.sub(rf"(?i)\b{long}\b", short, s)
+    s = re.sub(r"(?i)\b(\d{1,2})(st|nd|rd|th)\b", r"\1", s)
+    for w, n in _NUMS.items():
+        s = re.sub(rf"(?i)\b{w}\b", n, s)
+    rules = [(r"(?i)\bbefore\b", "by"), (r"(?i)\bby the end of\b", "by end of"), (r"(?i)\bfor the next\b", ""),
+             (r"(?i)\bthe next\b", "next"), (r"(?i)\bat the earliest\b", "+"), (r"(?i)\bat the latest\b", ""),
+             (r"(?i)\b(\d+) to (\d+)\b", r"\1–\2"), (r"(?i)(\d) weeks?\b", r"\1 wks"), (r"(?i)(\d) months?\b", r"\1 mo"),
+             (r"(?i)\bby the\b", "by"), (r"(?i)\bor early\b", "/ early")]
+    for pat, rep in rules:
+        s = re.sub(pat, rep, s)
+    s = re.sub(r"\s+\+", "+", re.sub(r"\s+", " ", s)).strip(" ,")
+    if s.isdigit():
+        return "due " + s
+    return s if re.match(r"(?i)(by|after|early|mid|late|next|this|in|within|end|\d|[A-Z][a-z]{2}\b)", s) else "due " + s
+
+
+templates.env.filters["short_due"] = short_due
+# "Speaker 2 from Right foot injury follow-up… on Nov 13" -> "Speaker 2" in short spots (task rows); the talk is beside it
+templates.env.filters["who"] = lambda n: re.sub(r"^(Speaker \d+) from .*$", r"\1", n or "")
+templates.env.filters["sum_chars"] = lambda s: sum(ord(ch) for ch in str(s))   # avatar colors
+
+
+def date_group(ts: str | datetime | None, now: datetime | None = None) -> str:
+    """Heading for a long list grouped by date (Brian, 2026-11-20: list pages get headings, one rail tick each):
+    'This week', 'Last week', 'Earlier in November', 'October', 'October 2025'. Weeks start on Monday."""
+    if not ts:
+        return "No date"
+    try:
+        dt = ts if isinstance(ts, datetime) else datetime.fromisoformat(ts)
+    except ValueError:
+        try:
+            dt = datetime.strptime(ts[:10], "%Y-%m-%d")
+        except ValueError:
+            return "No date"
+    dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
+    today = (now or datetime.now().astimezone()).date()
+    days = (today - dt.date()).days
+    week0 = today.toordinal() - today.weekday()
+    if days < 0:
+        return "Coming up"
+    if dt.date().toordinal() >= week0:
+        return "This week"
+    if dt.date().toordinal() >= week0 - 7:
+        return "Last week"
+    if (dt.year, dt.month) == (today.year, today.month):
+        return f"Earlier in {dt:%B}"
+    return f"{dt:%B}" if dt.year == today.year else f"{dt:%B %Y}"
+
+
+templates.env.filters["date_group"] = date_group
+
+
+def group_phrase(group: str, verb: str) -> str:
+    """'Recorded this week', 'Added last week', 'Recorded in October', 'Added in October 2025'."""
+    if group == "No date":
+        return group
+    first = group.split(" ")[0]
+    return f"{verb} {group[0].lower()}{group[1:]}" if first in ("This", "Last", "Earlier", "Coming") else f"{verb} in {group}"
+
+
+templates.env.filters["group_phrase"] = group_phrase
+
+
+def short_when(ts) -> str:
+    """'Nov 19, 12:07 pm' (no weekday, no year this year): short enough for a row's second line."""
+    if not ts:
+        return ""
+    try:
+        dt = ts if isinstance(ts, datetime) else datetime.fromisoformat(ts)
+    except ValueError:
+        return str(ts)
+    dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
+    out = f"{dt:%b} {dt.day}" + (f", {dt.year}" if dt.year != datetime.now().year else "")
+    return out + ", " + dt.strftime("%-I:%M %p").lower()
+
+
+def mins(seconds) -> str:
+    """'7 s', '9 min', '1 h 4 min'."""
+    s = float(seconds or 0)
+    if s < 60:
+        return f"{round(s)} s"
+    m = round(s / 60)
+    return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
+templates.env.filters["short_when"] = short_when
+
+
+def detail_html(text: str | None):
+    """Detailed notes (## headings, - bullets) as simple HTML, every bit of text escaped."""
+    from markupsafe import Markup, escape
+    out, in_list = [], False
+    for ln in (text or "").splitlines():
+        t = ln.strip()
+        if t.startswith(("- ", "* ")):
+            if not in_list:
+                out.append("<ul>"); in_list = True
+            out.append(f"<li>{escape(t[2:])}</li>")
+            continue
+        if in_list:
+            out.append("</ul>"); in_list = False
+        if t.startswith("## "):
+            out.append(f"<h3>{escape(t[3:])}</h3>")
+        elif t:
+            out.append(f"<p>{escape(t)}</p>")
+    if in_list:
+        out.append("</ul>")
+    return Markup("".join(out))
+
+
+templates.env.filters["detail_html"] = detail_html
+templates.env.filters["mins"] = mins
+
+
+def due_group(due: str | None) -> str:
+    """Open tasks (sorted by due date) grouped: 'Overdue', 'Due this week', 'Due later', 'Rough due date' (words)."""
+    if not due:
+        return "No due date"
+    try:
+        day = datetime.strptime(due[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return "Rough due date"   # said in words ("Friday", "next year"): kept as said
+    today = datetime.now().date()
+    if day < today:
+        return "Overdue"
+    return "Due this week" if (day - today).days < 7 else "Due later"
+
+
+templates.env.filters["due_group"] = due_group
 
 
 def when_back(ts: str | None) -> str:

@@ -135,8 +135,10 @@ def test_nightly_job_alerts_on_failure_and_no_destinations(tmp_path):
     restic.add_destination(conn, "Drive 0", "gdrive-0", "t@example.com")
     jobs.nightly_backup(conn, cfg, FakeRestic(fail_repo="rclone:gdrive-0:scribe-bot-backup"))
     titles = [r[0] for r in conn.execute("SELECT title FROM notification WHERE channel = 'alerts' ORDER BY id")]
-    assert titles == ["⚠️ No backup destinations set up yet (Settings > Backups)",
-                      "🔴 Backup to Drive 0 failed (restic backup failed (exit 1))"]
+    assert titles == ["⚠️ No backup destinations set up yet (Settings > Backups)"]   # one failed night: no alert yet
+    jobs.nightly_backup(conn, cfg, FakeRestic(fail_repo="rclone:gdrive-0:scribe-bot-backup"))
+    titles = [r[0] for r in conn.execute("SELECT title FROM notification WHERE channel = 'alerts' ORDER BY id")]
+    assert titles[1:] == ["🔴 Backup to Drive 0 failed two nights in a row (restic backup failed (exit 1))"]
 
 
 def test_schedules_exposed():

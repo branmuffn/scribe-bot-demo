@@ -19,7 +19,7 @@
 {% if tab == 'current' and rows %}<form class="row history-foot" method="post" action="/notifications/dismiss-all" style="margin-bottom:var(--s2)">
   <button class="btn btn-ghost">{{ m.icon("check") }} Dismiss all</button></form>{% endif %}
 <div class="card" id="bell-list">
-  {% for n in rows %}<div class="item{{ ' tap-row' if n.link }}{{ ' swipeable' if tab == 'current' }}"><div class="item-main">
+  {% for n in rows %}<div class="item{{ ' tap-row' if n.link }}"{% if tab == 'current' %} data-sw='{{ {"l": [{"t": "Dismiss", "c": "ink", "f": 'form[action$="/dismiss"]'}]}|tojson }}'{% endif %}><div class="item-main">
     {% if n.link %}<a class="item-link" href="{{ '/notifications/%d/open'|format(n.id) if tab == 'current' else n.link }}">{{ n.title }}</a>{% else %}<div class="item-title">{{ n.title }}</div>{% endif %}
     <div class="item-sub">{% if tab == 'current' and n.created_at > seen %}<span class="badge badge-warn">New</span>{% endif %}
       <span>{{ '#scribe-alerts' if n.channel == 'alerts' else '#scribe-bot' if n.sent_at else 'In the app' }}</span><span>{{ n.created_at|local_datetime }}</span>

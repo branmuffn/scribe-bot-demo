@@ -48,11 +48,11 @@ def render(conn: sqlite3.Connection, c: sqlite3.Row) -> str:
         out += ["## Key takeaways", "", *[f"- {t}" for t in takeaways], ""]
 
     def tasks(mine: bool) -> list[str]:
-        rows = conn.execute("SELECT t.title, t.due, t.status, p.name FROM task t JOIN person p ON p.id = t.owner_person_id "
+        rows = conn.execute("SELECT t.title, t.due, t.status, t.closed_as, p.name FROM task t JOIN person p ON p.id = t.owner_person_id "
                             f"WHERE t.conversation_id = ? AND t.owner_person_id {'=' if mine else '!='} 1 AND t.status != 'dropped' "
                             "ORDER BY t.id",
                             (cid,)).fetchall()
-        return [f"- [{'x' if r['status'] == 'done' else ' '}] {r['title']}"
+        return [f"- [{'x' if r['status'] == 'done' else ' '}] {r['title']}" + (" (not needed)" if r["closed_as"] else "")
                 + ("" if mine else f" ({r['name']})") + (f" · due {r['due']}" if r["due"] else "") for r in rows]
 
     for heading, lines in (("You owe", tasks(True)), ("They owe you", tasks(False)),

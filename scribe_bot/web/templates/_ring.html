@@ -1,0 +1,5 @@
+{# The ring itself (polled every 20 s while something is processing, so the fill keeps up) #}
+<span class="sb-ring{{ ' on' if ring.active }}{{ ' paused' if ring.paused }}" style="--p:{{ ring.pct }}"
+  {%- if ring.active %} hx-get="/status/ring" hx-trigger="every 20s" hx-swap="outerHTML"{% endif %}>
+  {%- if ring.paused %}<b>❚❚</b>{% elif ring.active %}<b>{{ ring.pct }}</b>{% else %}<i class="sb-ok"></i>{% endif %}
+  {%- if ring.alert %}<span class="alert-dot" aria-hidden="true"></span>{% endif %}</span>

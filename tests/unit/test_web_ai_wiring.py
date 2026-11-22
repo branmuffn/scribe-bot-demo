@@ -34,19 +34,16 @@ def test_rerun_queues_one_approved_job(env):
     assert "AI re-run queued" in page and 'action="/conversations/1/rerun"' not in page
 
 
-def test_private_gets_ai_only_from_its_own_confirm_step(env):
-    """Transcript only now, AI later (DECISIONS 2026-10-20): Private until Brian ends it on the confirm step."""
+def test_transcript_only_talk_gets_ai_from_the_confirm_step(env):
+    """Round 7 (Brian, 2026-11-21): no Private. A talk without notes has Make AI notes, through the usual confirm step."""
     client, conn, _ = env
-    client.post("/conversations/1/private")
-    assert client.post("/conversations/1/rerun", data={"confirm": "1"}).status_code == 400   # no way around the step
-    assert jobs(conn) == [] and one(conn, "SELECT private FROM conversation WHERE id = 1") == 1
+    conn.execute("UPDATE conversation SET summary = NULL WHERE id = 1")
+    assert client.post("/conversations/1/private").status_code in (404, 405)
     page = client.get("/conversations/1").text
-    assert "Run AI now (ends Private) · ~$0.0" in page and "nothing from it goes to the AI again" in page
-    assert 'action="/conversations/1/rerun"' not in page                         # the menu only opens the confirm step
-    step = client.get("/conversations/1/rerun/confirm").text
-    assert "Private mark comes off" in step and '<input type="hidden" name="end_private" value="1">' in step
-    r = client.post("/conversations/1/rerun", data={"confirm": "1", "end_private": "1"}, follow_redirects=False)
-    assert r.status_code == 303 and one(conn, "SELECT private FROM conversation WHERE id = 1") == 0
+    assert "Make AI notes · ~$0.0" in page and 'action="/conversations/1/rerun"' not in page
+    assert "Make AI notes?" in client.get("/conversations/1/rerun/confirm").text
+    r = client.post("/conversations/1/rerun", data={"confirm": "1"}, follow_redirects=False)
+    assert r.status_code == 303
     assert jobs(conn) == [("ai_rerun", {"conversation_id": 1, "approved": True}, "pending")]
 
 
@@ -116,7 +113,9 @@ def test_free_gemini_account_is_marked_may_train(env):
 def test_profile_picker(env):
     client, conn, _ = env
     page = client.get("/settings/ai").text
-    assert "All Claude (default)" in page and "Quality Mix" in page
+    # R1 cards: only companies with a key are listed (the test env has none, so just the current model's card shows)
+    assert 'value="all_claude"' in page and "Claude Sonnet" in page and "per meeting" in page
+    assert "Only models with a connected key are listed" in page
     client.post("/settings/profile", data={"profile": "budget_mix"})
     assert one(conn, "SELECT value FROM setting WHERE key = 'ai_profile'") == "budget_mix"
     assert client.post("/settings/profile", data={"profile": "nope"}).status_code == 400
@@ -146,3 +145,29 @@ def test_pause_toggle_banner_and_worker(env, monkeypatch, tmp_path):
     assert "Processing is paused" not in client.get("/").text
     worker.tick(conn, cfg, logging.getLogger("test"))
     assert ran == [1]
+
+
+def test_compare_button_confirm_queue_and_pick(env, monkeypatch):
+    client, conn, _ = env
+    page = client.get("/conversations/1").text
+    assert "Compare with Claude" in page and "/conversations/1/compare/confirm" in page
+    r = client.post("/conversations/1/compare", follow_redirects=False)              # first tap only shows the cost
+    assert r.headers["location"] == "/conversations/1/compare/confirm" and jobs(conn) == []
+    assert "This will cost about" in client.get("/conversations/1/compare/confirm").text
+    client.post("/conversations/1/compare", data={"confirm": "1"})
+    client.post("/conversations/1/compare", data={"confirm": "1"})                    # double click: one job
+    assert jobs(conn) == [("ai_compare", {"conversation_id": 1}, "pending")]
+    assert "Its version appears here" in client.get("/conversations/1").text
+    assert worker.PIPELINES[ai_jobs.COMPARE_KIND] is ai_jobs.COMPARE_PIPELINE
+    # a finished compare: both shown side by side; keeping the current one throws the other away
+    conn.execute("DELETE FROM job")
+    data = {"title": None, "area": None, "area_confidence": None, "summary": "Other model summary", "decisions": [],
+            "tasks": [{"title": "Other task", "owner": "Brian", "line": 0}], "waiting_on": [], "people_facts": []}
+    conn.execute("INSERT INTO setting (key, value) VALUES ('compare:1', ?)",
+                 (json.dumps({"by": "Brian personal:claude-haiku-5-5", "data": data, "cost_usd": 0.002, "at": "x"}),))
+    assert "Compare side by side" in client.get("/conversations/1").text
+    cmp = client.get("/conversations/1/compare").text
+    assert "Other model summary" in cmp and "Other task" in cmp and "Claude Haiku" in cmp
+    client.post("/conversations/1/compare/keep", data={"which": "current"})
+    assert one(conn, "SELECT count(*) FROM setting WHERE key = 'compare:1'") == 0
+    assert client.get("/conversations/1/compare", follow_redirects=False).status_code == 303

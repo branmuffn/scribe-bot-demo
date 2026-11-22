@@ -2,12 +2,11 @@
 {% import "macros.html" as m with context %}
 {% block title %}Review · Scribe Bot{% endblock %}
 {% block body %}
-<div class="page-head"><div><h1>Review</h1><div class="meta">Everything that needed you, like an inbox. Nothing just disappears:
-  dismissed items can be restored.</div></div></div>
+<div class="page-head"><div><h1>Review</h1><div class="meta">Everything that needed you. Dismissed items can be restored.</div></div></div>
 <nav class="tabs" aria-label="Review">
   {% for key, label in [("open", "Open"), ("snoozed", "Snoozed"), ("done", "Done"), ("dismissed", "Dismissed")] %}
   <a href="/review?tab={{ key }}" class="{{ 'on' if tab == key }}" {{ 'aria-current=page' if tab == key }}>{{ label }}
-    <span class="n">{{ needs_count if key == 'open' else counts[key] }}</span></a>{% endfor %}
+    {% set nn = needs_count if key == 'open' else counts[key] %}{% if nn %}<span class="n">{{ nn }}</span>{% endif %}</a>{% endfor %}
 </nav>
 {% if tab == 'open' %}{% include "_review.html" %}
 {% elif tab == 'snoozed' %}

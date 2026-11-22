@@ -108,7 +108,10 @@ def test_edit_in_place_one_field_at_a_time(env):
     assert one(conn, "SELECT summary || '|' || takeaways FROM conversation WHERE id = 1") == before   # untouched
     assert "Renamed the conversation" in client.get("/conversations/1").text                         # undo bar label
     page = client.get("/conversations/1").text                    # the task's in-place edit carries its owner and due date
-    assert 'data-edit-url="/tasks/2/edit"' in page and "\"owner\": 2" in page.split('data-edit-url="/tasks/2/edit"')[1][:400]
+    # 2026-11-21: a task's edit lives in its sheet (tap the task), with its owner kept
+    assert 'action="/tasks/2/edit"' in page or 'hx-post="/tasks/2/edit"' in page
+    sheet = page.split('id="ts-2"')[1].split('id="task-')[0]
+    assert '/tasks/2/edit' in sheet and 'name="owner" value="2"' in sheet
     client.post("/tasks/2/edit", data={"title": "Send the budget today", "owner": 2, "due": ""})
     assert one(conn, "SELECT owner_person_id FROM task WHERE id = 2") == 2
     client.post("/conversations/1/private")
@@ -125,4 +128,4 @@ def test_edit_a_people_note_in_place_and_whole_card_opens(env):
     assert one(conn, "SELECT text FROM search_index WHERE kind = 'fact' AND ref_id = ?", fid).endswith("(a beagle)")
     client.post(f"/undo/{last_undo(conn)}")
     assert one(conn, "SELECT value FROM person_fact WHERE id = ?", fid) == "Has a dog named Biscuit"
-    assert 'class="item tap-row"' in client.get("/conversations").text
+    assert 'class="item tap-row conv-row"' in client.get("/conversations").text

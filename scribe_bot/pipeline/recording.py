@@ -26,6 +26,8 @@ KEEP_ORIGINAL_DAYS = 30
 
 # --- helpers ---
 
+
+
 def _recording(ctx: StageContext) -> sqlite3.Row:
     return ctx.conn.execute("SELECT * FROM recording WHERE id = ?", (ctx.recording_id,)).fetchone()
 
@@ -56,30 +58,58 @@ def _set_status(conn: sqlite3.Connection, conversation_id: int, status: str) -> 
     conn.execute("UPDATE conversation SET status = ?, updated_at = ? WHERE id = ?", (status, now(), conversation_id))
 
 
+GENERIC = "Conversation"
+
+
+def peek_title(conn: sqlite3.Connection, rec_id: int) -> str:
+    """The Inbox's quick title from the first 2 minutes, if there is one."""
+    from scribe_bot.web import inbox as inbox_svc
+    row = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (rec_id,)).fetchone()
+    return inbox_svc.quick_title(row[0], min_count=1) if row and row[0] else ""
+
+
+def transcript_title(conn: sqlite3.Connection, conv_id: int) -> str:
+    """Most-used words of the whole transcript ("Budget, venue, kickoff"): a talk without AI notes still gets a title
+    that tells it apart from the others (Brian, 2026-11-21: a private talk just said "Conversation")."""
+    from scribe_bot.web import inbox as inbox_svc
+    text = "\n".join(r[0] for r in conn.execute("SELECT text FROM segment WHERE conversation_id = ? ORDER BY idx", (conv_id,)))
+    return inbox_svc.quick_title(text) if text else ""
+
+
+def retitle_plain(conn: sqlite3.Connection) -> int:
+    """Give talks still called just "Conversation" (no AI title) their transcript's quick title. Returns how many."""
+    n = 0
+    for (cid,) in conn.execute("SELECT id FROM conversation WHERE title = ? AND deleted_at IS NULL AND status IN "
+                               "('transcribed', 'extracted', 'done')", (GENERIC,)).fetchall():
+        t = transcript_title(conn, cid)
+        if t:
+            conn.execute("UPDATE conversation SET title = ? WHERE id = ?", (t, cid))
+            n += 1
+    return n
+
+
 # --- stages ---
 
 def _no_ai(ctx: StageContext) -> bool:
-    """"Transcript Only (No AI)" or an explicit private flag on the job: the conversation is Private for good."""
+    """Transcript only: the AI step is skipped. Nothing is locked (Brian, 2026-11-21: no more Private); "Make AI notes"
+    on the talk later runs the same AI step, so the end result is the same as picking AI notes from the start."""
     return ctx.payload.get("ai") is False or bool(ctx.payload.get("private"))
-
-
-def _make_private(ctx: StageContext) -> None:
-    ctx.conn.execute("UPDATE recording SET private = 1 WHERE id = ?", (ctx.recording_id,))
-    ctx.conn.execute("UPDATE conversation SET private = 1, updated_at = ? WHERE recording_id = ?", (now(), ctx.recording_id))
 
 
 def audio(ctx: StageContext) -> str:
     rec = _recording(ctx)
     t = now()
-    # Title until the AI writes a topic title: the Recorder name without its date ("Conversation" if it was only a date).
+    # Title until the AI writes a topic title: the Recorder name without its date, else the Inbox's quick title (so you
+    # can tell what's processing, Brian 2026-11-21), else "Conversation".
+    title = recorder_names.fallback_title(rec["title"] or "")
+    if title == GENERIC:
+        title = peek_title(ctx.conn, rec["id"]) or GENERIC
     ctx.conn.execute(
         "INSERT OR IGNORE INTO conversation (recording_id, title, started_at, duration_s, private, status, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, 'transcribing', ?, ?)",
-        (rec["id"], recorder_names.fallback_title(rec["title"] or ""), ctx.payload.get("started_at"), rec["duration_s"],
+        (rec["id"], title, ctx.payload.get("started_at"), rec["duration_s"],
          rec["private"], t, t),
     )
-    if _no_ai(ctx):
-        _make_private(ctx)
     ctx.conn.execute("UPDATE recording SET status = 'processing' WHERE id = ?", (rec["id"],))
     started_ping(ctx, rec["duration_s"])
     return str(_wav(ctx))
@@ -88,22 +118,49 @@ def audio(ctx: StageContext) -> str:
 def started_ping(ctx: StageContext, duration_s: float | None) -> None:
     """One 'Processing started · N min recording · ready ~4:09 pm' per job (never the title). Safe on re-runs."""
     link = f"/?job={ctx.job_id}"
+    return   # Brian, 2026-11-21: no "Processing started" note ("Ready" follows; the top-bar ring shows progress)
     if ctx.conn.execute("SELECT 1 FROM notification WHERE link = ?", (link,)).fetchone():
         return
     eta = datetime.now(timezone.utc) + timedelta(seconds=progress.estimate(ctx.conn, duration_s)["total_s"])
     notify.enqueue(ctx.conn, "bot", f"Processing started · {round((duration_s or 0) / 60, 1)} min recording · "
                                     f"ready ~{progress.local_time(eta)}", link, discord=False)   # app only (Brian 2026-10-22)
+    # Brian, 2026-11-21 (round 7): the long-recording Discord message is gone; ❚❚ Pause / ▶ Resume live on the M14 board.
+
+
+def _stop(ctx: StageContext):
+    return lambda: queue.hold_requested(ctx.conn)
 
 
 def transcribe(ctx: StageContext) -> str:
+    """Pausable (Brian, 2026-11-21): finished pieces are kept in transcript.partial.json, so Resume carries on."""
     eng = speech.engine()
-    return _save(ctx, "transcript.json", eng.transcribe(eng.load(_wav(ctx))))
+    samples = eng.load(_wav(ctx))
+    if not getattr(eng, "pausable", False):
+        return _save(ctx, "transcript.json", eng.transcribe(samples))
+    part = ctx.work_dir / "transcript.partial.json"
+    done = _json(part) if part.exists() else []
+    try:
+        out = eng.transcribe(samples, done=done, stop=_stop(ctx), save=lambda o: _save(ctx, part.name, o))
+    except speech.Stopped:
+        raise queue.Paused()
+    saved = _save(ctx, "transcript.json", out)
+    part.unlink(missing_ok=True)
+    return saved
 
 
 def diarize(ctx: StageContext) -> str:
-    """Automatic speaker count, unless the job forces one (the "This was a 1:1" button re-runs with speakers=2)."""
+    """Automatic speaker count, unless the job forces one (the "This was a 1:1" button re-runs with speakers=2).
+    Pause ends the separation; it starts over on Resume (it can't be saved part way)."""
     eng = speech.engine()
-    return _save(ctx, "speakers_auto.json", eng.diarize(eng.load(_wav(ctx)), ctx.payload.get("speakers")))
+    samples = eng.load(_wav(ctx))
+    if not getattr(eng, "pausable", False):
+        return _save(ctx, "speakers_auto.json", eng.diarize(samples, ctx.payload.get("speakers")))
+    if queue.hold_requested(ctx.conn):
+        raise queue.Paused()
+    try:
+        return _save(ctx, "speakers_auto.json", eng.diarize(samples, ctx.payload.get("speakers"), stop=_stop(ctx)))
+    except speech.Stopped:
+        raise queue.Paused()
 
 
 def _identify_turns(samples, turns: list[dict], prints) -> tuple[dict, dict, dict]:
@@ -152,7 +209,7 @@ def identify_stage(ctx: StageContext) -> str:
             elif pid != identify.ME and score < identify.CONFIRM_BELOW:  # a weak match: keep the name, ask to confirm
                 unknown.append((sid, cluster, pid))
         picked = ctx.payload.get("type")  # Brian's pick when he approved it
-        kind = picked or {0: None, 1: "voice_note", 2: "1:1"}.get(len(talk), "multi")
+        kind = picked or {0: None, 1: "personal", 2: "1:1"}.get(len(talk), "multi")
         ctx.conn.execute("UPDATE conversation SET type = ?, type_chosen = ?, updated_at = ? WHERE id = ?",
                          (kind, 1 if picked else 0, now(), conv_id))
 
@@ -210,6 +267,10 @@ def file_stage(ctx: StageContext) -> str:
         archive.parent.mkdir(parents=True, exist_ok=True)
         speech.engine().to_archive(Path(rec["vault_path"]), archive)
     ctx.conn.execute("UPDATE recording SET archive_path = ? WHERE id = ?", (str(archive), rec["id"]))
+    if conv["title"] in (GENERIC, peek_title(ctx.conn, rec["id"])):   # the whole talk's words beat the first 2 minutes'
+        better = transcript_title(ctx.conn, conv_id)
+        if better:
+            ctx.conn.execute("UPDATE conversation SET title = ? WHERE id = ?", (better, conv_id))
     _set_status(ctx.conn, conv_id, "transcribed")
     return str(out)
 
@@ -217,7 +278,6 @@ def file_stage(ctx: StageContext) -> str:
 def ai_extract(ctx: StageContext) -> str:
     conv_id = _conversation_id(ctx)
     if _no_ai(ctx):
-        _make_private(ctx)  # Transcript Only (No AI): never sent to AI, now or later
         return "skipped_transcript_only"
     if ctx.conn.execute("SELECT private FROM conversation WHERE id = ?", (conv_id,)).fetchone()[0]:
         return "skipped_private"  # Private meetings never leave the M14

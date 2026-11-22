@@ -96,11 +96,11 @@ def test_today_shows_only_what_needs_brian(env):
     assert "Review the launch deck" in page                                      # Brian's overdue task
     assert 'href="/speaking"' in page                                            # Your week › Your speaking
     assert "Send the budget" not in page                                         # someone else's, not late: lives in Tasks
-    assert 'id="needs-you"' in page and "Needs you · 3" in page                    # Review lives on Today now
-    assert "Speakers to name" in page and 'action="/speakers/' in page and "Glossary suggestions" in page
+    assert 'id="needs-you"' in page and '<h2>Needs you</h2><span class="count">3</span>' in page                    # redesign 2026-11-21: one line each, acted on where they live
+    assert "Name 1 speaker" in page and 'href="/conversations/1#speakers"' in page and "1 glossary suggestion" in page
     assert "Cloud approvals" not in page                                          # empty groups are hidden
     assert "Speakers to name" in client.get("/review").text                       # old Discord links still open Review
-    assert "Recent conversations" not in page and "AI spend" not in page          # one tap away, not on Today
+    assert "AI spend" not in page          # one tap away, not on Today
     conn.execute("UPDATE task SET due = '2020-01-01' WHERE id = 2")                # now Alex is late
     assert "Late promises to you" in client.get("/").text and "Send the budget" in client.get("/").text
 
@@ -139,7 +139,7 @@ def test_conversation_page_follows_output_design(env):
     assert '<details class="section transcript" id="transcript">' in page   # collapsed
     assert 'data-seek="9.5"' in page                                   # tap to play
     assert "Has a dog named Biscuit" in page
-    assert "Speaker 3" in page and "Who is this?" in page              # unnamed speaker can be named here
+    assert "Speaker 3" in page and "not named yet" in page             # unnamed speaker can be named here
 
 
 def test_area_toggle_filters_and_is_remembered(env):
@@ -157,20 +157,6 @@ def test_change_area(env):
     assert one(conn, "SELECT area FROM conversation WHERE id = 1") == "personal"
     assert one(conn, "SELECT area_confidence FROM conversation WHERE id = 1") == 1
     assert one(conn, "SELECT count(*) FROM task WHERE conversation_id = 1 AND area = 'personal'") == 3
-
-
-def test_mark_private_keeps_ai_notes_and_blocks_more_ai(env):
-    client, conn, _ = env
-    before = {t: one(conn, f"SELECT count(*) FROM {t} WHERE conversation_id = 1") for t in ("task", "decision", "person_fact")}
-    client.post("/conversations/1/private")
-    assert one(conn, "SELECT private FROM conversation WHERE id = 1") == 1
-    assert one(conn, "SELECT private FROM recording WHERE id = 1") == 1
-    assert one(conn, "SELECT summary FROM conversation WHERE id = 1") is not None          # kept (Brian 2026-10-22)
-    assert {t: one(conn, f"SELECT count(*) FROM {t} WHERE conversation_id = 1") for t in before} == before
-    from scribe_bot.ai import extract
-    assert extract.estimate_cost(conn, 1)["blocked"]                                       # no more AI
-    page = client.get("/conversations/1").text
-    assert "Private conversation" in page and "badge-private" in page
 
 
 def test_task_actions_feed_ratings(env):
@@ -339,8 +325,9 @@ def test_null_origin_posts_refused(env, headers, ok):
     """2026-10-22 review: "null" origins were let through, so any web page Brian opened (while on Tailscale) could post
     to the app: e.g. Run AI now on a Private conversation. Only the share target may post without an origin."""
     client, conn, _ = env
-    r = client.post("/conversations/1/private", headers=headers, follow_redirects=False)
-    assert (r.status_code != 403) == ok and one(conn, "SELECT private FROM conversation WHERE id = 1") == int(ok)
+    r = client.post("/processing/pause", headers=headers, follow_redirects=False)   # round 7: Mark private is gone
+    paused = conn.execute("SELECT value FROM setting WHERE key = 'pipeline_paused'").fetchone()
+    assert (r.status_code != 403) == ok and (paused is not None and paused[0] == "1") == ok
 
 
 def test_share_target_still_accepts_the_phone(env):
@@ -398,11 +385,11 @@ def test_design_basics(env):
     assert 'class="sidebar"' in page and 'class="tabbar"' in page and 'href="#content"' in page
     assert 'aria-label="3 need you"' in page   # speaker + inbox + glossary in the seed, counted on the Today tab
     assert page.count('class="tabbar"') == 1 and ">Talks" in page and "/more" not in page.split('class="tabbar"')[1]
-    assert 'class="side-search"' in page and 'class="row-menu head-menu"' in page and "Dark mode" not in page
-    for path, tab in (("/people/2", "/conversations"), ("/decisions", "/tasks"), ("/review", "/")):   # sub-pages light up their tab
+    assert 'class="side-search"' in page and 'class="fx-sheet st-sheet"' in page and "Dark mode" not in page
+    for path, tab in (("/people/2", "/people"), ("/decisions", "/tasks"), ("/review", "/")):   # sub-pages light up their tab
         assert f'<a href="{tab}" class="on"' in client.get(path).text
     talks = client.get("/conversations").text
-    assert 'href="/capture"' in talks and 'aria-label="Talks"' in talks and 'href="/people"' in talks   # ＋ and the People sub-tab
+    assert 'href="/capture"' in talks and 'href="/people"' in talks and 'aria-label="Talks"' not in talks   # ＋; People is its own tab (M2-A)
     r = client.get("/decisions", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/tasks?tab=decisions"
     assert 'id="decision-list"' in client.get("/tasks?tab=decisions").text
@@ -438,7 +425,7 @@ def test_accounts_and_test_button_use_m3(env, monkeypatch):
 def test_shared_audio_goes_into_the_recording_pipeline(env):
     client, conn, cfg = env
     r = client.post("/capture/share", data={"title": "Recording 12"}, files={"files": ("Recording 12.m4a", b"audio", "audio/mp4")})
-    assert "shows up in Review" in r.text
+    assert "shows up in the" in r.text
     assert [p.name for p in (cfg.data_dir / "uploads").iterdir()] == ["Recording 12.m4a"]   # the folder ingest watches
     assert one(conn, "SELECT count(*) FROM capture WHERE kind = 'voice'") == 0               # not parked in Capture
 
@@ -451,13 +438,15 @@ def test_sharing_an_older_recording_puts_it_in_review(env, tmp_path):
     conn.execute("INSERT INTO recording (id, source, original_path, sha256, duration_s, received_at, status, title) "
                  "VALUES (50, 'recorder', ?, ?, 1026, '2026-10-19T18:58:35+00:00', 'backlog', 'Recording 2')",
                  (str(orig), hashlib.sha256(audio).hexdigest()))
-    assert "Older recordings" in client.get("/review").text and 'action="/recordings/50/review"' in client.get("/review").text
+    inbox = client.get("/inbox").text                                              # older recordings live in the Inbox
+    assert ">older<" in inbox and 'action="/recordings/50/review"' in inbox   # in the row's sheet
     r = client.post("/capture/share", files={"files": ("Recording 2.m4a", audio, "audio/mp4")})
-    assert "never processed" in r.text and "now in Review" in r.text
+    assert "never processed" in r.text and "now in the Inbox" in r.text
     assert one(conn, "SELECT status FROM recording WHERE id = 50") == "awaiting_approval"
     assert one(conn, "SELECT count(*) FROM review_item WHERE kind = 'approval' AND ref_id = 50 AND status = 'open'") == 1
     assert list((cfg.data_dir / "uploads").iterdir()) == []                       # our duplicate copy is removed
-    assert 'id="older"' not in client.get("/review").text                          # it moved up to "waiting for your OK"
+    inbox = client.get("/inbox").text                                              # now waiting for its OK, same page
+    assert 'action="/recordings/50/review"' not in inbox and ">AI notes<" in inbox
     again = client.post("/capture/share", files={"files": ("Recording 2.m4a", audio, "audio/mp4")})
     assert "already has this recording" in again.text                              # shared twice: said plainly
     assert client.post("/recordings/50/review").status_code == 404                  # no longer an older recording
@@ -471,7 +460,7 @@ def test_talk_time_follows_reassigned_lines_and_shows_on_person_page(env):
     page = client.get("/conversations/1").text
     assert "Alex Example</span> 75%" in page and "12 s · 1 turn" in page
     person = client.get("/people/2").text
-    assert 'id="talk-time"' in person and "1 conversation" in person and "Alex Example 75%, you 0%" in person
+    assert 'id="talk-time"' in person and "Alex 75% · you 0%" in person
     assert 'id="talk-time"' not in client.get("/people/1").text                 # not on Brian's own page
 
 
@@ -496,24 +485,24 @@ def test_needs_you_later_and_dismiss(env):
     client, conn, _ = env
     rid = conn.execute("SELECT id FROM review_item WHERE kind = 'glossary' AND status = 'open'").fetchone()[0]
     page = client.get("/").text
-    assert f'action="/review/{rid}/later"' in page and f'action="/review/{rid}/dismiss"' in page and "Needs you · 3" in page
+    assert "1 glossary suggestion" in page and '<h2>Needs you</h2><span class="count">3</span>' in page
+    review = client.get("/review").text
+    assert f'action="/review/{rid}/later"' in review and f'action="/review/{rid}/dismiss"' in review
     client.post(f"/review/{rid}/later")
     page = client.get("/").text
-    assert "Glossary suggestions" not in page and "Needs you · 2" in page and 'aria-label="2 need you"' in page
-    snoozed = page.split('id="snoozed"')[1]                                    # still in view, under Snoozed
-    assert "Zephyr" in snoozed and "Glossary suggestion" in snoozed and "back tomorrow 8:00 am" in snoozed
-    assert f'action="/review/{rid}/now"' in snoozed
+    assert "glossary suggestion" not in page and '<h2>Needs you</h2><span class="count">2</span>' in page and 'aria-label="2 need you"' in page
+    assert "1 snoozed" in page and 'href="/review?tab=snoozed"' in page               # still in view: one line, to Review › Snoozed
     assert "Glossary suggestions" not in client.get("/review").text                 # Review › Open = Needs you
     review = client.get("/review?tab=snoozed").text
     assert "Glossary suggestions" in review and "Snoozed · back tomorrow 8:00 am" in review and f'action="/review/{rid}/now"' in review
     client.post(f"/review/{rid}/now")
-    assert "Glossary suggestions" in client.get("/").text
+    assert "1 glossary suggestion" in client.get("/").text
     client.post(f"/review/{rid}/dismiss")
     assert "Glossary suggestions" not in client.get("/review").text
     dismissed = client.get("/review?tab=dismissed").text                          # the log keeps it, with Restore
     assert "Zephyr" in dismissed and "Dismissed" in dismissed and f'action="/review/{rid}/restore"' in dismissed
     client.post(f"/review/{rid}/restore")
-    assert "Glossary suggestions" in client.get("/").text and client.post(f"/review/{rid}/restore").status_code == 400
+    assert "1 glossary suggestion" in client.get("/").text and client.post(f"/review/{rid}/restore").status_code == 400
     assert client.post("/needs/nope/later").status_code == 404
 
 
@@ -546,16 +535,17 @@ def test_summary_templates_per_meeting_type(env):
 def test_area_toggle_applies_to_counts_everywhere(env):
     client, conn, _ = env
     work = client.get("/tasks?area=work").text
-    assert 'Waiting on <span class="n">1</span>' in work and 'Inbox <span class="n">1</span>' in work
+    assert 'Waiting <span class="n">1</span>' in work and 'Unsure <span class="n">1</span>' in work
     home = client.get("/tasks?area=personal").text
-    assert 'Waiting on <span class="n">0</span>' in home and 'Mine <span class="n">0</span>' in home
-    assert 'Inbox <span class="n">1</span>' in home                              # not filed yet: shows under both
+    assert 'Waiting <span class="n">0</span>' in home and 'Mine <span class="n">0</span>' in home
+    assert 'Unsure <span class="n">1</span>' in home                              # not filed yet: shows under both
     assert "Send the budget" not in client.get("/people/2?area=personal").text
     assert "owes you" not in client.get("/people?area=personal").text
 
 
 def test_today_badge_matches_needs_you_and_follows_the_toggle(env):
-    """One number: the Today tab badge = "Needs you · N" = the rows there (review items, older recordings, old tasks)."""
+    """One number: the Today tab badge = "Needs you · N" = the rows there (review items, old tasks). Recordings, older
+    ones too, count on the Inbox tab instead."""
     client, conn, _ = env
     t = db.now()
     conn.execute("INSERT INTO task (title, owner_person_id, status, created_at, updated_at, stale_at) "
@@ -563,11 +553,12 @@ def test_today_badge_matches_needs_you_and_follows_the_toggle(env):
     conn.execute("INSERT INTO recording (source, original_path, sha256, received_at, status, title) "
                  "VALUES ('recorder', '/x/old.m4a', 'old1', ?, 'backlog', 'Older one')", (t,))
     page = client.get("/").text
-    assert "Needs you · 5" in page and 'aria-label="5 need you"' in page        # speaker + inbox + glossary + older + old tasks
+    assert '<h2>Needs you</h2><span class="count">4</span>' in page and 'aria-label="4 need you"' in page        # speaker + unsure task + glossary + old tasks
+    assert 'aria-label="1 waiting"' in page                                      # the older recording: Inbox tab
     home = client.get("/?area=personal").text                                    # conversation 1 is Work
-    assert "Needs you · 3" in home and 'aria-label="3 need you"' in home and "Speakers to name" not in home
-    assert "Glossary suggestions" in home                                        # no conversation: shows under both
-    assert 'aria-label="3 need you"' in client.get("/tasks").text                # every page, same toggle (cookie)
+    assert '<h2>Needs you</h2><span class="count">2</span>' in home and 'aria-label="2 need you"' in home and "speaker" not in home.split('id="needs-you"')[1].split("</section>")[0]
+    assert "1 glossary suggestion" in home                                        # no conversation: shows under both
+    assert 'aria-label="2 need you"' in client.get("/tasks").text                # every page, same toggle (cookie)
 
 
 def test_snooze_choices_and_lines(env):
@@ -589,14 +580,7 @@ def test_snooze_choices_and_lines(env):
     assert client.post(f"/review/{rid}/later", data={"until": "pick", "at": "2020-01-01T08:00"}).status_code == 400
     assert client.post(f"/review/{rid}/later", data={"until": "pick", "at": "soon"}).status_code == 400
     client.post(f"/review/{rid}/later", data={"until": "1h"})
-    assert "Zephyr" in client.get("/").text.split('id="snoozed"')[1]
-    conn.execute("INSERT INTO recording (source, original_path, sha256, received_at, status, title) "
-                 "VALUES ('recorder', '/x/old.m4a', 'old1', ?, 'backlog', 'Older one')", (db.now(),))
-    client.post("/needs/older/later", data={"until": "monday"})
-    snoozed = client.get("/").text.split('id="snoozed"')[1]
-    assert "1 older recording not processed yet" in snoozed and 'action="/needs/older/now"' in snoozed
-    client.post("/needs/older/now")
-    assert "1 older recording not processed yet" in client.get("/").text.split('id="needs-you"')[1].split('id="snoozed"')[0]
+    assert "Zephyr" in client.get("/review?tab=snoozed").text and "1 snoozed" in client.get("/").text
     assert client.post("/needs/nope/now").status_code == 404
 
 
@@ -612,10 +596,10 @@ def test_review_log_restores_what_was_dismissed(env):
     client.post(f"/review/{rid}/dismiss")                                         # Skip
     assert one(conn, "SELECT status FROM recording WHERE id = 9") == "declined"
     log = client.get("/review?tab=dismissed").text
-    assert "Recording waiting for your OK" in log and "Skipped" in log
+    assert "Recording waiting for your OK" in log and "Deleted" in log   # was "Skipped" (renamed Delete, Brian 2026-11-21)
     client.post(f"/review/{rid}/restore")
     assert one(conn, "SELECT status FROM recording WHERE id = 9") == "awaiting_approval"
-    assert "Recordings waiting for your OK" in client.get("/").text
+    assert "Oct 19 at 16:40" in client.get("/inbox").text
     client.post("/tasks/3/delete")                                               # the Inbox task: Wrong, remove
     inbox = one(conn, "SELECT id FROM review_item WHERE kind = 'inbox'")
     assert "Removed" in client.get("/review?tab=dismissed").text
@@ -653,8 +637,8 @@ def test_today_spend_starts_at_local_midnight(env):
 
 def test_waiting_on_quick_add_asks_who(env):
     client, conn, _ = env
-    page = client.get("/tasks?tab=waiting").text.split('class="quick-add"')[1].split("</form>")[0]
-    assert '<option value="">Who owes it?</option>' in page and "required" in page and ">Me<" not in page
+    page = client.get("/tasks?tab=waiting").text.split('class="fx-sheet add-sheet"')[1].split("</form>")[0]   # the + sheet
+    assert '<option value="">Pick…</option>' in page and "required" in page and ">Me<" not in page
     assert client.post("/tasks", data={"title": "Synthetic", "owner": ""}).status_code == 400
     assert client.post("/tasks", data={"title": "Synthetic", "owner": "999"}).status_code == 400
     client.post("/tasks", data={"title": "Send the synthetic slides", "owner": "2"})
@@ -674,7 +658,9 @@ def test_tasks_inbox_and_old_views_and_same_wording(env):
     assert 'aria-label="Open or done"' in client.get("/tasks?tab=mine").text
     old = client.get("/tasks?show=old").text
     assert "Old tasks to check" in old and 'class="on" aria-current=page' not in old.split('aria-label="Task lists"')[1].split("</nav>")[0]
-    assert "Keep · Work" in client.get("/").text and "Keep · Work" in client.get("/tasks?tab=inbox").text
+    unsure = client.get("/tasks?tab=inbox").text                                      # one line: area tag, ✓, ✕
+    assert 'class="tag-pick"' in unsure and 'aria-label="Keep: ' in unsure and "Keep · Work" not in unsure
+    assert 'href="/tasks?tab=inbox"' in client.get("/").text
 
 
 def test_status_page_keeps_the_page_frame(env):
@@ -711,7 +697,7 @@ def test_search_groups_by_conversation_with_tabs_filters_and_one_conversation(en
     client, conn, _ = env
     page = client.get("/search?q=budget").text
     assert 'class="card result-group"' in page and 'href="/conversations/1">' in page and "in 1 conversation" in page
-    assert ">Lines <span class=\"n\">" in page and ">People <span class=\"n\">0</span>" in page   # tab counts
+    assert ">Lines <span class=\"n\">" in page and ">People <span class=\"n\">0</span>" not in page   # tab counts (0 hidden, 2026-11-21: tabs fit)
     said = conn.execute("SELECT sp.person_id FROM segment g JOIN speaker sp ON sp.id = g.speaker_id "
                         "WHERE g.text LIKE '%budget%'").fetchone()[0]
     other = conn.execute("SELECT id FROM person WHERE id != ?", (said,)).fetchone()[0]
@@ -730,7 +716,7 @@ def test_boxes_are_clickable_like_conversation_rows(env):
     """Every box that leads somewhere opens it with a tap anywhere on it (tap-row + one stretched link)."""
     client, conn, _ = env
     people = client.get("/people").text
-    assert 'class="item tap-row"><div class="item-main"><a class="item-link" href="/people/2"' in people
+    assert '<a class="item-link" href="/people/2"' in people and 'class="item tap-row person-row"' in people
     assert 'class="item tap-row"' in client.get("/help").text
     conn.execute("UPDATE task SET due = '2020-01-01' WHERE id = 2")                   # a late promise to Brian
     assert 'class="item-link" href="/conversations/1#L2">Send the budget' in client.get("/").text
@@ -745,7 +731,7 @@ def test_tiles_reuse_the_m14_layout(env):
     page = client.get("/conversations/1").text.split('id="sec-speaking"')[1]
     assert page.count('class="tile') >= 4 and "Pace" in page and 'class="light' in page
     person = client.get("/people/2").text
-    assert 'id="talk-time"' in person and 'href="#person-open"' in person and "1 overdue" in person   # Review the launch deck
+    assert 'id="talk-time"' in person and 'href="#person-open"' in person and "1 late" in person   # Review the launch deck
     costs = client.get("/costs").text
     assert "This month" in costs and "Good under 50%" in costs and 'class="light ok"' in costs
 
@@ -766,19 +752,19 @@ def test_older_recordings_are_test_meetings(env, tmp_path):
     orig = tmp_path / "Oct 2 at 10_15.m4a"; orig.write_bytes(b"synthetic older audio")
     conn.execute("INSERT INTO recording (id, source, original_path, sha256, duration_s, received_at, status, title) "
                  "VALUES (60, 'recorder', ?, 'old60', 600, ?, 'backlog', 'Oct 2 at 10_15')", (str(orig), db.now()))
-    page = client.get("/review").text
-    assert "Use as a new recording" in page and "Oct 2 at 10:15" in page and "test meeting" in page
-    assert "Use as a new recording" in client.get("/help").text
+    page = client.get("/inbox").text
+    assert "Get it ready" in page and "Oct 2 at 10:15" in page and ">older<" in page
+    assert "Get it ready" in client.get("/help").text
     client.post("/recordings/60/review")
     assert one(conn, "SELECT status FROM recording WHERE id = 60") == "awaiting_approval"
-    assert "Recordings waiting for your OK" in client.get("/").text                 # like one that just arrived
+    assert ">AI notes<" in client.get("/inbox").text                 # like one that just arrived
 
 
 def test_history_is_one_tap_from_today_and_explained_in_help(env):
     client = env[0]
     assert 'href="/review?tab=done"' in client.get("/").text
     help_page = client.get("/help").text
-    assert "Snoozed" in help_page and "Trash (at the bottom of Conversations)" in help_page and "Restore" in help_page
+    assert "Snoozed" in help_page and "Trash (at the bottom of Talks)" in help_page and "Restore" in help_page
 
 
 def test_search_history_lives_in_search(env):
@@ -832,16 +818,18 @@ def test_today_has_your_week_tiles_and_speaking_is_a_page(env):
 
 def test_more_menu_is_short_and_everything_else_has_a_home(env):
     client, conn, _ = env
-    menu = client.get("/tasks").text.split('class="menu-panel">')[1].split("</details>")[0]
-    assert [h for h in ("/status", "/costs", "/review#older", "/help") if f'href="{h}"' in menu] == ["/status", "/costs", "/help"]
-    assert "Dark mode" not in menu and "menu-label" not in menu
+    # Brian picked B (2026-11-21): the ⋯ menu became the status ring; its sheet loads Status, Costs, history, Help
+    assert 'hx-get="/status/sheet"' in client.get("/tasks").text
+    menu = client.get("/status/sheet").text
+    assert [h for h in ("/status", "/costs", "/inbox?show=older", "/help") if f'href="{h}"' in menu] == ["/status", "/costs", "/help"]
+    assert 'href="/processing"' in menu and "AI costs" in menu and "Dark mode" not in menu
     conn.execute("INSERT INTO recording (id, source, original_path, sha256, received_at, status) "
                  "VALUES (61, 'recorder', '/x61', 'sha61', ?, 'backlog')", (db.now(),))
-    menu = client.get("/tasks").text.split('class="menu-panel">')[1].split("</details>")[0]
-    assert 'href="/review#older"' in menu and ">1</span>" in menu                       # only while there are some
+    menu = client.get("/status/sheet").text
+    assert 'href="/inbox?show=older"' not in menu and 'aria-label="1 waiting"' in client.get("/").text                       # only while there are some
     conn.execute("UPDATE conversation SET deleted_at = ? WHERE id = 1", (db.now(),))
     talks = client.get("/conversations").text
-    assert 'href="/review#older"' in talks and 'href="/conversations?trash=1"' in talks   # under the list
+    assert 'href="/inbox?show=older"' in talks and 'href="/conversations?trash=1"' in talks   # under the list
     today = client.get("/").text
     assert 'href="/speaking"' in today and 'href="/review?tab=done"' in today
     assert 'href="/tasks?tab=decisions"' in client.get("/tasks").text
@@ -919,15 +907,16 @@ def test_task_reminder_waits_in_snoozed_then_shows_under_needs_you(env):
     client, conn, _ = env
     client.post("/tasks/1/remind", data={"until": "1h"})
     page = client.get("/").text
-    assert "Task reminder" in page and 'action="/tasks/1/remind/now"' in page          # waiting in Snoozed
+    assert "1 snoozed" in page                                                          # waiting in Snoozed (one line)
+    assert "Task reminder" in client.get("/review?tab=snoozed").text
     before = int(page.split('class="dot"')[1].split(">")[1].split("<")[0]) if 'class="dot"' in page else 0
     client.post("/tasks/1/remind/now")
     page = client.get("/").text
-    assert ">Reminders<" in page and 'action="/tasks/1/remind/clear"' in page          # now under Needs you
+    assert 'action="/tasks/1/remind/clear"' in page.split('id="needs-you"')[1]           # now under Needs you
     after = int(page.split('class="dot"')[1].split(">")[1].split("<")[0])
     assert after == before + 1                                                         # and counted in the Today badge
     client.post("/tasks/1/remind/clear")
-    assert ">Reminders<" not in client.get("/").text
+    assert 'action="/tasks/1/remind/clear"' not in client.get("/").text
     assert client.post("/tasks/999/remind", data={"until": "1h"}).status_code == 404
 
 
@@ -1044,7 +1033,7 @@ def test_conversations_sort(env):
         return page.index("Apple tasting") < page.index("Weekly sync")
     assert not apple_first("newest") and apple_first("oldest") and apple_first("longest") and apple_first("title")
     assert not apple_first("bogus")
-    assert '<option value="longest" selected>Longest</option>' in client.get("/conversations?order=longest").text
+    assert '<option value="longest" selected>↕ Longest</option>' in client.get("/conversations?order=longest").text
 
 
 def test_rename_updates_earlier_ai_text(env):
@@ -1077,13 +1066,13 @@ def test_weak_voice_match_asks_to_confirm_the_name(env):
     conn.execute("UPDATE review_item SET payload = json_set(coalesce(payload, '{}'), '$.guess_id', 2, '$.score', 0.79) "
                  "WHERE kind = 'speaker'")
     page = client.get("/review").text
-    assert "voice match 79%" in page and '<option value="2" selected>' in page and ">Confirm</button>" in page
+    assert "voice match 79%" in page and '<option value="2" selected>' in page and ">Yes, that's right</button>" in page
 
 
 def test_person_page_has_a_jump_bar(env):
     client, _, _ = env
     page = client.get("/people/2").text
-    assert 'class="jump-bar"' in page and 'href="#person-facts"' in page and 'id="sec-convs"' in page
+    assert 'class="rail-src"' in page and 'href="#person-facts"' in page and 'id="sec-convs"' in page
 
 
 def test_short_speaker_can_be_folded_into_another(env):
@@ -1108,7 +1097,7 @@ def test_jump_bars_list_every_section_and_learning_hides_tasks(env):
     conn.execute("UPDATE conversation SET type = 'learning' WHERE id = 1")
     page = client.get("/conversations/1").text
     assert 'id="sec-mine"' not in page and 'id="sec-decisions"' not in page and 'id="sec-facts"' in page
-    assert 'class="jump-bar"' in client.get("/people/1").text                      # Brian's own page too
+    assert 'class="rail-src"' in client.get("/people/1").text                      # Brian's own page too
 
 
 def test_color_per_speaker_in_one_conversation(env):
@@ -1180,3 +1169,79 @@ def test_every_filter_combination_works(env, q):
     for page in ("/conversations", "/people", "/tasks", "/search?q=zephyr&", "/conversations/export.md"):
         url = page + ("" if page.endswith("&") else "?") + q
         assert client.get(url).status_code == 200, url
+
+
+def test_inbox_quick_title_preview_and_full_transcript(env, tmp_path):
+    """Inbox (2026-11-20): a Recorder .txt synced next to a recording gives it a quick title (most-used words, no AI),
+    a preview, and a page with the whole transcript, unedited; sort and filters work; Today only links here."""
+    from scribe_bot.web import inbox
+    client, conn, _ = env
+    folder = tmp_path / "Recordings"; folder.mkdir()
+    (folder / "Venue chat - Oct 14 at 11-30.txt").write_text(
+        "Venue chat.\n\n[Speaker 1]\nThe venue budget is tight, so the venue needs a budget check.\n\n"
+        "[Speaker 2]\nRight, the kickoff venue and the kickoff budget.\n", encoding="utf-8")
+    t = db.now()
+    for rid, name, secs in ((20, "Venue chat _ Oct 14 at 11_30", 1500), (21, "Oct 15 at 09_00", 120)):
+        conn.execute("INSERT INTO recording (id, source, original_path, sha256, duration_s, received_at, status, title) "
+                     "VALUES (?, 'recorder', ?, ?, ?, ?, 'awaiting_approval', ?)", (rid, str(folder / f"{name}.m4a"), f"s{rid}", secs, t, name))
+        conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
+                     (rid, json.dumps({"recording_id": rid, "title": name, "minutes": secs // 60, "ai_cost": 0.01}), t))
+    assert inbox.norm("Venue chat _ Oct 14 at 11_30") == inbox.norm("Venue chat - Oct 14 at 11-30")
+    page = client.get("/inbox").text
+    assert "“Venue, budget, kickoff”" in page and "The venue budget is tight" in page and "/inbox/20/transcript\"" in page
+    assert "2 waiting" in page and "Has transcript · 1" in page
+    assert page.index("Oct 15 at 09:00") < page.index("Venue, budget")                      # newest recorded first
+    longest = client.get("/inbox?sort=longest").text
+    assert longest.index("Venue, budget") < longest.index("Oct 15 at 09:00")
+    only = client.get("/inbox?show=transcript").text
+    assert "Venue, budget" in only and "Oct 15 at 09:00" not in only
+    tx = client.get("/inbox/20/transcript").text
+    assert "Speaker 1" in tx and "Right, the kickoff venue and the kickoff budget." in tx and "Copy all" in tx
+    assert client.get("/inbox/20/transcript.txt").text.startswith("Venue chat.")
+    assert client.get("/inbox/21/transcript").status_code == 404                               # no .txt for that one
+    today = client.get("/").text
+    assert "Process 2 recordings" in today and "Recordings waiting for your OK" not in today
+    assert 'aria-label="2 waiting"' in today
+
+
+def test_today_next_up_and_short_sections(env):
+    client, conn, _ = env
+    page = client.get("/").text
+    # Redesign (Brian picked sheet 3, 2026-11-21): four tiles on top, then one line per item
+    assert page.count('class="dash-tile') == 4 and 'href="/tasks?tab=waiting"' in page
+    due = page.split('id="sec-due"')[1].split("</section>")[0]
+    assert "Review the launch deck" in due and 'action="/tasks/1/done"' in due             # oldest late task first
+    assert 'id="recent"' in page and "Weekly sync with Alex" in page.split('id="recent"')[1]
+
+
+def test_people_mentioned_add_same_and_hide(env):
+    client, conn, _ = env
+    t = db.now()
+    for name, value in (("Riley", "Moving to Denver"), ("Riley", "Starts the new job in May"), ("Sam", "Runs the venue"),
+                        ("Pat", "Likes tea")):
+        conn.execute("INSERT INTO person_fact (person_name, conversation_id, value, created_at) VALUES (?, 1, ?, ?)", (name, value, t))
+    page = client.get("/people").text
+    assert "mentioned, not added" in page and page.index(">Riley<") < page.index(">Sam<") and "2 notes" in page
+    r = client.post("/people/mentioned", data={"name": "Riley", "action": "add"}, follow_redirects=False)
+    pid = one(conn, "SELECT id FROM person WHERE name = 'Riley'")
+    assert r.headers["location"] == f"/people/{pid}" and one(conn, "SELECT count(*) FROM person_fact WHERE person_id = ?", pid) == 2
+    client.post("/people/mentioned", data={"name": "Sam", "action": "same", "person_id": 2})
+    assert one(conn, "SELECT person_id FROM person_fact WHERE value = 'Runs the venue'") == 2
+    assert "Sam" in one(conn, "SELECT aliases FROM person WHERE id = 2")
+    client.post("/people/mentioned", data={"name": "Pat", "action": "hide"})
+    page = client.get("/people").text
+    assert "Mentioned, not added yet" not in page                                            # all handled
+    assert one(conn, "SELECT count(*) FROM person_fact WHERE value = 'Likes tea' AND person_id IS NULL") == 1
+
+
+def test_status_ring_shows_processing_and_paused(env):
+    """Brian picked B (2026-11-21): the ring fills while a talk processes, ❚❚ while paused."""
+    client, conn, _ = env
+    assert 'class="sb-ring"' in client.get("/tasks").text
+    conn.execute("INSERT INTO recording (id, source, original_path, sha256, received_at, status) VALUES (71, 'recorder', '/x71', 'sha71', ?, 'queued')", (db.now(),))
+    conn.execute("INSERT INTO job (kind, recording_id, status, created_at, updated_at) VALUES ('recording', 71, 'pending', ?, ?)", (db.now(), db.now()))
+    page = client.get("/tasks").text
+    assert 'sb-ring on' in page and 'hx-get="/status/ring"' in page
+    assert "Processing ·" in client.get("/status/sheet").text
+    conn.execute("INSERT INTO setting (key, value) VALUES ('pipeline_paused', '1') ON CONFLICT(key) DO UPDATE SET value = '1'")
+    assert "❚❚" in client.get("/status/ring").text and "Processing · Paused" in client.get("/status/sheet").text

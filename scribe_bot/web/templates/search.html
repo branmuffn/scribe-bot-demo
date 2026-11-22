@@ -21,7 +21,7 @@
 {# The box: ✕ clears the search (back to your recent searches); tapping it after a search drops recent ones down (app.js). #}
 <form class="searchbar" method="get" action="/search" role="search">
   <div class="search-field">
-    <input type="search" name="q" value="{{ q }}" placeholder="Transcripts, tasks, people, notes" aria-label="Search" {{ 'autofocus' if not q }}
+    <input type="search" name="q" value="{{ q }}" placeholder="Search everything" aria-label="Search" {{ 'autofocus' if not q }}
            autocomplete="off" enterkeyhint="search"{% if recent %} data-recent aria-controls="recent-pop" aria-expanded="false"{% endif %}>
     {% if q %}<a class="icon-btn search-clear" href="/search" aria-label="Clear the search" title="Clear the search">{{ m.icon("x") }}</a>{% endif %}
     {% if recent %}<div class="recent-pop" id="recent-pop" hidden><div class="menu-label">Recent searches</div>
@@ -37,11 +37,11 @@
 <nav class="tabs" aria-label="Kinds of results">
   {% for key, label in search_tabs.items() %}
   <a href="{{ request.url.remove_query_params(['n', 'conv']).include_query_params(type=key) }}" class="{{ 'on' if tab == key }}"
-     {{ 'aria-current=page' if tab == key }}>{{ label }}{% if counts %} <span class="n">{{ counts.get(key, 0) }}</span>{% endif %}</a>
+     {{ 'aria-current=page' if tab == key }}>{{ label }}{% if counts and counts.get(key, 0) %} <span class="n">{{ counts.get(key, 0) }}</span>{% endif %}</a>
   {% endfor %}
 </nav>
 <details class="filters"{{ ' open' if nf }}>
-  <summary class="btn btn-ghost">{{ m.icon("filter") }} Filters{% if nf %} · {{ nf }}{% endif %}</summary>
+  <summary class="btn btn-ghost">{{ m.icon("filter") }} Filter{% if nf %} · {{ nf }}{% endif %}</summary>
   <form class="toolbar" method="get" action="/search" {{ m.live("/search") }}>
     <input type="hidden" name="q" value="{{ q }}">{% if tab != 'all' %}<input type="hidden" name="type" value="{{ tab }}">{% endif %}
     <label class="inline-label">With <select name="person"><option value="">Anyone</option>

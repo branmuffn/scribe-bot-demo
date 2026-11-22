@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Compare models · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/conversations/{{ c.id }}">‹ {{ c.title }}</a>{% endblock %}
+{% block body %}
+{# Brian 2026-11-19: same transcript, two models, side by side; keep one. Keeping the new one replaces the AI notes
+   like Re-run AI does (tasks you already finished or rated stay). #}
+<div class="page-head"><div><h1>Compare models</h1>
+  <div class="meta">Same transcript, two AI models. Read both, then keep the better one. Your pick doesn't change the model
+    used for new recordings (that's Settings › AI profile).</div></div></div>
+<div class="compare-grid">
+{% for v in versions %}
+<section class="card pad stack compare-col" aria-labelledby="v-{{ v.key }}">
+  <div class="row" style="justify-content:space-between;align-items:baseline">
+    <h2 id="v-{{ v.key }}" style="margin:0">{{ v.label }}</h2>
+    <span class="meta">{{ v.note }} · ${{ '%.3f'|format(v.cost or 0) }}</span></div>
+  {% if v.title %}<p><b>{{ v.title }}</b></p>{% endif %}
+  <p>{{ v.summary or "No summary" }}</p>
+  <h3>Tasks ({{ v.tasks|length }})</h3>
+  {% if v.tasks %}<ul>{% for t, who in v.tasks %}<li>{{ t }}{% if who %} <span class="meta">· {{ who }}</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="meta">None</p>{% endif %}
+  <h3>Decisions ({{ v.decisions|length }})</h3>
+  {% if v.decisions %}<ul>{% for d in v.decisions %}<li>{{ d }}</li>{% endfor %}</ul>{% else %}<p class="meta">None</p>{% endif %}
+  <h3>People notes ({{ v.facts|length }})</h3>
+  {% if v.facts %}<ul>{% for who, f in v.facts %}<li><b>{{ who }}:</b> {{ f }}</li>{% endfor %}</ul>{% else %}<p class="meta">None</p>{% endif %}
+  <form method="post" action="/conversations/{{ c.id }}/compare/keep"><input type="hidden" name="which" value="{{ v.key }}">
+    <button class="btn {{ 'btn-primary' if v.key == 'other' }}">Keep {{ v.label }}'s version</button></form>
+</section>
+{% endfor %}
+</div>
+{% endblock %}

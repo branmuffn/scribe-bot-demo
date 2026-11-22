@@ -49,15 +49,14 @@ def test_new_recording_waits_for_approval(conn, cfg):
     item = conn.execute("SELECT * FROM review_item WHERE kind = 'approval'").fetchone()
     payload = json.loads(item["payload"])
     assert payload["recording_id"] == rec and "ai_cost" in payload and "m14_minutes" in payload
-    note = conn.execute("SELECT title, link FROM notification").fetchone()
-    assert "Weekly sync" not in note["title"] and note["link"] == "/review"  # no titles in Discord
+    assert conn.execute("SELECT count(*) FROM notification").fetchone()[0] == 0   # Brian 2026-11-21: no "waiting for your OK" note
 
 
-def test_private_recording_request_has_no_ai_cost(conn, cfg):
-    ask_mode(conn)
+def test_private_in_the_name_is_an_ordinary_recording(conn, cfg):
+    ask_mode(conn)   # round 7 (Brian, 2026-11-21): no more Private
     new_recording(conn, cfg, "Private chat.m4a")
     payload = json.loads(conn.execute("SELECT payload FROM review_item").fetchone()[0])
-    assert payload["private"] and payload["ai_cost"] == 0
+    assert not payload["private"]
 
 
 def web(cfg):
@@ -86,8 +85,8 @@ def test_skip_leaves_recording_unprocessed(conn, cfg):
 def test_review_page_lists_waiting_recordings(conn, cfg):
     ask_mode(conn)
     new_recording(conn, cfg)
-    page = web(cfg).get("/review").text
-    assert "Recordings waiting for your OK" in page and "Transcript Only (No AI)" in page and "Transcribe + AI" in page
+    page = web(cfg).get("/inbox").text
+    assert "1 waiting" in page and ">Transcript only<" in page and ">AI notes<" in page   # redesign 2026-11-21: in the row's sheet
 
 
 def test_transcript_only_skips_ai_stage(conn, cfg, monkeypatch):

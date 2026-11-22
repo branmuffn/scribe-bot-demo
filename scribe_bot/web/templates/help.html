@@ -3,71 +3,102 @@
 {% block title %}Help · Scribe Bot{% endblock %}
 {% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
 {% block body %}
-<div class="page-head"><div><h1>Help</h1><div class="meta">What each screen is for, in plain English.</div></div>
-  <button type="button" class="btn btn-primary" data-tour-start="{{ tour_conv or '' }}">Take the 1-minute tour</button></div>
+{# Compact pass (Brian, 2026-11-21): short sections that fold open, plus what each button does. #}
+<div class="page-head"><div><h1>Help</h1><div class="meta">What each screen is for, and what the buttons do.</div></div>
+  <button type="button" class="btn btn-primary btn-sm" data-tour-start="{{ tour_conv or '' }}">1-minute tour</button></div>
 
-<section class="section">
-  {{ m.section("Try it safely") }}
+<details class="section help-sec" id="help-buttons" open>
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>What each button does</h2></summary>
+  <div class="card pad help-dl">
+    <h3>Inbox (a recording waiting for your OK)</h3>
+    <dl>
+      <dt>▶ / AI notes</dt><dd>Transcribe it on the M14, then the AI writes the summary, tasks and decisions. Shows the time and cost first.</dd>
+      <dt>Transcript only</dt><dd>Transcribed on the M14, free. Make AI notes on the talk later if you want them.</dd>
+      <dt>⏱ Process at…</dt><dd>Pick a time (or <b>Tonight at 1 am</b>) and AI notes or Transcript only: it waits, then starts by itself. The row shows ⏱ and the time; <i>Cancel that</i> in its sheet undoes it.</dd>
+      <dt>Remind me</dt><dd>A reminder only: it hides the recording from Needs you until the time you pick. Nothing is processed; you still decide.</dd>
+      <dt>Delete</dt><dd>Moves it to Trash (bottom of Talks). Restore it there within 30 days; after that it and its audio are deleted for good.</dd>
+      <dt>Read / + Transcript</dt><dd>Read a phone transcript that synced with it, or paste one in.</dd>
+      <dt>Select</dt><dd>Long-press a row (or Select). The top shows how many and <b>Select all</b>; the bottom bar has <b>AI notes</b>, <b>Transcript</b>, <b>Merge</b> (one recording, in recorded order; Unmerge works until it's processed) and <b>Delete</b>. ✕ or a tap anywhere else stops selecting.</dd>
+    </dl>
+    <h3>While something is processing</h3>
+    <dl>
+      <dt>❚❚ Pause</dt><dd>Stops at the next safe point (within about 30 s) so the computer is free. Nothing done so far is lost.</dd>
+      <dt>▶ Resume now · ☾ Resume at 1 am</dt><dd>Carries on from where it stopped, now or tonight.</dd>
+      <dt>✕ Cancel</dt><dd>Only while paused: back to the Inbox as it was; the half-done files are deleted.</dd>
+      <dt>Processing history</dt><dd>⋯ at the top › Processing history: Pause / Resume at the top, then everything you sent, when, how long it took, AI or not.</dd>
+      <dt>Speed (Processing history)</dt><dd><b>Auto</b> (normal): full speed while nobody uses the Mac; half the cores while someone does (keyboard or mouse, SSH, Screen Sharing, RustDesk, or a Claude / Codex chat while it runs heavy work), back to full 10 minutes after. <b>Every night 1 to 7 AM</b>: the Inbox is worked through oldest first as Transcript only (no AI, no cost), one after another; recordings with a Process at time wait for it. Make AI notes on any of them later. <b>Full</b>: always all 4 cores. <b>Gentle</b>: always half, about twice as long, cooler. <b>Night only</b>: new recordings wait until 1 AM.</dd>
+      <dt>🌡️ Hot Mac</dt><dd>At 95 °C for 5 minutes processing pauses by itself (Discord says so) and carries on once the Mac has been under 80 °C for 5 minutes. After 2 hours it carries on with half the cores.</dd>
+      <dt>From Discord</dt><dd>The pinned M14 board in #m14-health has ❚❚ Pause processing and ▶ Resume buttons.</dd>
+    </dl>
+    <h3>A talk</h3>
+    <dl>
+      <dt>A dotted name</dt><dd>Not named yet. Tap it to say who it is.</dd>
+      <dt>Tap a coloured name</dt><dd>Change who said those lines. <b>✂ Only part of it?</b> then tap the first word the other person said. <b>✎ Fix words</b> edits the text.</dd>
+      <dt>Tap a line</dt><dd>Plays the audio from there.</dd>
+      <dt>The right edge</dt><dd>The page outline: tap or drag to jump to a section. The first row (↑ and the page name) goes back to the top. On People, letter groups open into single letters while you're in them.</dd>
+      <dt>Short | Detailed</dt><dd>Tabs next to Summary. Detailed is a longer version by topic, made only when you ask (it shows the cost first).</dd>
+    </dl>
+    <h3>Tasks and People</h3>
+    <dl>
+      <dt>The circle</dt><dd>Done.</dd>
+      <dt>Tap or long-press a task</dt><dd>Its whole title, then one row each for Due, Who, Remind me and the talk (tap a row to change just that), then Done, ✎ Edit and ⋯ (Not needed, Remove).</dd>
+      <dt>People › Select</dt><dd>The initials circles become round checkboxes; then Merge (same person, keep one name) or Remove (Undo for 10 minutes).</dd>
+      <dt>Voices not named yet</dt><dd>The row at the top of People: speakers who were given tasks or notes before they had a name. Pick who it is; the talk, Tasks and People all update.</dd>
+    </dl>
+  </div>
+</details>
+
+<details class="section help-sec">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Screens</h2></summary>
+  <div class="card help-screens">
+    {% for ic, title, href, text in [
+      ("sun", "Today", "/", "Only what needs you: Next up, the Inbox line, Needs you, due tasks, recent talks. The clock on an item reminds you later; until then it waits under Snoozed. History keeps what you handled, with Restore."),
+      ("inbox", "Inbox", "/inbox", "Recordings waiting for your OK; nothing is transcribed until you give it. Quick titles come from the first 2 minutes or a synced transcript (no AI). Older recordings that synced earlier: Get it ready."),
+      ("chat", "Talks", "/conversations", "Lists show a short name; the talk page has the full one. "~"Every talk with its summary, tasks, decisions, notes and transcript. Trash (at the bottom of Talks) keeps removed talks and deleted Inbox recordings 30 days, then deletes them with their audio."),
+      ("users", "People", "/people", "Everyone you've talked to, A to Z. Names mentioned but not added, and voices not named yet, each wait in one row at the top."),
+      ("check", "Tasks", "/tasks", "Mine, Waiting (others owe you), Unsure (the AI wasn't sure), Decisions."),
+      ("search", "Search (🔍)", "/search", "Any word across transcripts, summaries, tasks, people and notes."),
+      ("bell", "Notifications (🔔)", "/notifications", "Pings and alerts; the important ones also go to Discord."),
+      ("dots", "More (⋯)", "/more", "Status (the M14's health), Costs, Processing history, Help."),
+      ("gear", "Settings (⚙)", "/settings", "Appearance, AI & processing, accounts, privacy, glossary, templates, backups."),
+      ] %}
+    <div class="item tap-row"><div class="item-main"><a class="item-link" href="{{ href }}">{{ m.icon(ic) }} {{ title }}</a><div class="item-sub">{{ text }}</div></div></div>
+    {% endfor %}
+  </div>
+</details>
+
+<details class="section help-sec">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Fixing mistakes</h2></summary>
   <div class="card pad stack">
-    <p>Load a made-up <b>DEMO</b> conversation (fake names, fake content) to click around without touching your real meetings.
-      Nothing is sent anywhere.</p>
+    <p><b>Remove</b> a wrong task, decision or note from its ⋯; an <b>Undo</b> bar appears. <b>Change person</b> moves it to the right one.</p>
+    <p><b>Mis-heard words</b>: ✎ Fix words; <i>Also teach the glossary</i> fixes it in future AI runs.</p>
+    <p><b>Nothing just disappears</b>: Trash keeps a talk or a deleted recording 30 days with Restore, then deletes it and its audio; dismissed items stay in History with Restore; Snoozed items come back at their time.</p>
+  </div>
+</details>
+
+<details class="section help-sec">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Privacy, money and the computer</h2></summary>
+  <div class="card pad stack">
+    <p>Audio never leaves the M14. Only transcript text goes to the AI, and only when you approve. Anything that costs money shows the price first; there's a monthly cap (Settings › AI &amp; processing).</p>
+    <p>Processing runs at low priority, so the app stays quick; ❚❚ Pause frees the computer completely.</p>
+  </div>
+</details>
+
+<details class="section help-sec">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Try it safely</h2></summary>
+  <div class="card pad stack">
+    <p>A made-up <b>DEMO</b> talk (fake names) to click around. Nothing is sent anywhere.</p>
     <div class="row">
       {% if demo_id %}<a class="btn btn-primary" href="/conversations/{{ demo_id }}">Open the demo</a>
         <form method="post" action="/demo/remove"><button class="btn btn-ghost">Remove demo data</button></form>
       {% else %}<form method="post" action="/demo/load"><button class="btn btn-primary">Load demo data</button></form>{% endif %}
     </div>
-    <p><b>Test with your own meetings:</b> the recordings that synced before Scribe Bot started are under
-      <a href="/review#older">Older recordings</a> (⋯, or the bottom of Conversations). <i>Use as a new recording</i> sends one through every step a new
-      recording takes (Needs you, your OK with the time and cost, speech, speakers, AI, the Ready ping). Before you approve,
-      each one shows two estimates side by side: <i>Transcript + AI</i> and <i>Transcript only</i>, with the time on the M14
-      and the cost.</p>
+    <p class="meta">To try a real one: Inbox › an <i>older</i> recording › Get it ready.</p>
   </div>
-</section>
+</details>
 
-<section class="section">
-  {{ m.section("Screens") }}
-  <div class="card">
-    {% for ic, title, href, text in [
-      ("sun", "Today (tab)", "/", "Only what needs you. Needs you: recordings to approve (nothing is transcribed until you do), speakers to name, items the AI wasn't sure about, glossary suggestions and old tasks. The clock on each one reminds you later, at a time you pick; until then it waits under Snoozed. History (next to Needs you) keeps everything you handled, and Restore brings back anything dismissed. Task reminders you set show up here at their time. Then tasks due, late promises to you (Copy nudge copies a friendly reminder to paste; nothing is sent) and Your week: conversations, tasks finished and your speaking, each a tap away."),
-      ("chat", "Talks (tab)", "/conversations", "Two sub-tabs. Conversations: every recording, with the summary, what you owe, what they owe you, decisions, notes and the transcript with audio; New marks the ones you haven't opened. The AI files each one as Work or Home; ones it isn't sure about wait under Not sorted, its guess on the first button. People: everyone you've talked to, with Find and Sort (last spoke, most talked, name). ＋ adds a recording by hand."),
-      ("check", "Tasks (tab)", "/tasks", "Mine = you agreed to do it. Waiting on = someone agreed to do it for you. Inbox = the AI wasn't sure. Decisions = everything settled, linked to the moment it was said. The clock on a task reminds you about it on Today at a time you pick."),
-      ("search", "Search (🔍 at the top)", "/search", "Find any word across transcripts, summaries, tasks, people and notes. Results come one card per conversation (its best 3 hits; All N for the rest), with tabs per kind and Filters: with whom, who said it, dates and sort. ✕ in the box clears a search and shows your recent searches (✕ on one forgets it; Clear all and Turn off history are under the list). Tapping the box after a search drops your recent searches down."),
-      ("bell", "Notifications (🔔 at the top)", "/notifications", "Recording pings, briefings and alerts, newest first. Alerts, new recordings waiting for your OK, and Ready pings also go to your Discord, and the Discord app on your phone shows them as push notifications. ✕ dismisses one (or Dismiss all); they wait under Dismissed, where Restore brings one back. Send a test checks that alerts reach your phone. A blue dot means something new."),
-      ("dots", "More (⋯ at the top)", "/more", "Status (the M14's health; tap a reading for its chart), Costs and Help, plus Older recordings while there are any. A red dot means the M14 needs attention. Everything else sits where you use it: Your speaking and History on Today, Decisions in Tasks, Trash at the bottom of Conversations, recent searches in Search, the Data Ledger and Dark mode in Settings."),
-      ("gear", "Settings (⚙ at the top)", "/settings", "A short list; each group opens its own page: Appearance (Light, Dark or System), AI & processing, Accounts & keys, Privacy & Data Ledger, Glossary, Summary templates, Backups & schedules."),
-      ] %}
-    <div class="item tap-row"><div class="item-main"><a class="item-link" href="{{ href }}">{{ m.icon(ic) }} {{ title }}</a><div class="item-sub">{{ text }}</div></div></div>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="section">
-  {{ m.section("Fixing what the AI got wrong") }}
-  <div class="card pad stack">
-    <p>Secondary actions live under the <b>⋯</b> button on each row, so screens stay clean.</p>
-    <p><b>Wrong, remove</b>: removes a task, decision or note. An <b>Undo</b> bar appears for a few seconds.</p>
-    <p><b>Change person</b>: moves a task or note to the right person. Moving a task to or from you switches it between <i>You owe</i> and <i>They owe you</i>.</p>
-    <p><b>Speaker names</b>: tap a name under the conversation title to rename that speaker everywhere, or use the <b>⋯</b> on one transcript line to change just that line's speaker or words. When fixing a mis-heard word,
-      <i>Also teach the glossary</i> makes future AI runs fix it automatically.</p>
-    <p><b>Merge</b>: on a person's page, use <i>Merge into another person</i> when two entries are the same person.</p>
-    <p><b>Nothing just disappears</b>: <i>Move to Trash</i> (a conversation's ⋯) keeps it, with its tasks and notes, for 30 days
-      under Trash (at the bottom of Conversations), where <i>Restore</i> brings it back; after that it's removed for good with its tasks. Dismissed Needs you
-      items stay in History with <i>Restore</i>.</p>
-    <p class="meta">Every fix counts toward Scribe Bot's quality score, and a named voice is recognised next time.</p>
-  </div>
-</section>
-
-<section class="section">
-  {{ m.section("Privacy and money") }}
-  <div class="card pad stack">
-    <p>Audio never leaves the M14. Only transcript <i>text</i> goes to the AI, and only when you approve it.
-      <b>Transcript Only (No AI)</b> keeps a recording fully private.</p>
-    <p>Anything that costs money asks you to confirm first, with the price. There's a hard monthly cap (Settings › AI &amp; processing).</p>
-  </div>
-</section>
-
-<section class="section">
-  {{ m.section("Keyboard shortcuts (computer)") }}
+<details class="section help-sec">
+  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Keyboard shortcuts (computer)</h2></summary>
   <div class="card pad">{{ m.shortcut_list() }}</div>
-</section>
+</details>
 {% endblock %}

@@ -291,7 +291,9 @@ def fast(run: Runner = subprocess.run, now: float | None = None) -> dict:
     smart = parse_smart(_out(run, ["diskutil", "info", "disk0"]) or "")
     return {**cpu(run), **memory(run), **thermal(run),
             "battery": parse_battery(_out(run, ["ioreg", "-rn", "AppleSmartBattery"]) or ""),
-            "smart": smart, "smart_ok": None if smart is None else smart == "Verified",
+            # macOS answers "Not Supported" now and then on this disk (about 1 reading in 5 since Nov 17); that's no
+            # reading, not a bad disk (Brian 2026-11-19: alert/all-clear pairs kept coming). Only a real verdict counts.
+            "smart": smart, "smart_ok": None if smart is None or smart == "Not Supported" else smart == "Verified",
             "uptime_s": parse_boottime(_out(run, ["sysctl", "-n", "kern.boottime"]) or "", now or time.time()),
             "procs": parse_procs(_out(run, ["ps", "-Ao", "pid,pcpu,rss,command"]) or ""),
             "disk_used_pct": _disk_pct()}
@@ -345,7 +347,8 @@ def sample(conn: sqlite3.Connection, data_dir: Path, run: Runner = subprocess.ru
                  [row[c] for c in cols])
     conn.execute("DELETE FROM machine_sample WHERE ts < ?",
                  ((now - timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds"),))
-    alerts(conn)
+    # Discord alerts for these moved to the M14 Health watcher (#m14-health), Brian 2026-11-19; drop old alert flags
+    conn.execute("DELETE FROM setting WHERE key LIKE 'machine_alert:%'")
     return row
 
 
@@ -366,33 +369,9 @@ def _pressure_red(r): return pressure_level(r["mem_free_pct"]) == "red"
 def _smart_bad(r): return r["smart_ok"] == 0
 
 
-# name -> (test, consecutive samples needed, alert title, all-clear title). Titles only, never content.
-ALERTS = {
-    "hot": (_hot, 2, "🔥 M14 CPU is very hot (90 °C or more). Check the vents and fans.", "✅ M14 CPU temperature is back to normal."),
-    "throttle": (_throttled, 2, "⚠️ M14 is slowing itself down because of heat.", "✅ M14 is running at full speed again."),
-    "swap": (_swap_heavy, 1, "⚠️ M14 is short on memory (over 2 GB swap in use).", "✅ M14 memory use is back to normal."),
-    "pressure": (_pressure_red, 1, "🔴 M14 memory pressure is high.", "✅ M14 memory pressure is back to normal."),
-    "smart": (_smart_bad, 1, "🔴 M14 disk health check (SMART) is not Verified. Back up and plan a replacement.",
-              "✅ M14 disk health check (SMART) is Verified again."),
-}
-
-
-def alerts(conn: sqlite3.Connection) -> list[str]:
-    """Alert once per problem (setting 'machine_alert:<name>'), and once when it clears. Returns names newly alerted."""
-    rows = conn.execute("SELECT * FROM machine_sample ORDER BY ts DESC LIMIT 2").fetchall()
-    fired = []
-    for name, (test, need, title, clear) in ALERTS.items():
-        key = f"machine_alert:{name}"
-        on = bool(conn.execute("SELECT 1 FROM setting WHERE key = ?", (key,)).fetchone())
-        bad = len(rows) >= need and all(test(r) for r in rows[:need])
-        if bad and not on:
-            conn.execute("INSERT INTO setting (key, value) VALUES (?, '1')", (key,))
-            notify.enqueue(conn, "alerts", title, "/status")
-            fired.append(name)
-        elif on and rows and not test(rows[0]):
-            conn.execute("DELETE FROM setting WHERE key = ?", (key,))
-            notify.enqueue(conn, "alerts", clear, "/status")
-    return fired
+# No Discord alerts from here (Brian, 2026-11-19): the M14 Health watcher already posts heat, slowdown, memory and SSD
+# problems to #m14-health, so #scribe-alerts keeps only Scribe Bot's own (backups, restore test, AI spend, missed
+# recordings, on battery). The Status page still flags all of them (needs_attention below).
 
 
 def needs_attention(conn: sqlite3.Connection, now: datetime | None = None) -> list[str]:

@@ -130,3 +130,79 @@ def test_export_leaves_out_what_brian_removed(conn):
     md = export.render(conn, conn.execute("SELECT * FROM conversation WHERE id = ?", (cid,)).fetchone())
     assert "Kept synthetic task" in md and "Right synthetic decision" in md
     assert "Removed synthetic task" not in md and "Wrong synthetic decision" not in md
+
+
+def _rec(conn, tmp_path, rid, status, outside=None):
+    """A recording with made-up audio files in the data folder (and optionally one path outside it)."""
+    files = []
+    for sub in ("inbound", "vault", "archive"):
+        f = tmp_path / sub / f"r{rid}.m4a"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"fake audio")
+        files.append(f)
+    conn.execute("INSERT INTO recording (id, source, original_path, sha256, received_at, status, vault_path, archive_path) "
+                 "VALUES (?, 'recorder', ?, ?, ?, ?, ?, ?)",
+                 (rid, str(outside or files[0]), f"sha{rid}", T, status, str(files[1]), str(files[2])))
+    return files
+
+
+def test_trash_purge_deletes_audio_too(conn, tmp_path):
+    """Brian, 2026-11-21: 30 days in Trash, then the audio goes too; Inbox Skip 30+ days ago the same; nothing else."""
+    cfg = Settings(tmp_path)
+    now = datetime(2026, 11, 30, tzinfo=timezone.utc)
+    old_at, new_at = (now - timedelta(days=31)).isoformat(timespec="seconds"), (now - timedelta(days=5)).isoformat(timespec="seconds")
+    gone = _rec(conn, tmp_path, 1, "done")
+    old = conversation(conn, "Old", deleted_at=old_at)
+    conn.execute("UPDATE conversation SET recording_id = 1 WHERE id = ?", (old,))
+    keep = _rec(conn, tmp_path, 2, "done")
+    recent = conversation(conn, "Recent", deleted_at=new_at)
+    conn.execute("UPDATE conversation SET recording_id = 2 WHERE id = ?", (recent,))
+    skipped = _rec(conn, tmp_path, 3, "declined")
+    conn.execute("INSERT INTO review_item (kind, ref_id, status, resolved_at, created_at) VALUES ('approval', 3, 'dismissed', ?, ?)", (old_at, T))
+    skipped_new = _rec(conn, tmp_path, 4, "declined")
+    conn.execute("INSERT INTO review_item (kind, ref_id, status, resolved_at, created_at) VALUES ('approval', 4, 'dismissed', ?, ?)", (new_at, T))
+    waiting = _rec(conn, tmp_path, 5, "awaiting_approval")
+    elsewhere = tmp_path.parent / f"{tmp_path.name}-outside.m4a"
+    elsewhere.write_bytes(b"not ours")
+    _rec(conn, tmp_path, 6, "declined", outside=elsewhere)
+    conn.execute("INSERT INTO review_item (kind, ref_id, status, resolved_at, created_at) VALUES ('approval', 6, 'dismissed', ?, ?)", (old_at, T))
+    assert trash.purge(conn, now, cfg=cfg) == 1
+    assert not any(f.exists() for f in gone + skipped)
+    assert all(f.exists() for f in keep + skipped_new + waiting)
+    assert elsewhere.exists()   # never outside the data folder
+    marked = {r[0] for r in conn.execute("SELECT id FROM recording WHERE audio_deleted_at IS NOT NULL")}
+    assert marked == {1, 3, 6}
+    assert conn.execute("SELECT count(*) FROM recording").fetchone()[0] == 6   # rows stay: never imported again
+    assert trash.purge(conn, now, cfg=cfg) == 0   # a second night changes nothing
+
+
+def test_trash_purge_without_cfg_keeps_audio(conn, tmp_path):
+    now = datetime(2026, 11, 30, tzinfo=timezone.utc)
+    files = _rec(conn, tmp_path, 1, "done")
+    cid = conversation(conn, "Old", deleted_at=(now - timedelta(days=31)).isoformat(timespec="seconds"))
+    conn.execute("UPDATE conversation SET recording_id = 1 WHERE id = ?", (cid,))
+    assert trash.purge(conn, now) == 1
+    assert all(f.exists() for f in files)
+
+
+def test_purged_audio_goes_on_the_device_cleanup_list(conn, tmp_path):
+    """Brian, 2026-11-21: after the audio is deleted, ask to delete it from the Pixel / M4 too; one note per night."""
+    from scribe_bot.core import cleanup_devices
+    cfg = Settings(tmp_path)
+    now = datetime(2026, 11, 30, tzinfo=timezone.utc)
+    old_at = (now - timedelta(days=31)).isoformat(timespec="seconds")
+    _rec(conn, tmp_path, 1, "done")
+    cid = conversation(conn, "Old", deleted_at=old_at)
+    conn.execute("UPDATE conversation SET recording_id = 1 WHERE id = ?", (cid,))
+    _rec(conn, tmp_path, 3, "declined")
+    conn.execute("UPDATE recording SET source = 'upload', title = '20261025 191200' WHERE id = 3")
+    conn.execute("INSERT INTO review_item (kind, ref_id, status, resolved_at, created_at) VALUES ('approval', 3, 'dismissed', ?, ?)", (old_at, T))
+    trash.purge(conn, now, cfg=cfg)
+    rows = {r["recording_id"]: r["device"] for r in conn.execute("SELECT * FROM device_cleanup WHERE status = 'ask'")}
+    assert rows == {1: "pixel", 3: "m4"}
+    notes = [r[0] for r in conn.execute("SELECT title FROM notification WHERE link = '/cleanup'")]
+    assert len(notes) == 1 and "2 recordings" in notes[0] and "Pixel (Recorder)" in notes[0] and "M4 (Voice Memos)" in notes[0]
+    cleanup_devices.set_status(conn, None, "todo", only="ask")
+    assert len(cleanup_devices.checklist(conn)) == 2
+    trash.purge(conn, now, cfg=cfg)   # nothing new: no second note
+    assert conn.execute("SELECT count(*) FROM notification WHERE link = '/cleanup'").fetchone()[0] == 1

@@ -52,7 +52,7 @@ def test_rename_speaker_relabels_lines_and_closes_review(env, monkeypatch):
     assert enrolled == [(3, pid)]
     assert one(conn, "SELECT status FROM review_item WHERE kind = 'speaker' AND ref_id = 3") == "done"
     page = client.get("/conversations/1").text
-    assert '>Casey Sample</span><span data-edit-url="/segments/4/text"' in page
+    assert '>Casey Sample</button><span data-edit-url="/segments/4/text"' in page
     client.post("/speakers/3/name", data={"new_name": "casey sample"}, headers=HX)  # typed again: matched, not duplicated
     assert one(conn, "SELECT count(*) FROM person WHERE lower(name) = 'casey sample'") == 1
 
@@ -136,10 +136,10 @@ def test_transcript_only_label_and_private(env):
                  "VALUES (7, 'recorder', '/y', 'def', ?, 'Oct 16 at 09_29', 'awaiting_approval')", (t,))
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', 7, ?, ?)",
                  (json.dumps({"recording_id": 7, "title": "Oct 16 at 09_29", "minutes": 5, "ai_cost": 0.01}), t))
-    assert "Transcript Only (No AI)" in client.get("/review").text
+    assert ">Transcript only<" in client.get("/inbox").text
     rid = one(conn, "SELECT id FROM review_item WHERE ref_id = 7 AND kind = 'approval'")
     client.post(f"/review/{rid}/approve", data={"ai": "0"})
-    assert one(conn, "SELECT private FROM recording WHERE id = 7") == 1
+    assert one(conn, "SELECT private FROM recording WHERE id = 7") == 0   # round 7: nothing is locked
 
 
 def test_transcribe_plus_ai_needs_a_confirm_step(env, monkeypatch):
@@ -152,10 +152,12 @@ def test_transcribe_plus_ai_needs_a_confirm_step(env, monkeypatch):
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', 8, ?, ?)",
                  (json.dumps({"recording_id": 8, "title": "Oct 17 at 10_00", "minutes": 18, "ai_cost": 0.02}), t))
     rid = one(conn, "SELECT id FROM review_item WHERE ref_id = 8 AND kind = 'approval'")
-    assert f'hx-get="/review/{rid}/confirm"' in client.get("/review").text
+    # Inbox (Brian, 2026-11-21): the sheet's "AI notes" line shows the cost and IS the confirm step (confirm=1)
+    sheet = client.get("/inbox").text
+    assert f'action="/review/{rid}/approve" id="ai-{rid}"' in sheet and 'name="confirm" value="1"' in sheet and "$0.02" in sheet
     page = client.post(f"/review/{rid}/approve", data={"ai": "1"}).text           # a stray post never spends
     assert approved == [] and "This will cost about <b>$0.02</b>" in page and "Claude Sonnet" in page
-    assert 'id="mt-' in client.get("/review").text                                 # type picker on the card itself
+    assert 'id="mt-' in client.get("/inbox").text                                  # type picker on the card itself
     page = client.get(f"/review/{rid}/confirm?meeting_type=learning").text
     assert '<option value="learning" selected>' in page                            # carried into the confirm step
     client.post(f"/review/{rid}/approve", data={"ai": "1", "confirm": "1", "meeting_type": "learning"})
@@ -164,7 +166,7 @@ def test_transcribe_plus_ai_needs_a_confirm_step(env, monkeypatch):
 
 def test_header_shows_local_date_and_recording_name(env):
     page = env[0].get("/conversations/1").text
-    assert "Recording: Weekly sync" in page and " min</span>" in page
+    assert "from “Weekly sync" in page and " min</span>" in page   # in ⋯ now (2026-11-21)
 
 
 def test_help_card_dismiss(env):
@@ -232,12 +234,11 @@ def test_open_items_per_person_can_be_acted_on(env):
 def test_secondary_actions_live_in_menus(env):
     page = env[0].get("/conversations/1").text
     row = page.split('id="task-1"')[1].split('id="task-')[0]
-    visible, clock, menu = row.split('class="row-menu"')                         # Done · ⏰ Remind me · ⋯ (last)
-    assert 'action="/tasks/1/remind"' in clock and "Remove<" not in clock
-    assert "/tasks/1/done" in visible and "Remove<" not in visible and "Change person" not in visible
-    assert "Remove<" in menu and "Change person" in menu and "/tasks/1/edit" in menu
+    visible, menu = row.split('class="fx-sheet task-sheet"')              # 2026-11-21: ○ Done · title · ⋯ = the task's sheet
+    assert "/tasks/1/done" in visible and "/tasks/1/delete" not in visible and "/tasks/1/owner" not in visible
+    assert "/tasks/1/delete" in menu and "/tasks/1/not-needed" in menu and "⋯</button>" not in menu and "/tasks/1/owner" in menu and "/tasks/1/edit" in menu and 'action="/tasks/1/remind"' in menu
     head = page.split('class="conv-controls"')[1].split("</header>")[0]
-    assert "Move to Trash" in head.split('class="row-menu"')[1] and "Mark private" in head.split('class="row-menu"')[1]
+    assert "Move to Trash" in head.split('class="row-menu"')[1] and "Mark private" not in head
 
 
 def test_naming_a_speaker_fixes_speaker_n_in_the_ai_text(env, monkeypatch):
@@ -254,3 +255,25 @@ def test_naming_a_speaker_fixes_speaker_n_in_the_ai_text(env, monkeypatch):
     pid = one(conn, "SELECT person_id FROM speaker WHERE id = 3")
     assert one(conn, "SELECT person_id FROM person_fact WHERE value = 'Likes tea'") == pid      # note moved to the person
     assert one(conn, "SELECT count(*) FROM search_index WHERE kind = 'summary' AND text LIKE '%Pat Example%'") == 1
+
+
+def test_naming_two_speakers_the_same_person_merges_them(env, monkeypatch):
+    """Brian, 2026-11-20: renaming a speaker to someone already in the meeting gave two chips, two colors, split stats."""
+    client, conn, _ = env
+    monkeypatch.setattr("scribe_bot.pipeline.identify.enroll", lambda c, sid, pid, cfg=None: None)
+    client.post("/speakers/1/name", data={"new_name": "Casey Sample"}, headers=HX)
+    before = one(conn, "SELECT count(*) FROM segment WHERE speaker_id IN (1, 3)")
+    client.post("/speakers/3/name", data={"new_name": "casey sample"}, headers=HX)
+    assert one(conn, "SELECT count(*) FROM segment WHERE speaker_id = 3") == 0
+    assert one(conn, "SELECT count(*) FROM segment WHERE speaker_id = 1") == before
+    chips = client.get("/conversations/1").text.split('id="speakers"')[1].split('class="conv-controls"')[0]
+    assert chips.count('class="speaker-name">Casey Sample<') == 1
+
+
+def test_waiting_recordings_sort_by_when_recorded():
+    from scribe_bot.web.routes import recorded_at
+    a = recorded_at("Oct 23 at 09_07", "2026-10-24T20:18:01+00:00")
+    b = recorded_at("Oct 23 at 11_59", "2026-10-24T20:18:01+00:00")
+    assert (a.month, a.day, a.hour, a.minute) == (10, 23, 9, 7) and b > a
+    assert recorded_at("Dec 30 at 10_00", "2027-01-02T10:00:00+00:00").year == 2026          # last year's file
+    assert recorded_at("Team sync", "2026-10-24T20:18:01+00:00").isoformat().startswith("2026-10-24T20:18:01")

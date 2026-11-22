@@ -7,6 +7,7 @@ job at a time. A background thread meanwhile sends queued Discord notifications 
 """
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -15,14 +16,18 @@ import time
 from datetime import datetime
 
 from scribe_bot.ai import jobs as ai_jobs
+from scribe_bot.ai import shortnames
 from scribe_bot.backup import jobs as backup_jobs
 from scribe_bot.core import cleanup, db, logs, machine, queue, scheduler, settings
-from scribe_bot.discord_bot import briefing, sender
-from scribe_bot.pipeline import ingest, recording
+from scribe_bot.discord_bot import briefing, notify, sender
+from scribe_bot.pipeline import control, ingest, pace, peek, recording
 
 POLL_SECONDS = 30
+PACE_SECONDS = 55   # heat guard + Auto speed check (each check takes ~0.2 s of commands)
 SEND_SECONDS = 5   # a queued Discord notification goes out within about this long
-PIPELINES: dict[str, queue.Pipeline] = {"recording": recording.PIPELINE, ai_jobs.KIND: ai_jobs.PIPELINE}
+PIPELINES: dict[str, queue.Pipeline] = {"recording": recording.PIPELINE, ai_jobs.KIND: ai_jobs.PIPELINE,
+                                         ai_jobs.COMPARE_KIND: ai_jobs.COMPARE_PIPELINE, ai_jobs.DETAIL_KIND: ai_jobs.DETAIL_PIPELINE,
+                                         shortnames.KIND: shortnames.PIPELINE}
 MACHINE_RUN = subprocess.run   # tests swap in a fake (no real commands)
 SCHEDULES: list[scheduler.Schedule] = [*briefing.SCHEDULES, *backup_jobs.SCHEDULES, *cleanup.SCHEDULES]
 
@@ -42,7 +47,8 @@ def background_thread(cfg: settings.Settings, stop: threading.Event, log, every:
     night-time messages; retries after Discord was unreachable, so a Discord outage isn't retried every 5 s)."""
     def run():
         c = db.connect(cfg.db_path)
-        last_slow, retry_slow = time.monotonic(), False   # the first beat waits: the first tick's downtime report sees the gap
+        last_slow, retry_slow = time.monotonic(), False
+        last_pace = 0.0   # the first beat waits: the first tick's downtime report sees the gap
         try:
             while not stop.wait(every):
                 slow = time.monotonic() - last_slow >= slow_every
@@ -55,6 +61,14 @@ def background_thread(cfg: settings.Settings, stop: threading.Event, log, every:
                 if not slow:
                     continue
                 last_slow = time.monotonic()
+                try:   # heat guard + Auto speed (Brian, 2026-11-21); about once a minute
+                    if time.monotonic() - last_pace >= PACE_SECONDS:
+                        last_pace = time.monotonic()
+                        r = pace.update(c, MACHINE_RUN, notify=lambda t: notify.enqueue(c, "bot", t, "/processing#now"))
+                        if r["heat"]:
+                            log.info("heat guard: %s", r["heat"])
+                except Exception:
+                    log.exception("pace check failed")
                 try:
                     machine.maybe_sample(c, cfg.data_dir, MACHINE_RUN)   # M14 health, every 5 min (numbers only)
                 except Exception:
@@ -71,30 +85,61 @@ def background_thread(cfg: settings.Settings, stop: threading.Event, log, every:
 
 
 def paused(conn) -> bool:
-    """Setting 'pipeline_paused' = '1' stops new recordings being picked up and processed (schedules still run)."""
-    row = conn.execute("SELECT value FROM setting WHERE key = 'pipeline_paused'").fetchone()
-    return bool(row) and row[0] == "1"
+    """❚❚ Pause ('pipeline_paused') or the heat guard ('heat_paused') stops new recordings being picked up and processed
+    (schedules still run)."""
+    return queue.hold_requested(conn)
+
+
+def resume_if_due(conn, at: str | None = None) -> bool:
+    """"Resume tonight" (Brian, 2026-11-21): setting 'pipeline_resume_at' (UTC ISO) lifts the pause once it's reached."""
+    row = conn.execute("SELECT value FROM setting WHERE key = 'pipeline_resume_at'").fetchone()
+    if not row or not row[0] or row[0] > (at or db.now()):
+        return False
+    conn.execute("UPDATE setting SET value = '0' WHERE key = 'pipeline_paused'")
+    conn.execute("DELETE FROM setting WHERE key = 'pipeline_resume_at'")
+    return True
 
 
 def tick(conn, cfg: settings.Settings, log) -> None:
     briefing.downtime_report(conn)  # before beat(), so a heartbeat gap is still visible
+    if resume_if_due(conn):
+        log.info("pause ended (resume time reached)")
     hold = paused(conn)
     if not hold:
         for rec_id in ingest.scan_inbound(conn, cfg):
             log.info("recording %d queued", rec_id)
     for name, missed in scheduler.run_due(conn, SCHEDULES, datetime.now().astimezone()):
         log.info("schedule %s ran (missed %d)", name, missed.count)
-    for job_id in ([] if hold else queue.run_all(conn, PIPELINES, cfg.jobs_dir)):
+    night = lambda: ("recording",) if pace.holds_new_work(conn) else ()   # noqa: E731  Night only: new recordings wait for 1 AM
+    for job_id in ([] if hold else queue.run_all(conn, PIPELINES, cfg.jobs_dir, night)):
         status = conn.execute("SELECT status FROM job WHERE id = ?", (job_id,)).fetchone()[0]
         log.info("job %d %s", job_id, status)
+    if not hold:
+        for rec_id in control.process_due(conn):   # "Process at…" times that have come
+            log.info("recording %d sent (Process at)", rec_id)
+        rid = control.overnight_next(conn)   # 1-7 AM: work through the Inbox as Transcript only (Brian, 2026-11-22)
+        if rid:
+            log.info("recording %d sent (overnight backlog, Transcript only)", rid)
+        peek.run_one(conn, log, data_dir=cfg.data_dir)   # T1: quick title for one waiting recording, only when no job is running
     beat(conn)
 
 
+NICE = 10   # processing yields the CPU to the web app and anything Brian is doing (child processes inherit it)
+
+
 def main() -> int:
+    try:
+        os.nice(NICE)   # Brian, 2026-11-21: the app was laggy while a 2-hour talk processed; it now gets the CPU first
+    except OSError:
+        pass
     cfg = settings.load()
     log = logs.setup(cfg.data_dir / "logs")
     conn = db.connect(cfg.db_path)
     db.migrate(conn)
+    try:
+        recording.retitle_plain(conn)   # once per start: old no-AI talks called just "Conversation" get a quick title
+    except Exception:
+        log.exception("retitle failed")
     SCHEDULES.extend(recording.make_schedules(conn, cfg))
     stopping = False
 
@@ -109,6 +154,8 @@ def main() -> int:
     log.info("worker started")
     while not stopping:
         try:
+            if not paused(conn):
+                shortnames.maybe_queue(conn)   # Q5: short list names for new and older talks (cheap model, titles only)
             tick(conn, cfg, log)
         except Exception:
             log.exception("worker tick failed")  # launchd restarts us only if we exit; keep going

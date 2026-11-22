@@ -1,0 +1,21 @@
+{# Brian (2026-11-21): talks still processing sit at the top of Talks, on their own. When one finishes, the page
+   reloads (the fragment answers HX-Refresh) and it folds into This week / Last week like the rest. Polls every 15 s. #}
+<div id="talks-now"{% if jobs %} hx-get="/progress/talks?n={{ jobs|length }}" hx-trigger="every 15s" hx-swap="outerHTML"{% endif %}>
+{% if jobs %}
+<div class="card talks-now">
+  <h3 class="list-head" id="g-processing-now">Processing now</h3>
+  {% for j in jobs %}
+  <div class="item tap-row now-row"><div class="item-main">
+    <a class="item-link" href="{{ '/conversations/' ~ j.conversation_id if j.conversation_id else '/processing#now' }}">{{ j.title|recorder_title }}</a>
+    <div class="item-sub">
+      {% if j.paused %}<span><b>Paused</b>{% if j.resume_label %} · resumes {{ j.resume_label }}{% endif %}</span>
+      {% elif not j.started %}<span>Waiting its turn</span>
+      {% else %}<span>{{ j.current.label if j.current else 'Finishing' }}</span>{% endif %}
+      <span>{{ j.minutes|round|int }} min</span>{% if not j.paused %}<span>ready ~{{ j.eta }}</span>{% endif %}
+    </div>
+    <div class="progress-bar"><div class="meter" role="progressbar" aria-label="Processing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ j.percent }}"><span style="width:{{ j.percent }}%"></span></div><b>{{ j.percent }}%</b></div>
+  </div></div>
+  {% endfor %}
+</div>
+{% endif %}
+</div>

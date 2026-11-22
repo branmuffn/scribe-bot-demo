@@ -345,3 +345,23 @@ def test_ai_can_switch_an_unpicked_conversation_to_learning(conn):
                                     "waiting_on": [], "people_facts": []}, "test")
     assert [r[0] for r in conn.execute("SELECT type FROM conversation WHERE title IN ('Auto', 'Picked') ORDER BY id")] == \
         ["learning", "multi"]
+
+
+def test_compare_keeps_both_until_brian_picks(conn):
+    # Brian 2026-11-19: run the other model on the same transcript, see both, keep one; no re-transcribing
+    cid, _ = make_conversation(conn)
+    extract.extract_conversation(conn, cid, factory=factory([GOOD]))                 # Sonnet made the current notes
+    assert extract.other_model(conn, cid) == router.HAIKU
+    alt = {**GOOD, "summary": "Haiku's take.", "tasks": [], "waiting_on": [{"title": "Budget", "owner": "Alex", "line": 3}]}
+    calls = []
+    out = extract.extract_conversation(conn, cid, factory=factory([alt], calls), approved=True,
+                                       chain=[extract.other_model(conn, cid)], keep=False)
+    assert out["status"] == "compared" and calls[0]["model"] == "claude-haiku-5-5"
+    conv = conn.execute("SELECT summary, processed_by FROM conversation WHERE id = ?", (cid,)).fetchone()
+    assert conv["summary"].startswith("Alex and Brian") and "sonnet" in conv["processed_by"]   # current untouched
+    assert extract.compared(conn, cid)["data"]["summary"] == "Haiku's take."
+    extract.keep_compared(conn, cid, "other")
+    conv = conn.execute("SELECT summary, processed_by FROM conversation WHERE id = ?", (cid,)).fetchone()
+    assert conv["summary"] == "Haiku's take." and "haiku" in conv["processed_by"] and extract.compared(conn, cid) is None
+    assert [r[0] for r in conn.execute("SELECT title FROM task WHERE conversation_id = ?", (cid,))] == ["Budget"]
+    assert extract.other_model(conn, cid) == router.SONNET                          # next compare flips back

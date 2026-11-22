@@ -58,9 +58,10 @@ def test_app_only_rows_are_never_posted(conn):
 def test_pipeline_sends_only_the_waiting_ping_to_discord():
     import inspect
     from scribe_bot.pipeline import ingest, recording
-    assert 'notify.enqueue(conn, "bot", f"New recording waiting for your OK' in inspect.getsource(ingest)
+    # Brian 2026-11-21: no "waiting for your OK" and no "Processing started"; "Ready" is the one recording ping
+    assert "notify.enqueue" not in inspect.getsource(ingest)
     src = inspect.getsource(recording)
-    assert src.count('notify.enqueue(ctx.conn, "bot"') == 2 and src.count("discord=False") == 1   # only Processing started
+    assert "return   # Brian, 2026-11-21: no \"Processing started\" note" in src
 
 
 def test_quiet_hours_hold_bot_but_not_alerts(conn):

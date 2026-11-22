@@ -81,7 +81,8 @@ def request_approval(conn: sqlite3.Connection, rec_id: int, title: str, duration
                "ai_cost": 0.0 if private else round(minutes * AI_USD_PER_AUDIO_MINUTE, 3)}
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
                  (rec_id, json.dumps(payload), now()))
-    notify.enqueue(conn, "bot", f"New recording waiting for your OK · {minutes} min", "/review")  # no title: names stay home. One of the two recording pings Discord gets (Brian 2026-10-22)
+    # Brian, 2026-11-21: no "New recording waiting for your OK" note any more (35 a month; he made the recording, and
+    # the Inbox tab shows the count). Notes are kept for things that need him or that he can't see coming.
 
 
 def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backlog: bool = False) -> int | None:
@@ -110,13 +111,13 @@ def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backl
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ("upload" if paths.uploads(cfg) in path.parents else "recorder", str(path), digest, duration, now(),
              "backlog" if backlog else ("awaiting_approval" if hold else "queued"), title, vault_path,
-             int(is_private(title))),
+             0),  # Private is gone (Brian, 2026-11-21)
         )
         rec_id = cur.lastrowid
         if backlog:
             pass
         elif hold:
-            request_approval(conn, rec_id, title, duration, is_private(title))
+            request_approval(conn, rec_id, title, duration, False)
         else:
             queue.enqueue(conn, "recording", rec_id, {"started_at": _started_at(path, duration)})
     return rec_id
@@ -158,6 +159,9 @@ def approve(conn: sqlite3.Connection, rec_id: int, ai: bool = True, meeting_type
     rec = conn.execute("SELECT original_path, duration_s FROM recording WHERE id = ?", (rec_id,)).fetchone()
     path = Path(rec["original_path"])
     started = _started_at(path, rec["duration_s"] or 0) if path.exists() else None
+    part = conn.execute("SELECT started_at FROM recording_part WHERE recording_id = ? ORDER BY idx LIMIT 1", (rec_id,)).fetchone()
+    if part and part[0]:   # a merged recording starts when its first part did
+        started = part[0]
     conn.execute("UPDATE recording SET status = 'queued' WHERE id = ?", (rec_id,))
     return queue.enqueue(conn, "recording", rec_id, {"started_at": started, "ai": ai,
                                                      **({"type": meeting_type} if meeting_type else {})})
@@ -179,7 +183,7 @@ def backlog_to_review(conn: sqlite3.Connection, rec_id: int, cfg: settings.Setti
         tmp.replace(dst)
     with transaction(conn):
         conn.execute("UPDATE recording SET status = 'awaiting_approval', vault_path = ? WHERE id = ?", (str(dst), rec_id))
-        request_approval(conn, rec_id, row["title"], row["duration_s"], bool(row["private"]))
+        request_approval(conn, rec_id, row["title"], row["duration_s"], False)
     return True
 
 

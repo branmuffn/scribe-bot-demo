@@ -20,4 +20,8 @@
             </details>
             <button class="btn btn-primary">Save words</button>
           </form>
+          {% if s.idx > 0 %}<form method="post" action="/segments/{{ s.id }}/join" class="picker-form">
+            <button class="btn btn-ghost">Join with line above</button>
+            <span class="meta">For a sentence cut in two. To split a line, select its words.</span>
+          </form>{% endif %}
         </div>

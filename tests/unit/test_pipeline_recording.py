@@ -88,8 +88,7 @@ def test_full_pipeline_outputs(conn, cfg, tmp_path):
     item = conn.execute("SELECT * FROM review_item WHERE kind = 'speaker'").fetchone()
     assert Path(json.loads(item["payload"])["clip"]).exists()
     started = conn.execute("SELECT title FROM notification WHERE link LIKE '/?job=%'").fetchall()
-    assert len(started) == 1 and started[0][0].startswith("Processing started · ") and "Weekly sync" not in started[0][0]
-    assert " min recording · ready ~" in started[0][0]
+    assert started == []   # Brian 2026-11-21: no "Processing started" note
     note = conn.execute("SELECT * FROM notification WHERE link LIKE '/conversations/%'").fetchone()
     assert note["title"].startswith("Ready: Weekly sync · 1 speaker to name · took ")
     assert note["link"] == f"/conversations/{conv['id']}"
@@ -97,7 +96,7 @@ def test_full_pipeline_outputs(conn, cfg, tmp_path):
     assert stage[0] == "not_available"
 
 
-def test_transcript_only_makes_the_conversation_private_for_good(conn, cfg, monkeypatch):
+def test_transcript_only_skips_the_ai_without_locking(conn, cfg, monkeypatch):
     def boom(*a):
         raise AssertionError("Transcript Only (No AI) must not call the AI")
     monkeypatch.setattr("scribe_bot.ai.extract.extract_conversation", boom)
@@ -110,8 +109,9 @@ def test_transcript_only_makes_the_conversation_private_for_good(conn, cfg, monk
     assert queue.run_next(conn, PIPELINES, cfg.jobs_dir) == job
     conv = conn.execute("SELECT * FROM conversation WHERE recording_id = ?", (rec_id,)).fetchone()
     rec = conn.execute("SELECT * FROM recording WHERE id = ?", (rec_id,)).fetchone()
-    assert conv["private"] == 1 and rec["private"] == 1  # a later "Re-run AI" is refused too
-    assert conv["title"] == "Conversation"  # a date-only Recorder name, and no AI title
+    assert conv["private"] == 0 and rec["private"] == 0  # round 7: Make AI notes works later
+    # a date-only Recorder name and no AI title: the transcript's quick title (Brian, 2026-11-21), else "Conversation"
+    assert conv["title"] == (recording.transcript_title(conn, conv["id"]) or "Conversation") != ""
     stage = conn.execute("SELECT output FROM stage_run WHERE job_id = ? AND stage = 'ai_extract'", (job,)).fetchone()
     assert stage[0] == "skipped_transcript_only"
 
@@ -122,19 +122,6 @@ def test_fallback_title_drops_the_recorder_date(conn, cfg):
     assert conv["title"] == "Weekly sync"
     rec = conn.execute("SELECT title FROM recording WHERE id = ?", (conv["recording_id"],)).fetchone()
     assert rec["title"] == "Weekly sync - Oct 3 at 14_05"  # the original name is kept
-
-
-def test_private_never_calls_ai(conn, cfg, monkeypatch):
-    def boom(*a):
-        raise AssertionError("AI must not be called for Private recordings")
-    monkeypatch.setattr("scribe_bot.ai.extract.extract_conversation", boom)
-    speech.set_engine(FakeEngine([segment(words(1, 20, "hello"))], turns((0, 20, 0)), {0: GUEST_VOICE}))
-    conv, job = record(conn, cfg, name="Private call.m4a")
-    assert conv["private"] == 1
-    assert conn.execute("SELECT title FROM notification WHERE link LIKE '/conversations/%'").fetchone()[0].startswith(
-        "🔒 Private recording ready · 1 speaker to name · took ")
-    stage = conn.execute("SELECT output FROM stage_run WHERE job_id = ? AND stage = 'ai_extract'", (job,)).fetchone()
-    assert stage[0] == "skipped_private"
 
 
 def test_ai_extract_called_when_available(conn, cfg, monkeypatch):

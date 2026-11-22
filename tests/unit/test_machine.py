@@ -171,29 +171,20 @@ def test_sample_survives_missing_tools(conn, tmp_path):
     assert row["cpu_pct"] is None and row["on_battery"] is None and row["disk_used_pct"] is not None
 
 
-def test_hot_needs_two_samples_alerts_once_then_clears(conn, tmp_path):
-    hot = fake({(machine.TEMP_TOOL,): "CPU: 95.0°C\n", ("pmset", "-g", "therm"): "CPU_Speed_Limit = 60\n"})
-    machine.sample(conn, tmp_path, hot, T0)
-    assert alerts_sent(conn) == []                                     # one hot sample isn't enough
-    machine.sample(conn, tmp_path, hot, T0 + timedelta(minutes=5))
-    machine.sample(conn, tmp_path, hot, T0 + timedelta(minutes=10))   # still hot: no repeat
-    sent = alerts_sent(conn)
-    assert len(sent) == 2 and "hot" in sent[0] and "slowing" in sent[1]
-    assert machine.needs_attention(conn, T0 + timedelta(minutes=10)) == ["hot", "throttling"]
-    machine.sample(conn, tmp_path, fake(), T0 + timedelta(minutes=15))
-    assert len(alerts_sent(conn)) == 4 and all(t.startswith("✅") for t in alerts_sent(conn)[2:])
-    assert machine.needs_attention(conn, T0 + timedelta(minutes=15)) == []
-    assert all("°C" not in t or "90" in t for t in alerts_sent(conn))  # titles only, fixed text
-
-
-def test_swap_pressure_smart_alert_immediately(conn, tmp_path):
-    bad = fake({("sysctl", "-n", "vm.swapusage"): "total = 4.00G  used = 3.00G  free = 1.00G",
+def test_problems_show_on_status_but_send_no_discord_alert(conn, tmp_path):
+    # Brian 2026-11-19: #m14-health (the watcher) covers these; Scribe Bot no longer posts them to #scribe-alerts
+    conn.execute("INSERT INTO setting (key, value) VALUES ('machine_alert:hot', '1')")   # left from the old alerts
+    bad = fake({(machine.TEMP_TOOL,): "CPU: 95.0°C\n", ("pmset", "-g", "therm"): "CPU_Speed_Limit = 60\n",
+                ("sysctl", "-n", "vm.swapusage"): "total = 4.00G  used = 3.00G  free = 1.00G",
                 ("memory_pressure",): "System-wide memory free percentage: 10%",
                 ("diskutil",): "   SMART Status:   Failing\n",
                 ("pmset", "-g", "batt"): "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t80%; discharging; 3:00 remaining\n"})
-    machine.sample(conn, tmp_path, bad, T0)
-    assert len(alerts_sent(conn)) == 3
-    assert machine.needs_attention(conn, T0) == ["on battery", "swap heavy", "memory pressure high", "SMART failing"]
+    for i in range(3):
+        machine.sample(conn, tmp_path, bad, T0 + timedelta(minutes=5 * i))
+    assert alerts_sent(conn) == []
+    assert not conn.execute("SELECT 1 FROM setting WHERE key LIKE 'machine_alert:%'").fetchone()
+    assert machine.needs_attention(conn, T0 + timedelta(minutes=10)) == [
+        "hot", "throttling", "on battery", "swap heavy", "memory pressure high", "SMART failing"]
 
 
 def test_needs_attention_empty_or_stale(conn, tmp_path):
@@ -327,3 +318,12 @@ def test_cpu_is_the_average_since_the_last_sample(conn, tmp_path, monkeypatch):
     if REAL_CPU_TICKS():                                                            # macOS: the real counters work
         busy, total = REAL_CPU_TICKS()
         assert 0 < busy < total
+
+
+def test_smart_not_supported_is_no_reading():
+    # Brian 2026-11-19: diskutil flips between "Verified" and "Not Supported" on the M14 (about 1 reading in 5),
+    # which sent alert / all-clear pairs; "Not Supported" is no reading, only "Failing" etc. count as bad
+    ns = machine.fast(fake({("diskutil",): "   SMART Status:              Not Supported\n"}))
+    assert ns["smart"] == "Not Supported" and ns["smart_ok"] is None
+    bad = machine.fast(fake({("diskutil",): "   SMART Status:              Failing\n"}))
+    assert bad["smart_ok"] is False

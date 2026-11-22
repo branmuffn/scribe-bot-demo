@@ -30,13 +30,14 @@ PROMPT_VERSION = "v2.2"
 TITLE_RULE = ("\n- title: 3 to 8 words saying what the conversation was about (its topic). No date, and no names unless "
               "the topic needs them.")
 TITLE_MAX = 80
-AREA_RULE = ('\n- area: "work" if this conversation is mainly about {me}\'s job, "personal" if it is about his personal life '
-             "(family, friends, health, home, hobbies); area_confidence: 0 to 1, how sure you are.")
+AREA_RULE = ('\n- area: "work" if this conversation is mainly about {me}\'s job, "school" if it is about his classes or '
+             'studies, "personal" if it is about his personal life (family, friends, health, home, hobbies), "other" if '
+             "none of these fit; area_confidence: 0 to 1, how sure you are.")   # school/other: Brian, 2026-11-21
 
 SPEAKER_NOTE = ("\nSpeaker labels come from automatic speaker separation and may be wrong or split one person "
                 "into several labels; use context.\nOutput ONLY one JSON object with this shape, no prose:\n")
 
-SCHEMA_TEXT = ('{"title": str, "area": "work"|"personal", "area_confidence": number, "summary": str,"decisions": [{"text": str, "line": int}], '
+SCHEMA_TEXT = ('{"title": str, "area": "work"|"school"|"personal"|"other", "area_confidence": number, "summary": str,"decisions": [{"text": str, "line": int}], '
                '"tasks": [{"title": str, "owner": str, "due": str|null, "confidence": number, "line": int}], '
                '"waiting_on": [{"title": str, "owner": str, "due": str|null, "confidence": number, "line": int}], '
                '"people_facts": [{"person": str, "fact": str, "line": int}]}')
@@ -45,21 +46,16 @@ FACT_TYPES = ("birthday", "family", "event", "preference", "work", "other")
 
 # F6: one template per meeting type, added after the v2 rules. 1:1 stays empty so the rated v2 prompt is unchanged.
 # Brian can edit each in Settings → Summary templates (setting "template:<type>"); {me} becomes his name.
-MEETING_TYPES = {"1:1": "1:1", "multi": "Group", "intro": "Intro", "personal": "Personal", "voice_note": "Voice note",
-                 "learning": "Learning"}
+# Brian, 2026-11-20: only four types (Intro and Voice note removed; a one-voice recording is Personal).
+MEETING_TYPES = {"1:1": "1:1", "multi": "Group", "learning": "Learning", "personal": "Personal"}
 TEMPLATES = {
     "1:1": "",
     "multi": ("This is a group meeting. summary: one sentence on the purpose, then one short paragraph per main topic, "
               "each starting with the topic name and a colon, separated by a blank line. Name who owns each next step."),
-    "intro": ("This is a first meeting or introduction. summary: who the other person is (role, organization, background), "
-              "how they connect to {me}, what each side is looking for, and the agreed next step. Put every fact about "
-              "them in people_facts."),
     "personal": ("This is a personal conversation, not a work meeting. summary: warm, plain language about what was talked "
                  "about and any plans; no business words like \"action items\". tasks only for real promises. people_facts "
-                 "matter most: family, birthdays, events, preferences."),
-    "voice_note": ("This is a voice note: {me} talking to himself. summary: 1 to 3 sentences on what the note is about. "
-                   "tasks: what {me} says he needs to do. decisions, waiting_on and people_facts: only if clearly stated, "
-                   "usually empty."),
+                 "matter most: family, birthdays, events, preferences. If only {me} speaks (a note to himself), keep the summary to 1 "
+                 "to 3 sentences and list what he says he needs to do as tasks."),
     "learning": ("This is a talk, class, sermon, training or podcast {me} is learning from, not a meeting. summary: one "
                  "sentence on the topic and who is teaching, then the key ideas as short paragraphs, each starting with "
                  "the idea's name and a colon, separated by a blank line; include examples or quotes worth remembering. "
@@ -74,14 +70,19 @@ LEARNING_DETECT = ('\n- If this is clearly not a meeting but a talk, class, serm
                    'add "learning": true and follow these rules instead of the meeting type above: {rules}')
 
 
+TAG_RULE = ('\n- tags: up to 3 of these existing tags that clearly fit, else []. Use them exactly as written and never '
+            'make up a new one: {tags}. Add it to the JSON as "tags": [str].')
+
+
 def extract_system(me: str = "Brian", meeting_type: str | None = None, template: str | None = None,
-                   detect_learning: bool = False) -> str:
+                   detect_learning: bool = False, tags: list[str] | None = None) -> str:
     """The v2 prompt, plus the meeting type's template when it has one (custom text from Settings, else the default)."""
     text = (template if template is not None else TEMPLATES.get(meeting_type or "", "")).strip()
     extra = f"\nMeeting type: {MEETING_TYPES.get(meeting_type, meeting_type)}. {text.replace('{me}', me)}" if text else ""
     if detect_learning and meeting_type != "learning":
         extra += LEARNING_DETECT.format(me=me, rules=TEMPLATES["learning"].split(", not a meeting. ", 1)[1].replace("{me}", me))
-    return EXTRACT_V2.format(me=me) + extra + TITLE_RULE + AREA_RULE.format(me=me) + SPEAKER_NOTE + SCHEMA_TEXT
+    tag_rule = TAG_RULE.format(tags=json.dumps(tags[:200])) if tags else ""   # M4: the AI only picks existing tags
+    return EXTRACT_V2.format(me=me) + extra + TITLE_RULE + AREA_RULE.format(me=me) + tag_rule + SPEAKER_NOTE + SCHEMA_TEXT
 
 
 def apply_glossary(text: str, fixes: dict[str, str]) -> str:
@@ -135,7 +136,7 @@ def parse_extract(text: str) -> dict:
     if not isinstance(data, dict) or not isinstance(data.get("summary"), str):
         raise InvalidOutput("summary missing")
     item = {"title": (str,), "owner": (str,), "due": (str,), "confidence": (int, float), "line": (int,)}
-    area = data.get("area") if data.get("area") in ("work", "personal") else None
+    area = data.get("area") if data.get("area") in ("work", "personal", "school", "other") else None
     conf = data.get("area_confidence")
     return {
         "title": clean_title(data.get("title")),
@@ -146,4 +147,28 @@ def parse_extract(text: str) -> dict:
         "tasks": _items(data, "tasks", item),
         "waiting_on": _items(data, "waiting_on", item),
         "people_facts": _items(data, "people_facts", {"person": (str,), "fact": (str,), "line": (int,)}),
+        "tags": [t.strip() for t in (data.get("tags") or [])[:3] if isinstance(t, str) and t.strip()]
+        if isinstance(data.get("tags"), list) else [],
     }
+
+
+# Short / Detailed notes (Brian, 2026-11-20): Detailed is a longer, topic-by-topic version, made only on request.
+DETAIL_SYSTEM = (
+    "You write detailed notes of a recorded conversation for {me}, who was in it. Plain words, no filler, no guessing.\n"
+    "Group the notes by topic in the order they came up. For each topic write a line '## <short topic name>' and then "
+    "3 to 8 bullet lines starting with '- ' covering what was said, the reasons given, numbers, names, dates, open "
+    "questions and anything agreed. Use speaker names as they appear in the transcript. End with '## Next steps' "
+    "(bullets: who does what, by when) if there are any. Return only the notes, no preamble.")
+
+
+def detail_system(me: str = "Brian") -> str:
+    return DETAIL_SYSTEM.format(me=me)
+
+
+def clean_detail(text: str) -> str:
+    """Keep only heading and bullet lines (no preamble or closing remarks), at most 20,000 characters."""
+    keep = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip().startswith(("## ", "- ", "* ")) or not ln.strip()]
+    out = "\n".join(keep).strip()
+    while "\n\n\n" in out:
+        out = out.replace("\n\n\n", "\n\n")
+    return out[:20000]

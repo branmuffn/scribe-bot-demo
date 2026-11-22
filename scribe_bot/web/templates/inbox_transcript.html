@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block body %}
+{# The whole Recorder transcript, unedited (Brian, 2026-11-20): read it before choosing what to process. #}
+<div class="page-head"><div><a class="meta" href="/inbox">‹ Inbox</a>
+  <h1>{% if it.quick_title %}“{{ it.quick_title }}”{% else %}{{ it.title|recorder_title }}{% endif %}</h1>
+  <div class="meta">{{ it.title|recorder_title }} · {{ ((it.duration_s or 0) / 60)|round(1) }} min · {{ words }} words · from Google Recorder, not processed yet</div></div></div>
+
+<div class="row tx-tools">
+  <button type="button" class="btn btn-sm" data-copy="#tx-all">Copy all</button>
+  <button type="button" class="btn btn-sm" data-tx-size>Text size</button>
+  <a class="btn btn-sm" href="/inbox/{{ it.rec_id }}/transcript.txt" download>Download .txt</a>
+  <textarea id="tx-all" hidden readonly aria-hidden="true">{% for t in turns %}{% if t.speaker %}[{{ t.speaker }}]
+{% endif %}{{ t.text }}
+
+{% endfor %}</textarea>
+</div>
+
+{% set colors = ["#2563eb", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#0891b2"] %}{% set ns = namespace(names=[]) %}
+<div class="card tx-read" id="tx-read">
+  {% for t in turns %}{% if t.speaker and t.speaker not in ns.names %}{% set ns.names = ns.names + [t.speaker] %}{% endif %}
+  <p>{% if t.speaker %}<span class="tx-who"><span class="tx-dot" style="background:{{ colors[ns.names.index(t.speaker) % 6] }}"></span>{{ t.speaker }}</span>{% endif %}{{ t.text }}</p>
+  {% else %}<p class="meta">This transcript file is empty.</p>{% endfor %}
+</div>
+
+{% if it.x is defined %}{% set x = it.x %}
+<div class="tx-actions">
+  {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Transcribe + AI", "rc-" ~ x.r.id) }}{% endif %}
+  <form method="post" action="/review/{{ x.r.id }}/approve"><input type="hidden" name="ai" value="0"><button class="btn">{{ m.icon("lock") }} Transcript Only (No AI)</button></form>
+  <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">🗑 Delete</button></form>
+</div>{{ m.confirm_slot("rc-" ~ x.r.id) }}
+{% endif %}
+<p class="meta">Speaker labels are Recorder's. After processing, Scribe Bot makes its own transcript on the M14 and names the people it knows.</p>
+{% endblock %}

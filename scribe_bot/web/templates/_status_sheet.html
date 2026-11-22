@@ -1,0 +1,17 @@
+{# Status sheet (Brian picked B, 2026-11-21): everything that used to hide under ⋯, with its live value #}
+{% import "macros.html" as m %}
+{% set j = jobs[0] if jobs else None %}
+<a class="st-row" href="/processing#now"><span class="st-ic">{{ m.icon("clock") }}</span><span class="grow">
+  {% if ctl.paused %}<b>Processing · Paused</b><small>{{ 'resumes ' ~ ctl.resume_label if ctl.resume_label else 'until you resume' }}{% if jobs %} · {{ jobs|length }} waiting{% endif %}</small>
+  {% elif j %}<b>Processing · {{ j.percent }}%</b><small>{{ j.title|recorder_title }} · ready ~{{ j.eta }}{% if jobs|length > 1 %} · {{ jobs|length - 1 }} more waiting{% endif %}</small>
+    <span class="meter st-meter"><span style="width:{{ j.percent }}%"></span></span>
+  {% else %}<b>Processing · Idle</b><small>Nothing waiting</small>{% endif %}</span><span class="chev-r" aria-hidden="true">›</span></a>
+<a class="st-row" href="/status"><span class="st-ic{{ ' st-bad' if m14 }}">{{ m.icon("pulse") }}</span><span class="grow">
+  <b>M14 · {{ 'Needs attention' if m14 else 'All good' }}</b>
+  <small>{% if m14 %}{{ m14[0] }}{% else %}{% if d.temp_c is not none %}{{ d.temp_c|round|int }} °C{% endif %}{% if d.mem_free_pct is not none %} · memory {{ d.mem_free_pct|round|int }}% free{% endif %}{% endif %}</small></span><span class="chev-r" aria-hidden="true">›</span></a>
+<a class="st-row" href="/costs"><span class="st-ic">{{ m.icon("dollar") }}</span><span class="grow">
+  <b>AI costs · ${{ '%.2f'|format(spend) }} of ${{ '%.0f'|format(cap) }}</b><small>this month</small></span><span class="chev-r" aria-hidden="true">›</span></a>
+<a class="st-row" href="/processing"><span class="st-ic">{{ m.icon("note") }}</span><span class="grow">
+  <b>Processing history</b><small>{% if last %}last: {{ (last.ctitle or last.title or 'Recording')|recorder_title }}{% if took %} · took {{ took }}{% endif %}{% else %}nothing yet{% endif %}</small></span><span class="chev-r" aria-hidden="true">›</span></a>
+{% if n_cleanup %}<a class="st-row" href="/cleanup"><span class="st-ic">🧹</span><span class="grow"><b>Clean up devices · {{ n_cleanup }}</b><small>deleted here, still on your phone or Mac</small></span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+<a class="st-row" href="/help"><span class="st-ic">{{ m.icon("book") }}</span><span class="grow"><b>Help</b></span><span class="chev-r" aria-hidden="true">›</span></a>

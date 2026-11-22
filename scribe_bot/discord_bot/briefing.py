@@ -108,7 +108,7 @@ def briefing_line(conn: sqlite3.Connection, at: datetime, missed: Missed | None,
 def weekly_line(conn: sqlite3.Connection, at: datetime) -> str:
     week_ago = _utc(at - timedelta(days=7))
     today = at.date()
-    done = _one(conn, f"SELECT count(*) FROM task WHERE status = 'done' AND updated_at >= ? AND {LIVE}", (week_ago,))
+    done = _one(conn, f"SELECT count(*) FROM task WHERE status = 'done' AND closed_as IS NULL AND updated_at >= ? AND {LIVE}", (week_ago,))
     open_ = _one(conn, f"SELECT count(*) FROM task WHERE status = 'open' AND {LIVE}")
     aging = _one(conn, f"SELECT count(*) FROM task WHERE status = 'open' AND created_at < ? AND {LIVE}",
                  (_utc(at - timedelta(days=AGING_DAYS)),))

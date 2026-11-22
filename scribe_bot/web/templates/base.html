@@ -23,23 +23,23 @@
 {% include "icons.html" %}
 
 {# 3 tabs (Today · Talks · Tasks). Pages that live under a tab light it up: People is in Talks, Decisions in Tasks, Review in Today. #}
-{% set tab_on = {"conversations": "talks", "people": "talks", "decisions": "tasks", "review": "today"}.get(nav, nav) %}
-{% set tabs = [("today", "/", "sun", "Today"), ("talks", "/conversations", "chat", "Talks"), ("tasks", "/tasks", "check", "Tasks")] %}
+{% set tab_on = {"conversations": "talks", "people": "people", "decisions": "tasks", "review": "today"}.get(nav, nav) %}
+{% set tabs = [("today", "/", "sun", "Today"), ("inbox", "/inbox", "inbox", "Inbox"), ("talks", "/conversations", "chat", "Talks"), ("people", "/people", "users", "People"), ("tasks", "/tasks", "check", "Tasks")] %}
 
 {# Desktop sidebar #}
 <aside class="sidebar" aria-label="Main">
   <div class="side-top"><a class="brand" href="/"><img src="/static/icon.svg" alt=""> Scribe Bot</a>
-    {{ m.bell() }}{{ m.more_menu(head_alert) }}<a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a></div>
+    {{ m.bell() }}{{ m.status_ring(ring) if ring else m.more_menu(head_alert) }}<a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a></div>
   {{ m.area_toggle(area) }}
   <form class="side-search" method="get" action="/search" role="search">{{ m.icon("search") }}
     <input type="search" name="q" placeholder="Search everything" aria-label="Search" value="{{ request.query_params.get('q', '') if nav == 'search' }}"></form>
   <ul class="navlist">
     {% for key, href, icon, label in tabs %}
     <li><a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }} {{ label }}
-      {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}</a></li>
+      {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>
     {% endfor %}
   </ul>
-  <div class="side-foot">Private · runs on the M14</div>
+  <div class="side-foot">Runs on the M14</div>
 </aside>
 
 {# Phone top bar #}
@@ -48,7 +48,7 @@
   {{ m.area_toggle(area, short=True) }}
   <a class="icon-btn" href="/search" aria-label="Search" title="Search">{{ m.icon("search") }}</a>
   {{ m.bell() }}
-  {{ m.more_menu(head_alert) }}
+  {{ m.status_ring(ring) if ring else m.more_menu(head_alert) }}
   <a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a>
 </div></header>
 
@@ -87,7 +87,7 @@
 <nav class="tabbar" aria-label="Main">
   {% for key, href, icon, label in tabs %}
   <a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }}{{ label }}
-    {% if key == 'today' and needs_count %}<span class="dot" aria-label="{{ needs_count }} need you">{{ needs_count }}</span>{% endif %}</a>
+    {% if key == 'today' and needs_count %}<span class="dot" aria-label="{{ needs_count }} need you">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="dot" aria-label="{{ inbox_count }} waiting">{{ inbox_count }}</span>{% endif %}</a>
   {% endfor %}
 </nav>
 </body>

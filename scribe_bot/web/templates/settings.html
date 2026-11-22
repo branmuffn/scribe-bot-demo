@@ -47,17 +47,34 @@
   {{ m.section("", id="ai") }}
   <div class="card">
     <div class="item"><div class="item-main"><div class="item-title">Meetings</div>
-      <div class="item-sub">Speech and speakers on the M14 · summary, tasks and people notes by Claude Sonnet</div></div>
+      <div class="item-sub">Speech and speakers on the M14 · summary, tasks and people notes by the model you pick below</div></div>
       <span class="badge badge-cloud">{{ m.icon("cloud") }}Cloud default</span></div>
-    <div class="item"><div class="item-main"><div class="item-title">Private meetings</div>
-      <div class="item-sub">“private” in the recording title, or marked Private: transcript only, never leaves the M14</div></div>
-      <span class="badge badge-private">{{ m.icon("lock") }}Local only</span></div>
-    <div class="item"><div class="item-main"><div class="item-title">AI profile</div>
-      <div class="item-sub">Which provider and models the AI uses. Mixes fall back to the next provider if one fails.</div></div>
-      <div class="item-actions"><form method="post" action="/settings/profile" class="inline-form">
-        <select name="profile" aria-label="AI profile">{% for key, p in profiles.items() %}
-          <option value="{{ key }}" {{ 'selected' if key == profile }}>{{ p.label }}{{ ' (default)' if key == 'all_claude' }}</option>{% endfor %}</select>
-        <button class="btn">Save</button></form></div></div>
+    <div class="item"><div class="item-main"><div class="item-title">Transcript only</div>
+      <div class="item-sub">Never leaves the M14. Make AI notes on the talk any time later.</div></div>
+      <span class="badge badge-outline">Local</span></div>
+  </div>
+  <h3 class="sub-head">Who writes your meeting notes</h3>
+  <form method="post" action="/settings/profile" class="ai-cards" aria-label="AI model">
+    {% for card in ai.cards %}
+    <button class="ai-card{{ ' on' if card.on }}" name="profile" value="{{ card.key }}" aria-pressed="{{ 'true' if card.on else 'false' }}">
+      <span class="ai-radio" aria-hidden="true"></span>
+      <span><b>{{ card.name }}</b><span class="meta">{{ card.note }} · {{ card.cost }} per meeting{{ ' · key missing' if card.missing }}</span></span></button>
+    {% endfor %}
+  </form>
+  {% if ai.missing %}<p class="meta">Only models with a connected key are listed. <a href="/settings/keys">Add a {{ ai.missing|join(' or ') }} key</a> to see them here.</p>{% endif %}
+  <h3 class="sub-head">If it fails</h3>
+  <div class="card">
+    {% if ai.connected > 1 and ai.fallback_key %}
+    <div class="item"><div class="item-main"><div class="item-title">Try another company automatically</div>
+      <div class="item-sub">If the first model is down or refuses, the next company's model writes the notes.</div></div>
+      <div class="item-actions"><form method="post" action="/settings/profile"><input type="hidden" name="profile" value="{{ ai.fallback_key }}">
+        <button class="btn {{ 'btn-primary' if ai.fallback_on }}" aria-pressed="{{ 'true' if ai.fallback_on else 'false' }}">{{ 'On' if ai.fallback_on else 'Off' }}</button></form></div></div>
+    {% else %}
+    <div class="item"><div class="item-main"><div class="item-sub">Try another model automatically: available once you connect a second AI company{% if ai.missing %} ({{ ai.missing|join(' or ') }}){% endif %}.</div></div></div>
+    {% endif %}
+  </div>
+  <p class="meta">Saves as soon as you tap. Applies to the next AI run; finished notes stay as they are (use Compare on a conversation to try the other model).</p>
+  <div class="card">
     {% if offline %}<div class="item"><div class="item-main"><div class="item-title">Offline switch is on</div>
       <div class="item-sub">No AI runs until it's turned off in <a href="#privacy">Privacy</a></div></div>
       <span class="badge badge-warn">On · AI blocked</span></div>{% endif %}
@@ -67,6 +84,12 @@
         {% if paused %}<span class="badge badge-warn">Paused</span>{% else %}<span class="badge badge-ok">Running</span>{% endif %}
         <form method="post" action="/settings/pause"><input type="hidden" name="on" value="{{ 0 if paused else 1 }}">
           <button class="btn {{ 'btn-primary' if paused else '' }}">{{ 'Resume' if paused else 'Pause' }}</button></form></div></div>
+    <div class="item" id="quick-titles"><div class="item-main"><div class="item-title">Quick titles in the Inbox</div>
+      <div class="item-sub">{{ 'On: each new recording gets a title from its first 2 minutes (about 20 s of M14 work, only when idle). Recordings that come with a transcript need no work.' if quick_titles else 'Off: new recordings show their file name until processed (a transcript that comes with them still shows)' }}</div></div>
+      <div class="item-actions">
+        {% if quick_titles %}<span class="badge badge-ok">On</span>{% else %}<span class="badge">Off</span>{% endif %}
+        <form method="post" action="/settings/quick-titles"><input type="hidden" name="on" value="{{ 0 if quick_titles else 1 }}">
+          <button class="btn">{{ 'Turn off' if quick_titles else 'Turn on' }}</button></form></div></div>
     {% set pct = (month / cap * 100) if cap else 0 %}
     <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} this month of the ${{ '%.0f'|format(cap) }} cap</a>
       <div class="meter {{ 'bad' if pct >= 100 else 'warn' if pct >= 50 }}"><span style="width:{{ [pct, 100]|min }}%"></span></div>

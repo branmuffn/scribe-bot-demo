@@ -17,6 +17,18 @@ from scribe_bot.core.db import now, transaction
 MAX_ATTEMPTS = 3
 
 
+class Paused(Exception):
+    """A stage stopped early because Brian pressed Pause (setting 'pipeline_paused' = '1', Brian 2026-11-21). The job goes
+    back to 'pending' without using up an attempt; stages save what they finished so Resume carries on from there."""
+
+
+def hold_requested(conn: sqlite3.Connection | None) -> bool:
+    if conn is None:
+        return False
+    # ❚❚ Pause, or the heat guard (pipeline/pace.py, Brian "heat OK" 2026-11-21): both stop at the same safe points
+    return conn.execute("SELECT 1 FROM setting WHERE key IN ('pipeline_paused', 'heat_paused') AND value = '1'").fetchone() is not None
+
+
 @dataclass
 class StageContext:
     job_id: int
@@ -40,12 +52,15 @@ def enqueue(conn: sqlite3.Connection, kind: str, recording_id: int | None = None
     return cur.lastrowid
 
 
-def _claim(conn: sqlite3.Connection) -> sqlite3.Row | None:
-    """Oldest unfinished job. A job left 'running' means the worker died mid-job, so it is picked up again first."""
+def _claim(conn: sqlite3.Connection, skip_kinds: tuple[str, ...] = ()) -> sqlite3.Row | None:
+    """Oldest unfinished job. A job left 'running' means the worker died mid-job, so it is picked up again first.
+    skip_kinds: pending jobs of these kinds wait (Night only holds new recordings until 1 AM)."""
+    marks = ",".join("?" * len(skip_kinds))
+    held = f" AND NOT (status = 'pending' AND kind IN ({marks}))" if skip_kinds else ""
     with transaction(conn):
         row = conn.execute(
-            "SELECT * FROM job WHERE status IN ('running', 'pending') ORDER BY status = 'pending', id LIMIT 1"
-        ).fetchone()
+            f"SELECT * FROM job WHERE status IN ('running', 'pending'){held} ORDER BY status = 'pending', id LIMIT 1",
+            tuple(skip_kinds)).fetchone()
         if row:
             conn.execute("UPDATE job SET status = 'running', updated_at = ? WHERE id = ?", (now(), row["id"]))
     return row
@@ -55,9 +70,10 @@ def _finish(conn: sqlite3.Connection, job_id: int, status: str, error: str | Non
     conn.execute("UPDATE job SET status = ?, error = ?, updated_at = ? WHERE id = ?", (status, error, now(), job_id))
 
 
-def run_next(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir: Path) -> int | None:
+def run_next(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir: Path,
+             skip_kinds: tuple[str, ...] = ()) -> int | None:
     """Run one job to completion (or until a stage fails). Returns the job id, or None if the queue is empty."""
-    job = _claim(conn)
+    job = _claim(conn, skip_kinds)
     if job is None:
         return None
     pipeline = pipelines.get(job["kind"])
@@ -83,6 +99,11 @@ def run_next(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir:
         ctx = StageContext(job["id"], job["recording_id"], json.loads(job["payload"]), work_dir, dict(done), conn)
         try:
             output = handler(ctx)
+        except Paused:
+            with transaction(conn):
+                conn.execute("DELETE FROM stage_run WHERE job_id = ? AND stage = ?", (job["id"], stage))
+                _finish(conn, job["id"], "pending", None)
+            return job["id"]
         except Exception as e:  # a crash (kill, power loss) never reaches here; the 'running' row is resumed instead
             attempts = conn.execute(
                 "SELECT attempts FROM stage_run WHERE job_id = ? AND stage = ?", (job["id"], stage)).fetchone()[0]
@@ -105,10 +126,12 @@ def run_next(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir:
     return job["id"]
 
 
-def run_all(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir: Path) -> list[int]:
-    """Drain the queue one job at a time (the M14 runs one job at a time to fit in 16 GB of RAM)."""
+def run_all(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir: Path,
+            skip_kinds=()) -> list[int]:
+    """Drain the queue one job at a time (the M14 runs one job at a time to fit in 16 GB of RAM). skip_kinds may be a
+    function returning the kinds to hold, asked before each job (so Night only stops new work at 7 AM between jobs)."""
     ran = []
-    while (job_id := run_next(conn, pipelines, jobs_dir)) is not None:
+    while (job_id := run_next(conn, pipelines, jobs_dir, tuple(skip_kinds() if callable(skip_kinds) else skip_kinds))) is not None:
         ran.append(job_id)
         status = conn.execute("SELECT status FROM job WHERE id = ?", (job_id,)).fetchone()[0]
         if status == "pending":  # a stage failed and will retry; don't spin on it within this drain

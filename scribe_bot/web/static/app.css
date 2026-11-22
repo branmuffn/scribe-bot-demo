@@ -264,6 +264,7 @@ details.edit form { margin-top: var(--s2); display: flex; flex-wrap: wrap; gap: 
 .conv-meta { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); color: var(--muted); font-size: var(--fs-sm); margin-top: var(--s2) }
 .conv-controls { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin: var(--s4) 0 var(--s2) }
 .inline-form { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center }
+.inline-form select { min-width: 0; max-width: 100%; text-overflow: ellipsis }   /* long option text (AI profile) stays on screen */
 .rerun .cost { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 400 }
 .talk { display: flex; gap: 2px; height: 10px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-2); margin-top: var(--s3); max-width: 360px }
 /* Speakers: 8 distinct colors, same order in the bar and the chips */
@@ -321,7 +322,7 @@ audio { width: 100%; height: 44px }
 /* ---------- 6. Motion ---------- */
 @view-transition { navigation: auto }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; animation-timing-function: var(--ease) }
-.main { animation: rise .22s var(--ease) both }
+.main { animation: rise .22s var(--ease) backwards }   /* not "both": a leftover transform would trap fixed panels (filter sheet) inside the page */
 @keyframes rise { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 .htmx-request .main { opacity: .7; transition: opacity .2s }
 .progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: var(--acc); z-index: 60; opacity: 0 }
@@ -447,6 +448,8 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .tap-row { position: relative; cursor: pointer }
 .tap-row .item-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-sm) }
 .tap-row .item-actions, .tap-row .item-sub a { position: relative; z-index: 1 }   /* buttons, menus and other links stay tappable above the whole-row link */
+.item.not-needed .item-title { color: var(--muted) }
+.person-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px }
 .tap-row:hover { background: color-mix(in srgb, var(--acc) 5%, transparent) }
 
 /* Edit in place: a quiet ✎ beside editable text; the text becomes a box right where it is */
@@ -463,7 +466,7 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .conv-title + .pencil { margin-top: 4px }
 
 /* Undo bar: floats above the phone tab bar; beside the sidebar on desktop */
-.undo-bar { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom));
+.undo-bar { touch-action: pan-y; position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom));
   display: flex; align-items: center; gap: var(--s2); max-width: calc(100vw - 2 * var(--s4)); padding: var(--s1) var(--s1) var(--s1) var(--s4);
   background: var(--ink); color: var(--bg); border-radius: var(--r); box-shadow: var(--shadow-lg); animation: undo-in .2s var(--ease) }
 .undo-bar[hidden] { display: none }
@@ -507,6 +510,8 @@ kbd { font: var(--fs-sm) var(--mono); background: var(--surface-2); border: 1px 
   .table-wrap td { border: 0; padding: 2px 0; text-align: left }
   .table-wrap td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-weight: 600 }
   .picker-form select, .picker-form input { flex: 1 1 100% }
+  .item-actions .inline-form { flex: 1 1 100%; min-width: 0 }
+  .item-actions .inline-form select { flex: 1 1 100% }
   /* Rows whose only actions are a ⋯ / clock menu, an icon button (✕), badges or a number keep them beside the text */
   .item:has(> .item-actions:not(:has(> .btn:not(.btn-icon), > form > .btn:not(.btn-icon), > a.btn:not(.btn-icon)))) { flex-wrap: nowrap }
   .item-actions:not(:has(> .btn:not(.btn-icon), > form > .btn:not(.btn-icon), > a.btn:not(.btn-icon))) { width: auto }
@@ -606,7 +611,7 @@ details.filters form { margin-top: var(--s2) }
   color: var(--text); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center }
 [id^="sec-"], [id^="person-"], #my-speaking, #transcript, #processing { scroll-margin-top: 110px }
 @media (min-width: 960px) { .jump-bar { top: 0 } [id^="sec-"], [id^="person-"], #my-speaking, #transcript, #processing { scroll-margin-top: 60px } }
-@media (max-width: 1099px) { .jump-bar ~ .conv-grid .player { top: 104px } }  /* stacked: below the pinned jump bar */
+
 button.show-all { width: 100%; text-align: center; border: 0; background: none; color: var(--acc); cursor: pointer; font: inherit }
 
 /* "‹ Section" link at the top of nested pages */
@@ -645,3 +650,801 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
 .lines .who { color: color-mix(in srgb, var(--c) 70%, var(--ink)) }
 /* A recording card's buttons drop under its text when the window is narrow (never squeeze the text to one letter) */
 .item:has(.est) { flex-wrap: wrap } .item:has(.est) > .item-main { flex: 1 1 300px }
+
+/* Compare models (2026-11-19): two columns on wide screens, stacked on phones */
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--s4) }
+.compare-col h3 { margin: var(--s2) 0 0; font-size: 0.95rem }
+.compare-col ul { margin: 0; padding-left: 1.2em }
+
+/* Inbox + transcript reader (Brian, 2026-11-20) */
+.btn-sm { min-height: 36px; padding: 0 var(--s3); font-size: var(--fs-sm) }
+.chips { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; margin: 0 0 var(--s3); padding-bottom: 2px }
+.chip { flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--s3); border-radius: var(--r-pill);
+  background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink); font-size: var(--fs-sm); font-weight: 600; text-decoration: none }
+.chip.on { background: var(--acc-soft); color: var(--acc-soft-ink); border-color: color-mix(in srgb, var(--acc) 45%, transparent) }
+.warn-text { color: var(--warn) }
+.inbox-preview { margin: var(--s1) 0 0; color: var(--ink-2); font-size: var(--fs-sm); font-style: italic; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.inbox-read { margin-top: var(--s2) }
+.tx-tools { flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s3) }
+.tx-read p { margin: 0 0 var(--s4); line-height: 1.6; max-width: 70ch }
+.tx-read.big p { font-size: var(--fs-md) }
+.tx-who { display: block; font-weight: 700; font-size: var(--fs-sm); margin-bottom: 2px }
+.tx-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px }
+.tx-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s4) 0 var(--s3) }
+.inbox-link .item-link { font-weight: 700 }
+[data-cap]:not(.cap-open) > .item.cap-hidden { display: none }
+.cap-more { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: var(--s1); margin-top: var(--s1) }
+.cap-open > .cap-more { display: none }
+.next-up { background: var(--acc); color: var(--acc-ink); border: 0 }
+.next-up .kicker { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .85 }
+.next-up .nu-title { font-size: var(--fs-md); font-weight: 700; margin: 2px 0 }
+.next-up .nu-sub { font-size: var(--fs-sm); opacity: .9 }
+.next-up .row { margin-top: var(--s3); gap: var(--s2); flex-wrap: wrap }
+.next-up .btn { background: var(--surface); color: var(--acc); border-color: transparent }
+.next-up .btn.btn-ghost { background: transparent; color: var(--acc-ink); border: 1px solid color-mix(in srgb, var(--acc-ink) 50%, transparent) }
+.next-up a { color: inherit }
+
+/* At a glance on a conversation (Brian, 2026-11-20) */
+.glance-on .conv-full { display: none }
+.glance h3 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: var(--s3) 0 var(--s1) }
+.glance h3:first-child { margin-top: 0 }
+.glance ul { margin: 0; padding-left: 1.1rem } .glance li { margin: 2px 0 } .glance li.done { text-decoration: line-through; color: var(--muted) }
+.glance-line { margin: 0; font-size: var(--fs-md) }
+.glance-who { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3) }
+.glance-who i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px }
+.glance-actions { margin-top: var(--s4); gap: var(--s2) }
+.glance a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px }
+.glance a.btn { text-decoration: none }
+.glance-back { margin-bottom: var(--s2) }
+
+/* Settings › AI model cards, R1 (Brian, 2026-11-20) */
+.sub-head { font-size: var(--fs-md); margin: var(--s4) 0 var(--s2) }
+.ai-cards { display: grid; gap: var(--s2); margin-bottom: var(--s2) }
+.ai-card { display: flex; gap: var(--s3); align-items: flex-start; text-align: left; width: 100%; padding: var(--s3) var(--s4);
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: inherit; font: inherit; cursor: pointer }
+.ai-card b { display: block } .ai-card .meta { display: block; white-space: normal }
+.ai-card.on { border: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 10%, var(--surface)) }
+.ai-radio { flex: none; width: 20px; height: 20px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--line) }
+.ai-card.on .ai-radio { border-color: var(--acc); box-shadow: inset 0 0 0 4px var(--surface); background: var(--acc) }
+.seg-sub { margin: 0 0 var(--s3) }
+
+/* Select words in a transcript line: "Split here" / "Who said this?" (speaker fix A, 2026-11-20) */
+.split-bar { position: fixed; z-index: 40; display: flex; flex-wrap: wrap; gap: var(--s1); max-width: min(92vw, 340px); padding: var(--s1);
+  background: var(--ink); color: var(--bg); border-radius: var(--r); box-shadow: var(--shadow-lg) }
+.split-bar[hidden] { display: none }
+.split-bar .split-who { background: transparent; color: var(--bg); border: 1px solid color-mix(in srgb, var(--bg) 30%, transparent) }
+.split-menu { flex-basis: 100%; display: grid; gap: 2px; padding-top: var(--s1); border-top: 1px solid color-mix(in srgb, var(--bg) 20%, transparent) }
+.split-menu[hidden] { display: none }
+.split-menu > button { display: flex; align-items: center; gap: var(--s2); background: none; border: 0; color: inherit; font: inherit; text-align: left;
+  padding: var(--s2); border-radius: var(--r-sm); min-height: 40px; cursor: pointer }
+.split-menu > button:hover, .split-menu > button:focus-visible { background: color-mix(in srgb, var(--bg) 14%, transparent) }
+.split-menu i { width: 10px; height: 10px; border-radius: 50%; flex: none }
+.split-menu form { display: flex; gap: var(--s1); padding: var(--s1) 0 0 }
+.split-menu input { flex: 1; min-width: 0; color: var(--ink); background: var(--bg) }
+.fix-menu { min-width: 200px }
+
+/* Drop files anywhere (2026-11-20) */
+.drop-over { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 18%, rgba(0,0,0,.35));
+  pointer-events: none; text-align: center }
+.drop-over[hidden] { display: none }
+.drop-over div { background: var(--surface); color: var(--ink); border: 2px dashed var(--acc); border-radius: var(--r); padding: var(--s6) var(--s8, 32px); font-weight: 700; font-size: 1.1rem }
+.drop-over small { display: block; font-weight: 400; color: var(--muted); margin-top: var(--s2) }
+.btn-not-needed { color: var(--muted) }   /* N-A (2026-11-20): beside Done on every open task */
+@media (max-width: 640px) {   /* Done · Not needed · 🕒 · ⋯ stay on one row on a phone */
+  .item-actions:has(.btn-not-needed) { flex-wrap: nowrap }
+  .item-actions:has(.btn-not-needed) .btn { padding: 0 var(--s3); gap: 6px; flex: 1 1 0; min-width: 0 }
+  .item-actions:has(.btn-not-needed) form:has(.btn-ok), .item-actions:has(.btn-not-needed) form:has(.btn-not-needed) { flex: 1 1 0; display: flex; min-width: 0 }
+}
+
+/* Contents rail (Brian picked A, 2026-11-20; like his portfolio) */
+.rail-src { display: none }
+.rail { position: fixed; right: 0; top: 30%; z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 7px;
+  padding: 8px 5px 8px 20px; background: none; border: 0; cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; min-height: 0 }
+.rail i { display: block; height: 3px; width: 14px; border-radius: 9px; background: color-mix(in srgb, var(--ink) 30%, transparent);
+  transition: width .2s, background-color .2s }
+.rail i.sub { height: 2px; width: 8px }
+.rail i.on { width: 22px; background: var(--acc) }
+.rail:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; border-radius: var(--r-sm) }
+.rail-out { position: fixed; right: 10px; top: 50%; transform: translateY(-50%); z-index: 45; width: 224px; max-height: calc(100dvh - 150px);
+  overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 6px }
+.rail-out[hidden] { display: none }
+.rail-out a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; color: var(--ink); text-decoration: none; font-weight: 500 }
+.rail-out a i { display: block; height: 3px; width: 14px; border-radius: 9px; background: color-mix(in srgb, var(--ink) 30%, transparent); flex: none }
+.rail-out a.on { background: color-mix(in srgb, var(--acc) 14%, transparent); color: var(--acc); font-weight: 650 }
+.rail-out a.on i { background: var(--acc) }
+.rail-out a.pointed, .rail-out a:hover { background: color-mix(in srgb, var(--ink) 8%, transparent) }
+@media (min-width: 960px) { .rail { right: 4px } .rail-out { right: 34px } }
+@media print { .rail, .rail-out { display: none } }
+.item:has(> .item-actions .btn-not-needed) { flex-wrap: wrap }   /* narrow columns: the buttons go under the title */
+.item:has(> .item-actions .btn-not-needed) > .item-main { flex: 1 1 240px; min-width: min(240px, 100%) }
+
+/* FX-A filters: one Filter button + Sort; dropdowns in a panel; chips you can ✕ (2026-11-20) */
+.fx-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s3) 0 }
+.fx-row .toolbar-extra { margin-left: auto }
+.fx-sheet > summary { list-style: none; cursor: pointer } .fx-sheet > summary::-webkit-details-marker { display: none }
+.fx-sheet > summary.fx-on { border-color: var(--acc); color: var(--acc); background: color-mix(in srgb, var(--acc) 10%, var(--surface)) }
+.fx-sort { width: auto; min-height: var(--tap); font-weight: 600 }
+.fx-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: var(--r-pill); font-size: var(--fs-sm);
+  background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--acc); text-decoration: none; white-space: nowrap }
+.fx-back { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.35) }
+.fx-body { position: fixed; z-index: 51; left: 0; right: 0; bottom: 0; max-height: 85dvh; overflow-y: auto; background: var(--surface);
+  border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.2); padding: var(--s3) var(--s4) calc(var(--s5, 20px) + env(safe-area-inset-bottom)) }
+.fx-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 0 auto var(--s3) }
+.fx-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; margin-bottom: var(--s2); min-height: 36px }
+.fx-f { display: grid; grid-template-columns: 6.5rem 1fr; gap: var(--s2); align-items: center; margin: var(--s2) 0; font-weight: 600; font-size: var(--fs-sm) }
+.fx-f select, .fx-f input { width: 100%; font-weight: 400 }
+.fx-foot { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s3) }
+.fx-info { margin: 0 0 var(--s3) } .fx-info summary { color: var(--muted); font-size: var(--fs-sm); cursor: pointer }
+@media (min-width: 960px) {   /* computers: the panel drops down under the button */
+  .fx-sheet { position: relative }
+  .fx-back { background: transparent }
+  .fx-body { position: absolute; left: 0; right: auto; bottom: auto; top: calc(100% + 6px); width: 380px; border-radius: var(--r);
+    border: 1px solid var(--line); box-shadow: var(--shadow-lg) }
+  .fx-grab { display: none }
+}
+
+/* Export choices (Brian, 2026-11-20): one row each, name + what's inside */
+.dl-list { display: grid; gap: var(--s1) }
+.dl-row { display: flex; gap: var(--s3); align-items: center; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+  color: var(--ink); text-decoration: none; background: var(--surface) }
+.dl-row:hover { border-color: var(--acc) }
+.dl-row span { display: grid; line-height: 1.3 }
+.dl-row small { color: var(--muted); font-size: var(--fs-sm) }
+
+/* Who said what, M2 A (2026-11-20): names are buttons; lines in a row by the same person share one name (a 30 s+
+   pause shows its time again); "Only part of it?" underlines that block's words and shows a hint right above it. */
+.lines .who { background: none; border: 0; padding: 0; font: inherit; font-weight: 650; cursor: pointer; text-align: left;
+  text-decoration: underline dotted color-mix(in srgb, var(--c) 45%, transparent); text-underline-offset: 3px }
+.lines .who:hover { text-decoration-style: solid }
+.lines .line.same { padding-top: 0 }
+.lines .line.same .who { display: none }
+.lines .line.same:not(.pause) .t { visibility: hidden }
+.lines .line.pause { padding-top: var(--s2) }
+.line .t { font-size: .72rem }
+.fix-help { margin: 0 0 var(--s2) }
+.fix-menu .split-menu { border-top: 0; padding-top: 0 }
+.fix-title { margin: 2px 4px 4px; font-size: var(--fs-xs); opacity: .75 }
+.fix-part { margin-top: 4px; border-top: 1px solid color-mix(in srgb, var(--bg) 20%, transparent) !important; padding-top: 10px !important }
+.part-hint { display: flex; align-items: center; gap: var(--s2); justify-content: space-between; margin: var(--s1) 0; padding: 6px 10px;
+  border-radius: var(--r-sm); background: color-mix(in srgb, var(--acc) 12%, transparent); font-size: var(--fs-sm) }
+.lines .parting { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none }
+.lines .parting .w { border-radius: 4px; cursor: pointer; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--acc) 45%, transparent) }
+.lines .parting .w:hover, .lines .parting .w:active { background: color-mix(in srgb, var(--acc) 22%, transparent) }
+.lines .w.moving { color: var(--acc); opacity: .7 }
+.lines .moving-line { transition: opacity .2s }
+
+/* Today › Next up (2026-11-20): more room above the kicker; a link-only card is one tap target with "Open ›" */
+.next-up { padding: var(--s4) var(--s4) var(--s3) }
+.next-up .kicker { display: block; margin-bottom: 2px }
+.next-up .row { margin-top: var(--s2) }
+.nu-link { display: flex; align-items: center; gap: var(--s3); text-decoration: none }
+.nu-link .nu-text { display: grid; flex: 1; min-width: 0 }
+.nu-link .nu-go { flex: none; font-weight: 700; font-size: var(--fs-sm); white-space: nowrap; padding: 6px 12px; border-radius: 99px;
+  background: var(--surface); color: var(--acc) }
+.nu-link:hover .nu-go { text-decoration: underline }
+
+/* Export: two rows, each with a .md and a .pdf button (2026-11-20) */
+.dl-two { justify-content: space-between }
+.dl-two .dl-fmt { display: flex; gap: var(--s1); flex: none }
+/* Area switch: an AI-picked choice has a dotted outline (no "AI guess" text; Brian, 2026-11-20) */
+.seg button.on.guess { outline: 1.5px dashed color-mix(in srgb, currentColor 45%, transparent); outline-offset: -4px }
+/* Rail ticks like the portfolio (Brian, 2026-11-20: no background behind them): darker main ticks, small sub ticks
+   (Top, transcript times), the section you're in lit blue; inside a transcript time tick, "Transcript" stays half lit */
+.rail { gap: 8px; padding: 10px 6px 10px 20px }
+.rail i { height: 3px; width: 16px; background: color-mix(in srgb, var(--ink) 58%, transparent) }
+.rail i.sub { height: 2px; width: 8px; background: color-mix(in srgb, var(--ink) 32%, transparent) }
+.rail i.on { width: 24px; height: 3px; background: var(--acc) }
+.rail i.par { background: color-mix(in srgb, var(--acc) 55%, transparent) }
+.rail-out a.sub { padding: 6px 10px 6px 22px; font-size: .9em; color: var(--muted, var(--ink)); font-variant-numeric: tabular-nums }
+.rail-out a.sub i { width: 8px; height: 2px }
+.rail-out a.par { color: var(--acc) }
+/* "Unsure? ✓ Looks right" always stays on one line (Brian, 2026-11-20) */
+.item-sub .badge-warn { white-space: nowrap; flex: none }
+
+/* 2026-11-20 (evening): list headings (one rail tick each), the rail kept between the top bar and the tab bar (its last
+   tick was cut off), a glow on whatever a tick jumps to (like the portfolio), and the red floating + on Talks. */
+.list-head { position: relative; margin: 0; padding: 14px var(--s3) 6px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); scroll-margin-top: 64px }
+.list-head:not(:first-child) { margin-top: var(--s2) }
+.rail { top: 64px; bottom: calc(80px + env(safe-area-inset-bottom)); height: fit-content; max-height: calc(100dvh - 150px); margin: auto 0;
+  overflow: hidden; gap: 8px }
+.rail-out { top: 64px; bottom: calc(80px + env(safe-area-inset-bottom)); transform: none; height: fit-content; margin: auto 0;
+  max-height: calc(100dvh - 150px - env(safe-area-inset-bottom)) }
+@media (min-width: 960px) { .rail, .rail-out { top: 24px; bottom: 24px } }
+.jump-glow { border-radius: var(--r-sm, 10px); animation: jumpglow 1.8s ease-out 1 }
+@keyframes jumpglow {
+  0%, 35% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 55%, transparent); background-color: color-mix(in srgb, var(--acc) 12%, transparent) }
+  100% { box-shadow: 0 0 0 3px transparent; background-color: transparent } }
+.fab { position: fixed; z-index: 25; right: 18px; bottom: calc(84px + env(safe-area-inset-bottom)); width: 58px; height: 58px; border-radius: 50%;
+  display: grid; place-items: center; background: #bd4256; color: #fff; text-decoration: none;
+  box-shadow: 0 6px 18px color-mix(in srgb, #bd4256 45%, transparent), 0 2px 6px rgba(0,0,0,.2); transition: transform .15s, background-color .15s }
+.fab:hover { background: #a8394b; text-decoration: none; color: #fff } .fab:active { transform: scale(.94) }
+.fab .icon { width: 28px; height: 28px; stroke-width: 2.4 }
+@media (min-width: 960px) { .fab { bottom: 28px; right: 28px } }
+@media print { .fab { display: none } }
+body:has(.fab) .rail, body:has(.fab) .rail-out { bottom: calc(150px + env(safe-area-inset-bottom)) }
+/* T1 A (Brian, 2026-11-20): a time about once a minute inside a long stretch, and the speaker's name pinned at the top */
+.lines .line.same.tmark .t { visibility: visible; opacity: .75 }
+.who-pin { position: sticky; top: var(--pin-top, 56px); height: 0; z-index: 6 }
+.who-pin[hidden] { display: none }
+.who-pin-btn { position: absolute; left: calc(-1 * var(--s4)); right: calc(-1 * var(--s4)); top: 0; display: flex; align-items: center; gap: 8px;
+  min-height: 38px; padding: 6px var(--s4); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font: inherit; text-align: left;
+  background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: var(--ink); cursor: pointer }
+.who-pin-btn i { width: 10px; height: 10px; border-radius: 50%; flex: none }
+.who-pin-btn b { font-weight: 650 }
+.who-pin-btn span { color: var(--muted); font-size: var(--fs-sm) }
+.who-pin-btn::after { content: "▾"; margin-left: auto; color: var(--muted) }
+.glance-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2) } .glance-top h3 { margin: 0 }
+/* E: Select › tick talks › Export */
+#conv-list.picking .item { cursor: pointer; padding-left: 52px; position: relative }
+#conv-list.picking .item::before { content: ""; position: absolute; left: 14px; top: 50%; width: 24px; height: 24px; margin-top: -12px; border-radius: 7px;
+  border: 2px solid color-mix(in srgb, var(--ink) 40%, transparent); box-sizing: border-box }
+#conv-list.picking .item.picked::before { background: var(--acc); border-color: var(--acc) }
+#conv-list.picking .item.picked::after { content: "✓"; position: absolute; left: 19px; top: 50%; transform: translateY(-52%); color: #fff; font-weight: 800; font-size: 15px }
+#conv-list.picking .item.picked { background: color-mix(in srgb, var(--acc) 7%, transparent) }
+[data-pick-mode][aria-pressed="true"] { color: var(--acc); font-weight: 650 }
+.pick-bar { position: fixed; z-index: 30; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto;
+  display: flex; align-items: center; gap: var(--s2); padding: 8px 10px; border-radius: 14px; background: var(--ink); color: var(--bg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.3) }
+.pick-bar[hidden] { display: none }
+.pick-bar .btn-ghost { color: var(--bg) } .pick-bar .pick-n { flex: 1; font-weight: 600 }
+body:has(.pick-bar:not([hidden])) .fab { display: none }
+@media (min-width: 960px) { .pick-bar { bottom: 24px } }
+
+/* ===================== Redesign (Brian picked sheet 3 + #10, 2026-11-21) =====================
+   One line per item, actions in ⋯ / a sheet / a swipe, small section labels, tiles on Today. Less text, less scrolling. */
+.page-head { margin: var(--s1) 0 var(--s3); align-items: center }
+h1 { font-size: 1.5rem }
+.section { margin-top: var(--s4) }
+.section-head { align-items: center; margin: 0 2px 6px }
+.section-head h2 { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+.section-head .count { font-size: var(--fs-xs) }
+.section-head .aside { font-size: var(--fs-sm); font-weight: 600; text-transform: none; letter-spacing: 0 }
+.card { padding: 0 var(--s3); border-radius: 14px }
+.item { padding: 9px 0; gap: var(--s2); align-items: center; min-height: 48px }
+.item-title, .item-link { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 550 }
+.item-main { overflow-wrap: normal }
+.item-sub { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: .8rem; margin-top: 1px; gap: 0 }
+.item-sub > * { flex: none } .item-sub > * + *::before { content: "·"; margin: 0 5px; color: var(--muted) }
+.item-sub > form + *::before, .item-sub > *:empty::before { content: none }
+.item-sub a { color: var(--muted) }
+.item-actions .btn { min-height: 34px; padding: 0 10px }
+.btn-sm { min-height: 32px; padding: 0 10px; font-size: .8rem }
+.badge { height: 20px; font-size: .7rem }
+.badges { flex-wrap: nowrap }
+.list-head { padding: 12px 2px 4px; border-bottom: 0; font-size: .7rem }
+.list-head + .item { border-top: 0 }
+@media (max-width: 959px) { .section-help, .fx-info { display: none } }
+
+/* one-line link rows (Today, person page) */
+.row1 { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 7px 0; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none }
+.row1:first-child { border-top: 0 } .row1:hover { text-decoration: none }
+.r1-t { flex: 1; min-width: 0; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.r1-t small { display: block; color: var(--muted); font-size: .8rem; font-weight: 400; overflow: hidden; text-overflow: ellipsis }
+.r1-v { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap }
+.row1 .go { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--muted); flex: none }
+.row1 .go.pri { background: var(--acc); border-color: var(--acc); color: var(--acc-ink) }
+.row1 .rdot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none }
+.row1 .rdot.warn { background: var(--warn) } .row1 .rdot.bad { background: var(--bad) }
+
+/* Today tiles */
+.dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px }
+.dash-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; color: var(--ink); text-decoration: none; min-width: 0 }
+.dash-tile:hover { text-decoration: none; border-color: var(--line-strong) }
+.dash-tile b { display: block; font-size: 1.35rem; line-height: 1.15; font-variant-numeric: tabular-nums }
+.dash-tile small { color: var(--muted); font-size: .75rem; white-space: nowrap }
+.dash-tile.hot { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--surface)) }
+#your-week .tiles { grid-template-columns: repeat(3, 1fr); gap: 6px }
+#your-week .stat { padding: 8px 10px } #your-week .stat .value { font-size: 1rem } #your-week .stat .sub, #your-week .stat .tip { display: none }
+
+/* avatars */
+.av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font: 700 .75rem var(--font); letter-spacing: .02em }
+.av-lg { width: 52px; height: 52px; font-size: 1.1rem }
+.person-head { flex-wrap: nowrap; gap: var(--s3) } .person-head h1 { margin: 0 }
+.group-rows { padding: 0 var(--s3) }
+
+/* tasks: tick circle */
+.task-row .tick-f { margin: 0; flex: none }
+.tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line-strong); background: none; padding: 0; cursor: pointer; position: relative; display: block }
+.tick:hover { border-color: var(--ok) }
+.tick.on { background: var(--ok); border-color: var(--ok) } .tick.on::after { content: "✓"; color: #fff; font: 800 13px/20px var(--font); position: absolute; inset: 0; text-align: center }
+.task-row .item-actions .row-menu > summary { width: 34px; height: 34px }
+.unsure-row .item-actions { gap: 6px }
+.keep-f { display: flex; gap: 6px; align-items: center }
+.tag-pick { width: auto; min-height: 30px; height: 30px; padding: 0 22px 0 9px; font-size: .78rem !important; font-weight: 650; border-radius: 999px;
+  background-color: var(--acc-soft); color: var(--acc-soft-ink); border: 0 }
+.ib { width: 32px; height: 32px; border-radius: 9px; display: inline-grid; place-items: center; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink-2); flex: none; cursor: pointer; padding: 0; text-decoration: none; font-size: 15px }
+.ib:hover { text-decoration: none } .ib .icon { width: 16px; height: 16px }
+.ib-ok { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, var(--line)) }
+.ib-no { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 30%, var(--line)) }
+.ib-ai { background: var(--acc); color: var(--acc-ink); border-color: var(--acc) }
+
+/* seg as page tabs (Talks | People, Tasks lists) */
+.seg-wide { display: flex; width: 100%; margin: 0 0 var(--s3); border-radius: 12px }
+.seg-wide a { flex: 1; justify-content: center; border-radius: 9px; padding: 0 6px; gap: 5px }
+.seg-wide .n { font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums }
+.add-btn { width: 40px; height: 40px; border: 1px solid var(--line); background: var(--surface) }
+.add-sheet .fx-body input, .add-sheet .fx-body select { width: 100% }
+
+/* Inbox rows + sheet */
+.in-row { display: block; padding: 0 } .in-row > summary { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 7px 0; list-style: none; cursor: pointer }
+.in-row > summary::-webkit-details-marker { display: none }
+.in-sheet .inbox-preview { font-size: .9rem; margin: var(--s2) 0 }
+.acts { display: grid; margin: var(--s2) 0 }
+.act { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 2px; border: 0; border-top: 1px solid var(--line); background: none;
+  font: inherit; font-weight: 550; color: var(--ink); text-align: left; text-decoration: none; cursor: pointer }
+.act:hover { text-decoration: none; background: var(--surface-2) } .acts > :first-child .act, .acts > .act:first-child { border-top: 0 }
+.act small { color: var(--muted); font-weight: 400; white-space: nowrap } .act.danger { color: var(--bad) }
+.acts form { margin: 0 }
+.in-total { margin: var(--s2) 2px }
+#inbox-list.picking .in-row > summary { padding-left: 38px; position: relative }
+#inbox-list.picking .in-row > summary::before { content: ""; position: absolute; left: 4px; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 7px; border: 2px solid var(--line-strong) }
+#inbox-list.picking .in-row.picked > summary::before { background: var(--acc); border-color: var(--acc) }
+#inbox-list.picking .in-row.picked > summary::after { content: "✓"; position: absolute; left: 10px; top: 50%; transform: translateY(-52%); color: #fff; font-weight: 800 }
+#inbox-list.picking .ib-ai { visibility: hidden }
+
+/* area menu (phone top bar) and extra badges */
+.area-pill { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line);
+  font-size: .8rem; font-weight: 650; color: var(--ink-2); list-style: none; cursor: pointer }
+.area-pill::-webkit-details-marker { display: none }
+.area-menu .menu-panel { min-width: 140px } .area-menu .menu-item.on { color: var(--acc); font-weight: 650 }
+.badge-school { background: color-mix(in srgb, #7c3aed 14%, transparent); color: #6d28d9 }
+.badge-other { background: var(--surface-2); color: var(--ink-2) }
+.seg-areas a { padding: 0 8px }
+
+/* talks list */
+.conv-row .item-actions .badge-work, .conv-row .item-actions .badge-personal, .conv-row .item-actions .badge-school, .conv-row .item-actions .badge-other { font-size: .68rem }
+
+/* Rail never over text (Brian, 2026-11-21: it covered "History" on Today): on phones it's thin, sits in a 20px gutter
+   kept free on the right of every page, and its ticks are at most 14px wide. */
+@media (max-width: 959px) {
+  .main { padding-right: 22px }
+  .rail { right: 0; padding: 8px 3px 8px 14px; gap: 7px }
+  .rail i { width: 10px } .rail i.sub { width: 6px } .rail i.on { width: 15px }
+}
+/* the pinned speaker sits under the sticky player, never over it */
+.who-pin { z-index: 4 }
+.tick { min-height: 0 !important; min-width: 0; height: 24px; width: 24px; flex: none; box-sizing: border-box }
+.tick::before { content: none }
+#your-week .stat .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .66rem }
+#your-week .light, #your-week .stat-head .light { display: none }
+#your-week .stat .value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+#your-week .tile { padding: 8px 10px; min-width: 0 }
+#your-week .tile-name { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block }
+#your-week .tile-value { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+#your-week .tile-sub, #your-week .tile .light { display: none }
+#your-week .tile-head { display: block }
+
+/* ===== Redesign v2 (Brian, 2026-11-21) ===== */
+/* Readable rows: a title may take two lines and the second line wraps instead of being cut off */
+.item-title, .item-link, .r1-t { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.3 }
+.r1-t { display: block }
+.r1-t > :not(small) { }
+.item-sub { flex-wrap: wrap; white-space: normal; row-gap: 1px }
+.item-sub > * { flex: 0 1 auto; min-width: 0 }
+.r1-t small { white-space: normal }
+.task-row .item-sub, .unsure-row .item-sub { font-size: .78rem }
+/* Inbox row + sheet */
+.ib-go { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); font-size: 13px; padding-left: 2px }
+.in-row .r1-t small .icon { width: 13px; height: 13px; vertical-align: -2px }
+.fx-body { box-sizing: border-box; width: 100%; max-width: 100vw; overflow-x: hidden; touch-action: pan-y }
+.in-sheet { padding-top: 8px }
+.sh-head { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between }
+.sh-head b { font-size: 1.05rem; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; padding-top: 6px }
+.sh-head .icon-btn { width: 36px; height: 36px; flex: none }
+.sh-preview { font-size: .85rem; color: var(--ink-2); margin: 6px 0 2px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+.in-sheet .acts { margin: 6px 0 4px }
+.in-sheet .act { min-height: 46px; padding: 4px 0 }
+.act.pri .grow { font-weight: 650 }
+.act small { font-size: .8rem }
+.sh-select { width: auto; min-height: 32px; height: 32px; padding: 0 26px 0 10px; font-size: .85rem !important }
+.chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px }
+.chips-row form { margin: 0 }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; list-style: none; text-decoration: none }
+.chip:hover { text-decoration: none; background: var(--surface-2) } .chip.danger { color: var(--bad) } .chip .icon { width: 15px; height: 15px }
+.chip::-webkit-details-marker { display: none }
+.chip-menu { position: relative } .chip-menu[open] .chip-pop { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 3; min-width: 220px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.2); padding: 6px }
+.in-sheet .action-panel { margin-top: 6px }
+@media (min-width: 960px) { .in-row .fx-body { width: 400px; left: auto; right: 0 } }
+/* Glow drawn inside the element so a card's edge or the next section never cuts it off */
+@keyframes jumpglow {
+  0%, 35% { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--acc) 60%, transparent); background-color: color-mix(in srgb, var(--acc) 12%, transparent) }
+  100% { box-shadow: inset 0 0 0 2px transparent; background-color: transparent } }
+.jump-glow { border-radius: 10px }
+/* The audio player meets the top bar (no see-through gap) */
+@media (max-width: 959px) { .player { top: 57px; margin-top: 0 } }
+.part-div { margin: 14px 0 6px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-size: .8rem }
+.part-div:first-child { margin-top: 0 }
+/* Talk page header, compact (Brian, 2026-11-21) */
+.conv-title { font-size: 1.35rem; line-height: 1.25 }
+.conv-head .conv-meta { margin-top: 4px; gap: 4px 8px }
+.conv-head .talk { margin-top: 10px; height: 6px }
+.legend.speakers { gap: 6px; margin-top: 8px }
+.speaker-chip > summary { min-height: 32px; padding: 0 10px; font-size: .85rem }
+.speaker-chip .chip-edit { font-size: .75rem }
+.conv-controls { gap: 6px; margin-top: 8px; flex-wrap: nowrap }
+.seg-compact a, .seg-compact button { padding: 0 8px; min-height: 32px; font-size: .8rem }
+.conv-controls select { width: auto; min-height: 36px; padding: 0 26px 0 10px; font-size: .85rem !important }
+.menu-info { white-space: normal; line-height: 1.4; max-width: 260px; text-transform: none; letter-spacing: 0; font-weight: 400 }
+.check-strip { box-shadow: none; padding: 6px 0; background: none; border: 0; gap: 6px; margin-top: 4px }
+.check-strip .check-label { display: none }
+.check-strip a { min-height: 30px; padding: 0 10px; font-size: .8rem }
+.fix-help { font-size: .8rem; color: var(--muted); margin: 0 2px 8px } .fix-help b { color: var(--ink-2); font-weight: 600 }
+.jump-glow.section-head, summary.jump-glow, h2.jump-glow { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 9px }
+.section-head.jump-glow { padding-top: 4px; padding-bottom: 4px; margin-top: -4px }
+.section-head.jump-glow { margin-bottom: 2px }
+/* second lines: no stray "·" at a wrap or inside a badge; the talk a task came from gets its own short line */
+.item-sub { gap: 2px 8px } .item-sub > * + *::before { content: none }
+.item-sub > :is(span, b):not(.badge) + :is(span, b):not(.badge)::before { content: "·"; margin: 0 6px 0 -2px; color: var(--muted) }
+.task-row .item-sub > a:last-child, .unsure-row .item-sub > span:last-child { flex-basis: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.task-row .item-sub > a:last-child::before, .unsure-row .item-sub > span:last-child::before { content: none }
+.task-row .item-sub > a:last-child { color: var(--muted); opacity: .85 }
+.task-row .item-title, .unsure-row .item-title { -webkit-line-clamp: 3 }
+
+/* No auto-zoom (Brian, 2026-11-21): phones zoom into a typing box whose text is under 16 px; the word editor and other
+   boxes inherited a smaller font. Double-tap zoom is also off (double-tap edits words on transcript lines). */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100% }
+input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select { font-size: max(16px, 1em) !important }
+/* ---- 2026-11-21 (Brian's round 4) ---- */
+/* Processing card: first words, Pause / Resume / Cancel */
+.prog-preview { margin: 2px 0 6px; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden }
+.prog-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px } .prog-ctl form { margin: 0 }
+.chip.chip-on { background: var(--acc); color: var(--acc-ink); border-color: var(--acc) }
+.chip.chip-bad, .chip.danger { color: var(--bad) }
+.hist-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0; font-size: .9rem } .hist-dl dt { color: var(--muted) } .hist-dl dd { margin: 0 }
+.page-lede { margin: -4px 0 12px }
+/* Inbox preview: See more / less */
+.linkish { background: none; border: 0; padding: 0; color: var(--acc); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer }
+.sh-prev-wrap { margin: 6px 0 10px } .sh-prev-wrap .sh-preview { margin-bottom: 4px }
+.sh-full { max-height: 40vh; overflow-y: auto; -webkit-line-clamp: unset !important; display: block !important }
+/* People: "N mentioned" is one row that opens a sheet; Select / Merge / Remove */
+.mention-row { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface) }
+.mention-row::-webkit-details-marker { display: none }
+.mention-row .ib { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--acc-soft); color: var(--acc-soft-ink); flex: none }
+.chev-r { color: var(--muted); font-size: 1.3rem; margin-left: auto }
+.mention-sheet .fx-body .card { max-height: 60vh; overflow-y: auto }
+[data-picker].picking [data-pick-id] { cursor: pointer; position: relative }
+[data-picker].picking [data-pick-id] .av { visibility: hidden }
+[data-picker].picking [data-pick-id]::before { content: ""; position: absolute; left: 14px; top: 50%; width: 24px; height: 24px; margin-top: -12px; border-radius: 7px;
+  border: 2px solid color-mix(in srgb, var(--ink) 40%, transparent); box-sizing: border-box; z-index: 1 }
+[data-picker].picking [data-pick-id].picked::before { background: var(--acc); border-color: var(--acc) }
+[data-picker].picking [data-pick-id].picked::after { content: "✓"; position: absolute; left: 19px; top: 50%; transform: translateY(-52%); color: #fff; font-weight: 800; font-size: 15px; z-index: 2 }
+[data-picker].picking [data-pick-id].picked { background: color-mix(in srgb, var(--acc) 7%, transparent) }
+[data-picker].picking a.item-link { pointer-events: none }
+.pick-keep { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line) } .pick-keep input { width: 20px; height: 20px }
+.pick-bar { gap: 4px; padding: 6px 8px } .pick-bar .btn-sm { padding: 0 9px; min-height: 34px }
+/* Tasks: shorter rows (Brian: "each item takes too much space"); the whole title is in the task's sheet */
+.task-row { padding-top: 8px; padding-bottom: 8px; min-height: 0 }
+.task-row .item-title, .unsure-row .item-title { -webkit-line-clamp: 2 !important; cursor: pointer }
+.task-row .item-sub { flex-wrap: nowrap; white-space: nowrap; overflow: hidden }
+.task-row .item-sub > * { flex: none } .task-row .item-sub > a:last-child { flex: 1 1 0; flex-basis: 0 !important; min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.task-row .item-sub > a:last-child::before { content: "·" !important; margin: 0 6px 0 -2px; color: var(--muted) }
+.task-row .item-sub > a:first-child::before { content: none !important }
+.task-sheet > summary { list-style: none } .task-sheet > summary::-webkit-details-marker { display: none }
+.ts-title { font-weight: 650; line-height: 1.35; white-space: normal } .ts-meta { margin: 2px 0 8px }
+.task-sheet .fx-body .menu-item { width: 100%; justify-content: flex-start }
+.task-sheet .fx-body details.edit > summary { padding: 10px 12px; color: var(--ink); display: flex; align-items: center; gap: 10px; font-weight: 500 }
+.task-sheet .fx-body .menu-item, .task-sheet .fx-body details.edit > summary { min-height: 44px; border-radius: 10px }
+.task-sheet .fx-body details.edit > summary:not(:has(svg))::before { content: ""; width: 18px; flex: none }
+/* Talks|People and Mine/Waiting/Unsure/Decisions stay at the top while you scroll */
+.seg-wide { position: sticky; top: 64px; z-index: 15; box-shadow: 0 0 0 6px var(--bg) }
+@media (min-width: 960px) { .seg-wide { top: 10px } }
+/* Rail never over a button (Brian, 2026-11-21: on a talk it covered ⋯): on phones its tap area is no wider than the
+   free gutter on the right, and nothing in the page reaches into that gutter. */
+@media (max-width: 959px) {
+  .main { padding-right: 24px }
+  .rail { padding: 8px 3px 8px 5px }
+  .rail i { width: 10px } .rail i.sub { width: 6px } .rail i.on { width: 15px }
+  .main > *, .conv-grid, .conv-items, .conv-head { max-width: 100%; min-width: 0 }
+}
+.conv-controls { flex-wrap: wrap !important } .conv-controls > .row-menu:last-child { margin-left: auto }
+body:has(.seg-wide) .list-head, body:has(.seg-wide) .section, body:has(.seg-wide) .section-head { scroll-margin-top: 118px }
+/* Talk with no AI notes: one short card (Brian, 2026-11-21: "so barren") */
+.plain-card { display: grid; gap: 8px } .plain-card p { margin: 0 }
+.plain-kicker { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em }
+.plain-topics { font-size: 1.05rem; font-weight: 600; line-height: 1.35 }
+.pick-bar .icon-btn { color: var(--bg); opacity: .9 }
+#people-q { min-width: 0; flex: 1 1 120px } .sort-mini { width: auto !important; max-width: 130px }
+form.toolbar:has(#people-q) { flex-wrap: nowrap; gap: 6px } form.toolbar:has(#people-q) .btn { padding: 0 10px; flex: none }
+/* A talk with many speakers shows 3 chips + "+N more" (a 2-hour talk had 10 rows of chips) */
+.legend.speakers:not(.show-all) .sp-extra { display: none } .legend.show-all .sp-more { display: none }
+.sp-more { min-height: 32px; font-size: .85rem }
+/* Help: short folding sections; "what each button does" as a tidy list */
+.help-sec > summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; padding: 6px 0 } .help-sec > summary::-webkit-details-marker { display: none }
+.help-sec > summary h2 { margin: 0; font-size: 1.05rem }
+.help-dl h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 6px } .help-dl h3:first-child { margin-top: 0 }
+.help-dl dl { margin: 0; display: grid; gap: 8px } .help-dl dt { font-weight: 650 } .help-dl dd { margin: 0 0 2px; color: var(--ink-2); font-size: .92rem; line-height: 1.4 }
+/* Review / Needs you: a speaker to name is one row (tap = sheet with the clip) */
+.sp-row > summary.sp-sum { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; width: 100% } .sp-row > summary::-webkit-details-marker { display: none }
+.sp-row { display: block } .sp-sum .grow { min-width: 0; display: flex; flex-direction: column } .sp-sum b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sp-sum small { color: var(--muted); font-size: .8rem } .sp-sum .ib { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--warn-soft, #fde68a); font-weight: 800; flex: none }
+@media (max-width: 959px) { .item.rv-unsure, .item.unsure-row { flex-wrap: wrap !important } .item.rv-unsure > .item-main, .item.unsure-row > .item-main { flex: 1 1 100% !important; min-width: 100% }
+  .item.rv-unsure > .item-actions, .item.unsure-row > .item-actions { flex: 1 1 100%; justify-content: flex-end; margin-top: 4px } }
+/* M3: length and date ranges in the Inbox filter */
+.fx-range .rng-row { display: flex; align-items: center; gap: 8px } .fx-range .rng-row input { flex: 1 1 0; min-width: 0 }
+.rng-sliders { display: grid; gap: 2px; margin-top: 6px } .rng-sliders input[type=range] { width: 100%; accent-color: var(--acc) }
+/* M4 tags */
+.tag-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px }
+.tag-chip { display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 4px 0 10px; border-radius: 999px; font-size: .8rem; font-weight: 600;
+  background: var(--acc-soft); color: var(--acc-soft-ink); border: 1px solid transparent }
+.tag-chip a { color: inherit; text-decoration: none } .tag-chip form { margin: 0; display: inline }
+.tag-chip button { background: none; border: 0; color: inherit; opacity: .7; cursor: pointer; min-width: 24px; min-height: 26px; padding: 0 4px; font-size: .8rem }
+.tag-chip.by-ai { background: transparent; border: 1.5px dashed color-mix(in srgb, var(--acc) 55%, transparent) }
+.tag-plus { list-style: none; cursor: pointer; padding: 0 10px; background: transparent; border: 1px dashed var(--line-strong); color: var(--muted) }
+.tag-add > summary::-webkit-details-marker { display: none } .tag-add[open] { flex: 1 1 100% } .tag-add form { margin-top: 6px }
+.tag-mini { color: var(--acc); font-weight: 600 }
+/* Short / Detailed notes */
+.notes-switch { margin: 0 0 10px } .notes-switch button { min-width: 84px; justify-content: center }
+.detail-notes h3 { font-size: 1rem; margin: 14px 0 4px } .detail-notes h3:first-child { margin-top: 0 }
+.detail-notes ul { margin: 0 0 6px; padding-left: 20px } .detail-notes li { margin: 3px 0; line-height: 1.45 }
+.fx-f.fx-range { display: block !important; grid-column: 1 / -1 } .fx-f.fx-range > span:first-child { display: block; margin-bottom: 6px; font-weight: 600 }
+.fx-range .rng-row input { width: 100% } .fx-range input[type=date] { min-width: 0; width: 100% }
+.conv-controls { flex-wrap: nowrap !important; gap: 4px !important } .conv-controls select { max-width: 96px; padding-right: 22px !important }
+.conv-controls .seg-compact a, .conv-controls .seg-compact button { padding: 0 7px }
+.conv-controls > .row-menu:last-child { margin-left: auto; flex: none }
+.task-row .item-sub:has(.badge-warn, .badge-outline) { flex-wrap: wrap }
+
+/* Round 5 (Brian, 2026-11-21) */
+/* Inbox picker: the ✓ drawn centred inside its box (it sat off centre) */
+#inbox-list.picking .in-row.picked > summary::after { content: none }
+#inbox-list.picking .in-row.picked > summary::before { background: var(--acc) no-repeat center / 14px 14px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+/* M1-A without the badge: AI notes = blue ▶, Transcript only = white ▶ */
+.ib-plain { font-size: 13px; padding-left: 2px; color: var(--ink) }
+/* Speakers: dotted = not named yet */
+.speaker-chip.sp-unnamed > summary { border-style: dashed; border-width: 1.5px }
+.legend.show-all .sp-more { display: inline-flex }
+/* Tasks: no ⋯ column; the whole task opens its sheet */
+.task-row [data-open-sheet] { cursor: pointer }
+.task-row .item-actions { margin-left: 0 }
+.sh-prev-wrap [hidden] { display: none !important }   /* See more / less: only one of the two previews at a time */
+.speaker-chip.sp-unnamed > summary { border: 1.5px dashed var(--muted) }
+
+/* Q1-A task pop-up (Brian, 2026-11-21): title, detail rows, Done · Edit · ⋯ */
+.task-sheet .ts-title { font-size: 1.15rem; font-weight: 700 }
+.ts-rows { margin: 6px 0 10px }
+.ts-row { display: block; border-bottom: 1px solid var(--line) }
+.ts-row > summary, a.ts-row { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 2px; list-style: none; cursor: pointer; color: var(--ink); text-decoration: none }
+.ts-row > summary::-webkit-details-marker { display: none }
+.ts-row > summary:active, a.ts-row:active { background: var(--acc-soft) }
+.ts-ic { width: 24px; text-align: center; flex: none }
+.ts-v { color: var(--muted); font-size: .92rem; flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ts-row[open] .ts-v { color: var(--acc) }
+.ts-in { padding: 4px 0 12px 36px } .ts-in .menu-item { min-height: 40px }
+.ts-btns { display: flex; gap: 8px; align-items: stretch } .ts-btns form { margin: 0 } .ts-btns .btn { min-height: 44px }
+.btn-block { width: 100% }
+.ts-panel { margin-top: 10px } .ts-panel .menu-item { width: 100%; justify-content: flex-start; min-height: 44px }
+.ts-panel textarea { width: 100%; font-size: 16px }
+.cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+
+/* Q2-A select bars (Brian, 2026-11-21): count + Select all on top, labelled actions at the bottom over the tab bar */
+.pk2[hidden] { display: none }
+.pk-top { position: fixed; z-index: 40; top: 0; left: 0; right: 0; height: 56px; display: flex; align-items: center; gap: 10px;
+  padding: 0 14px calc(0px) 8px; background: var(--acc-soft); color: var(--acc-soft-ink); border-bottom: 1px solid var(--line); font-weight: 700 }
+.pk-top .pick-n { flex: 1; font-size: 1.05rem } .pk-top .linkish { font-weight: 650 }
+.pk-bot { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around;
+  background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(0,0,0,.06) }
+.pk-bot button { flex: 1; max-width: 110px; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: 0;
+  color: var(--ink); font: inherit; font-size: .78rem; font-weight: 600; min-height: 56px; border-radius: 12px; cursor: pointer }
+.pk-bot button:active { background: var(--acc-soft) }
+.pk-bot button > i { font-style: normal; font-size: 20px; line-height: 30px; height: 30px; display: grid; place-items: center }
+.pk-bot button > i.ib { width: 30px; height: 30px; font-size: 12px }
+.pk-bot .pk-danger { color: var(--bad, #b91c1c) }
+.pk-bot button:disabled { opacity: .5 }
+body:has(.pk2:not([hidden])) .fab, body:has(.pk2:not([hidden])) .tabbar { visibility: hidden }
+@media (min-width: 960px) { .pk-top { left: auto; right: 24px; top: 12px; width: 420px; border-radius: 12px; border: 1px solid var(--line) }
+  .pk-bot { left: auto; right: 24px; bottom: 24px; width: 420px; border-radius: 14px; border: 1px solid var(--line) } }
+
+/* Q3-A (Brian, 2026-11-21): rows that open something look it: › at the end and a light blue flash while pressed */
+.chev-r { color: var(--muted); font-size: 1.35rem; line-height: 1; flex: none; margin-left: 2px }
+#inbox-list.picking .in-row .ib-go, #inbox-list.picking .in-row .ib-plain { display: none }
+.in-row > summary, .sp-row > summary, .mention-row, .tap-row, .acts .act, .menu-item, .ts-row > summary, a.ts-row, .row1 { -webkit-tap-highlight-color: transparent; transition: background .12s }
+.in-row > summary:active, .sp-row > summary:active, .mention-row:active, .tap-row:active, .acts .act:active, .menu-item:active, .row1:active { background: var(--acc-soft) }
+@media (hover: hover) { .in-row > summary:hover, .sp-row > summary:hover, .tap-row:hover, .acts .act:hover { background: color-mix(in srgb, var(--acc-soft) 55%, transparent) } }
+.in-row > summary { border-radius: 10px; padding-left: 4px; padding-right: 4px }
+.conv-row::after, .person-row::after { content: "›"; color: var(--muted); font-size: 1.35rem; line-height: 1; flex: none; align-self: center; margin-left: 4px }
+#people-list.picking .person-row::after { content: none }
+.acts .act .chev-r { margin-left: 6px }
+.sp-row .sp-sum { min-height: 52px }
+/* Q4-A: Short | Detailed tabs in the Summary heading line */
+.sum-head { display: flex; align-items: flex-end; justify-content: space-between; border-bottom: 1px solid var(--line); margin-bottom: 10px; padding-bottom: 0 }
+.sum-head h2 { padding-bottom: 8px }
+.notes-tabs { display: flex; gap: 18px }
+.notes-tabs button { background: none; border: 0; border-bottom: 2.5px solid transparent; padding: 6px 2px 7px; font: inherit; font-weight: 650; color: var(--muted); cursor: pointer; min-height: 40px }
+.notes-tabs button.on { color: var(--acc); border-bottom-color: var(--acc) }
+/* People Select (Brian, 2026-11-21): the initials circle itself becomes a round checkbox, same size and place */
+[data-picker].picking .person-row[data-pick-id] .av { visibility: visible; background: var(--surface) !important; color: transparent !important;
+  box-shadow: inset 0 0 0 2px var(--line-strong); transition: background .12s }
+[data-picker].picking .person-row[data-pick-id].picked .av { background: var(--acc) no-repeat center / 55% 55%
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important; box-shadow: none }
+[data-picker].picking .person-row[data-pick-id]::before, [data-picker].picking .person-row[data-pick-id].picked::after { content: none }
+.sched { color: var(--acc); font-weight: 600 }
+.sched-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--acc-soft); color: var(--acc-soft-ink); border-radius: 10px; padding: 8px 10px; margin: 8px 0; font-size: .9rem }
+.pat-how { display: grid; gap: 6px } .pat-how label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-weight: 600 }
+.pat-how label:has(input:checked) { border-color: var(--acc); background: var(--acc-soft) }
+.pat-how .ib { width: 26px; height: 26px }
+
+/* Cut-off sweep (Brian, 2026-11-21) */
+/* People: the search box gets the whole first line; sort, ＋ and Select sit under it */
+.people-tools { flex-wrap: wrap !important } .people-tools #people-q { flex: 1 1 100%; min-width: 0 }
+.people-tools .inline-label { margin-right: auto }
+/* Tabs that don't fit scroll sideways, with a fade on the right edge as the hint (Material "scrollable tabs") */
+.tabs { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); padding-right: 24px }
+@media (max-width: 480px) { .tabs a { padding: 0 8px } }
+/* Today's week tiles: the name may take 2 lines instead of "Tasks you fin…" */
+#your-week .tile-name { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.2 }
+#your-week .tile-value { font-size: 1rem; overflow-wrap: anywhere }
+/* Notifications and search result titles: 2 lines, then … */
+/* Task line: the talk name gets what's left after the due date; with a short name it nearly always fits */
+
+/* ===================== Polish (Brian, 2026-11-21: "feel premium") =====================
+   1. Anything drawn as a box (border or tint) keeps at least 12px between its edge and what's inside.
+   2. Selected and pressed rows are rounded, with a little tint past the content so circles never touch the edge.
+   3. One-tap pickers: the native date / time / people picker opens from the row itself and saves on pick. */
+.mention-row { padding: 10px 12px; min-height: 56px }
+#conv-list.picking .item.picked, [data-picker].picking [data-pick-id].picked { border-radius: 12px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--acc) 7%, transparent); border-top-color: transparent }
+#conv-list.picking .item.picked + .item, [data-picker].picking [data-pick-id].picked + [data-pick-id] { border-top-color: transparent }
+#inbox-list.picking .in-row.picked > summary { border-radius: 12px }
+/* rows without a divider line get rounded corners and a little tint past the content when pressed (rows with a
+   divider stay square, or the line would curve at its ends) */
+.menu-item { border-radius: 10px }
+.in-row > summary:active, .tap-row:active, .row1:active { border-radius: 10px; border-top-color: transparent; box-shadow: 0 0 0 4px var(--acc-soft) }
+.mention-row:active { box-shadow: none }
+.speed-card { margin-bottom: 12px }
+/* the task pop-up's rows */
+.ts-pick { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; min-height: 48px; padding: 4px 2px; cursor: pointer;
+  border-bottom: 1px solid var(--line); -webkit-tap-highlight-color: transparent; transition: background .12s }
+.ts-pick:active { background: var(--acc-soft) }
+.qp-row { position: relative; cursor: pointer }
+.qp-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; margin: 0; font-size: 16px; pointer-events: none }
+.qp-select { pointer-events: auto; cursor: pointer; appearance: none; -webkit-appearance: none }   /* tap opens the list itself */
+.qp-new { flex: 1 1 100%; margin: 4px 0 8px 36px; position: relative; z-index: 1 }
+.picker-form .qp-new { margin: 6px 0 0 }
+.picker-form select[data-autosave] { width: 100% }
+.ts-title[data-edit-tap] { cursor: text; border-radius: 6px }
+.ts-title[data-edit-tap]:hover { background: var(--surface-2) }
+.sh-head .inline-edit { flex: 1; min-width: 0 }
+.sh-head .inline-edit textarea { width: 100%; font-weight: 700; font-size: 16px }
+/* Lit boxes instead of radio circles (Process at, Speed) */
+.pick-tile { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .12s, border-color .12s }
+.pick-tile > span:last-child { margin-left: auto; color: var(--muted); font-size: .88rem }
+.pick-tile.on, .pick-tile:has(input:checked) { border-color: var(--acc); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc) }
+.pick-tile:active { transform: scale(.99) }
+.pat-how label.pick-tile { padding: 12px 14px; border-width: 1.5px }
+.speed-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px }
+.speed-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.speed-pick .pick-tile { flex-direction: column; align-items: flex-start; gap: 2px; min-height: 64px }
+.speed-pick .pick-tile > span:last-child { margin-left: 0; font-size: .8rem; line-height: 1.25 }
+.speed-note { margin: 10px 0 0 }
+
+/* Talk rows: when the line wraps, the "·" never starts the new line (it hides in a clipped strip on the left) */
+.conv-row .item-sub { margin-left: -14px; column-gap: 0; clip-path: inset(-6px -6px -6px 14px) }
+.conv-row .item-sub > * { padding-left: 14px; position: relative }
+.conv-row .item-sub > :is(span, b):not(.badge) + :is(span, b):not(.badge)::before { position: absolute; left: 0; width: 14px; text-align: center; margin: 0 }
+.conv-row .item-sub > .badge { margin-left: 14px; padding-left: 8px }
+/* Talks toolbar: Filter, Sort, Export and Select fit on one line on a phone */
+@media (max-width: 480px) {
+  .fx-row { gap: 6px }
+  .fx-row .fx-sort { max-width: 8.1rem; padding-left: 10px; padding-right: 22px }
+  .fx-row .btn-ghost { padding-left: 6px !important; padding-right: 6px !important; gap: 4px }
+}
+/* Inbox: the "Merging…" row while recordings join in the background */
+.in-merging { align-items: center; gap: 12px; padding: 12px 4px; color: var(--muted) }
+.in-merging .item-title { color: var(--ink); font-weight: 600 }
+.in-merging .spin { animation: pulse-soft 1.2s ease-in-out infinite; border-radius: 9px; background: var(--acc-soft); color: var(--acc) }
+@keyframes pulse-soft { 50% { opacity: .45 } }
+/* placeholder sweep (2026-11-21): small selects and number boxes never cut their own text */
+.inline-label select { min-width: 8.5rem }
+.field input[name="credits"] { min-width: 7.5rem; width: 7.5rem }
+.sh-head .inline-edit .row { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px }
+.sh-head .inline-edit .row .meta { font-size: .8rem } .sh-head .inline-edit .row .btn { min-height: 32px; padding: 0 8px }
+
+/* Brian, 2026-11-21 (round 7): the phone's own dropdown arrow sat outside the box (People "Name"). Every dropdown now
+   draws its own small chevron inside the box, the same on every browser. currentColor via mask keeps dark mode right. */
+select:not(.qp-native):not([multiple]) { -webkit-appearance: none; appearance: none; padding-right: 30px !important;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  text-overflow: ellipsis; max-width: 100% }
+.tag-pick:not(.qp-native) { padding-right: 22px !important; background-position: calc(100% - 12px) 52%, calc(100% - 7px) 52%; background-size: 4px 4px, 4px 4px }
+
+/* Round 8 (Brian picked A for all three, 2026-11-21) */
+/* R10-A: the processing state is one slim line; the Speed choice is a one-row switch */
+.ctl-bar { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 7px 8px 7px 14px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--shadow); margin-bottom: 8px }
+.ctl-bar form { margin: 0 } .ctl-bar .grow { min-width: 0 }
+.ctl-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; opacity: .7 }
+.ctl-dot.on { background: var(--ok); opacity: 1 } .ctl-dot.paused { background: #e37400; opacity: 1 } .ctl-dot.hot { background: var(--bad); opacity: 1 }
+.pill { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 15px; border-radius: var(--r-pill); border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink); font: inherit; font-size: .9rem; font-weight: 600; white-space: nowrap; cursor: pointer; position: relative }
+.pill::after { content: ""; position: absolute; inset: -3px 0 }
+.pill:active { transform: scale(.97) }
+.pill-pri { background: var(--acc); color: var(--acc-ink); border-color: transparent }
+.speed-card { padding: 12px 14px !important } .speed-head { margin-bottom: 8px } .speed-note { margin: 8px 0 0 }
+.seg-switch { display: flex; width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; margin: 0 }
+.seg-opt { flex: 1; min-width: 0; min-height: 38px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; border: 0;
+  border-radius: 9px; background: none; color: var(--muted); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; line-height: 1.15 }
+.seg-opt.on, .seg-opt:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow) }
+.seg-opt:has(input:focus-visible) { outline: 2px solid var(--acc); outline-offset: -2px }
+/* Process at A: the switch, then two rows in the same style as the sheet */
+.pat-panel { margin: 10px 0 2px } .pat-panel .acts { margin: 4px 0 0 }
+.pat-panel .act .ib .icon { width: 16px; height: 16px }
+/* Task pop-up A: ✓ Done · Not needed · 🗑, one tap each */
+.ts-btns > form.grow { flex: 1 1 0; min-width: 0 } .ts-btns .ts-del { flex: none } .ts-del-btn { width: 52px; min-width: 0; padding: 0; justify-content: center; font-size: 1.05rem }
+/* Brian (2026-11-21): the page behind an open pop-up doesn't scroll (app.js adds .pop-lock) */
+html.pop-lock { overflow: hidden; overscroll-behavior: none }
+.fx-body, .menu-panel, .chip-pop { overscroll-behavior: contain }
+.chip-menu[open] .chip-pop { max-width: calc(100vw - 16px) }
+/* Talks › Processing now (Brian, 2026-11-21): on its own at the top while a talk is processing */
+.talks-now { margin-bottom: var(--s3) } .now-row .progress-bar .meter { height: 6px; margin: 6px 0 2px }
+/* Status ring (Brian picked B, 2026-11-21) */
+.sb-ring { position: relative; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: conic-gradient(var(--acc) calc(var(--p) * 1%), var(--line) 0); }
+.sb-ring::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--surface) }
+.sb-ring:not(.on):not(.paused) { background: var(--line) }
+.sb-ring > b { position: relative; font-size: 9px; font-weight: 800; color: var(--acc); font-variant-numeric: tabular-nums }
+.sb-ring.paused > b { color: var(--warn, #b7791f); font-size: 8px }
+.sb-ring .sb-ok { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #2f9e5b) }
+.sb-ring .alert-dot { top: -3px; right: -3px }
+.st-sheet > summary { list-style: none }
+.st-row { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 6px 2px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none }
+.st-row:first-child { border-top: 0 } .st-row:hover { text-decoration: none; background: var(--surface-2) }
+.st-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column }
+.st-row small { color: var(--muted); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.st-ic { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2) }
+.st-ic.st-bad { color: var(--bad) } .st-ic .icon { width: 18px; height: 18px }
+.st-meter { height: 5px; margin: 6px 0 0 }
+@media (min-width: 960px) { .st-sheet .fx-body { left: auto; right: 0 } }
+/* The top bar's frosted glass would trap the status sheet inside the bar: drop it while the sheet is open, and lift
+   the bar above the page so the dimmed backdrop covers everything */
+.topbar:has(.st-sheet[open]) { backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 60 }
+.sidebar:has(.st-sheet[open]) { backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 60 }
+/* Brian (2026-11-21, round 10): "I don't like how things bleed into a 2nd line". In lists, rows, step lists, counts
+   and previews everything stays on ONE line and ends in "…" when it doesn't fit (the full text is on the item's own
+   page or pop-up). Paragraphs (Help descriptions, summaries, pop-up text) still wrap. This block wins over the older
+   2-line clamps above. */
+.item-title, .item-link, .r1-t, .task-row .item-title, .unsure-row .item-title, .hit a.item-link {
+  display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset !important }
+.item-sub, .task-row .item-sub, .task-row .item-sub:has(.badge-warn, .badge-outline) { flex-wrap: nowrap !important; white-space: nowrap; overflow: hidden }
+.item-sub > * { flex: none; min-width: 0 }
+.item-sub > :last-child { flex: 0 1 auto !important; overflow: hidden; text-overflow: ellipsis }
+.task-row .item-sub > a:last-child, .unsure-row .item-sub > span:last-child { flex-basis: auto !important }
+.prog-preview, .inbox-preview { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset !important }
+.steps li { flex-wrap: nowrap; white-space: nowrap }
+.steps li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.steps li > span:last-child { flex: none }
+summary .count, .section-head .count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.help-screens .item-sub, .help-dl .item-sub { white-space: normal; flex-wrap: wrap !important }
+.help-screens .item-sub > :last-child { overflow: visible }
+/* Clean up devices (Brian, 2026-11-21) */
+.cl-lead { margin: -4px 0 12px } .cl-names { margin: 0 0 12px; padding-left: 18px; font-weight: 600 }
+.cl-names li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.cl-row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 6px var(--s3); border-top: 1px solid var(--line) }
+.list-head + .cl-row { border-top: 0 } .cl-row form { margin: 0 }
+.cl-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column }
+.cl-row .grow b, .cl-row small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.cl-row small { color: var(--muted); font-size: .85rem }
+.cl-tick { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line-strong); background: none; display: grid; place-items: center; padding: 0; color: #fff; cursor: pointer }
+.cl-done .cl-tick { background: var(--ok, #2f9e5b); border-color: var(--ok, #2f9e5b) } .cl-tick .icon { width: 16px; height: 16px }
+.cl-done .grow b { color: var(--muted); text-decoration: line-through }
+.cl-keep { border: 0; background: none; color: var(--muted); font: inherit; font-size: .85rem; font-weight: 600; padding: 10px 8px; cursor: pointer }
+.cl-notice { align-items: center } .cl-notice .chev-r { margin-left: auto }
+.card + .cl-lead { margin-top: 12px }
+/* Swipe to show buttons (Brian picked B, 2026-11-21) */
+.sw-host { position: relative; overflow: hidden }
+.sw-host > :not(.sw-layer) { transform: translateX(var(--sw-dx, 0)) }
+.sw-host.sw-anim > :not(.sw-layer) { transition: transform .18s ease }
+.sw-host.sw-on { background: var(--surface) }
+.sw-layer { position: absolute; top: 0; bottom: 0; display: flex; z-index: 0 }
+.sw-layer.sw-l { right: 0 } .sw-layer.sw-r { left: 0 }
+.sw-host > :not(.sw-layer) { position: relative; z-index: 1 }
+.sw-b { width: 84px; border: 0; color: #fff; font: inherit; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 6px; text-align: center; line-height: 1.2; cursor: pointer }
+.sw-red { background: #c53030 } .sw-ink { background: #718096 } .sw-blue { background: #2b6cb0 } .sw-dark { background: #4a5568 } .sw-green { background: #2f855a }
+.sw-host:not(.sw-on) > .sw-layer { visibility: hidden }

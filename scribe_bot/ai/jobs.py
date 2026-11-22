@@ -13,6 +13,7 @@ from scribe_bot.core import queue
 from scribe_bot.core.db import now
 
 KIND = "ai_rerun"
+COMPARE_KIND = "ai_compare"   # Compare with the other model (extract.other_model); keeps both versions
 
 
 def queue_rerun(conn: sqlite3.Connection, conversation_id: int, approved: bool = False) -> int | None:
@@ -40,3 +41,46 @@ def rerun_stage(ctx: queue.StageContext) -> str:
 
 
 PIPELINE: queue.Pipeline = [("extract", rerun_stage)]
+
+
+def queue_compare(conn: sqlite3.Connection, conversation_id: int) -> int | None:
+    """Brian confirmed the cost on the confirm step, so the run is approved. None if one is already waiting."""
+    if compare_pending(conn, conversation_id):
+        return None
+    return queue.enqueue(conn, COMPARE_KIND, payload={"conversation_id": conversation_id})
+
+
+def compare_pending(conn: sqlite3.Connection, conversation_id: int) -> bool:
+    return any(json.loads(r[0]).get("conversation_id") == conversation_id for r in conn.execute(
+        "SELECT payload FROM job WHERE kind = ? AND status IN ('pending', 'running')", (COMPARE_KIND,)))
+
+
+def compare_stage(ctx: queue.StageContext) -> str:
+    from scribe_bot.ai.extract import other_model
+    cid = ctx.payload["conversation_id"]
+    return json.dumps(extract_conversation(ctx.conn, cid, approved=True, chain=[other_model(ctx.conn, cid)], keep=False))
+
+
+COMPARE_PIPELINE: queue.Pipeline = [("compare", compare_stage)]
+
+
+DETAIL_KIND = "ai_detail"   # Detailed notes (Brian confirmed the cost)
+
+
+def queue_detail(conn: sqlite3.Connection, conversation_id: int) -> int | None:
+    if detail_pending(conn, conversation_id):
+        return None
+    return queue.enqueue(conn, DETAIL_KIND, payload={"conversation_id": conversation_id})
+
+
+def detail_pending(conn: sqlite3.Connection, conversation_id: int) -> bool:
+    return any(json.loads(r[0]).get("conversation_id") == conversation_id for r in conn.execute(
+        "SELECT payload FROM job WHERE kind = ? AND status IN ('pending', 'running')", (DETAIL_KIND,)))
+
+
+def detail_stage(ctx: queue.StageContext) -> str:
+    from scribe_bot.ai.extract import detail_conversation
+    return json.dumps(detail_conversation(ctx.conn, ctx.payload["conversation_id"], approved=True))
+
+
+DETAIL_PIPELINE: queue.Pipeline = [("detail", detail_stage)]

@@ -5,54 +5,41 @@
 {% if m14 %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/status"><span class="status-dot bad"></span>The M14 needs attention</a>
   <div class="item-sub">{{ m14|join(' · ')|capitalize }}</div></div>
   <div class="item-actions">{{ m.snooze_menu("/needs/m14/later") }}</div></div></div></section>{% endif %}
-{% if not (speakers or inbox or approvals or glossary or recordings or older or m14 or stale or reminders) %}{% if not on_today and tab == 'open' %}
+{% if not (speakers or inbox or approvals or glossary or m14 or stale or reminders) %}{% if not on_today and tab == 'open' %}
 <div class="card">{{ m.empty("check-circle", "All caught up", "New recordings, speakers to name, unsure tasks and glossary suggestions appear here.") }}</div>{% endif %}
 {% else %}
 
 {% if reminders %}
 <section class="section">
-  {{ m.section("Reminders", reminders|length, help="Tasks you asked to be reminded about. Done, remind me again with the clock, or Got it.") }}
-  <div class="card">{% for t in reminders %}{{ m.task_row(t, people, show_owner=True, show_conv=True, reminder=True) }}{% endfor %}</div>
+  {{ m.section("Reminders", reminders|length, help="Tasks you asked to be reminded about. Done, remind me again with the clock, or Stop reminding (the task stays open).") }}
+  <div class="card" data-cap="3" data-all="/review">{% for t in reminders %}{{ m.task_row(t, people, show_owner=True, show_conv=True, reminder=True) }}{% endfor %}</div>
 </section>
 {% endif %}
-{% if recordings %}
-<section class="section">
-  {{ m.section("Recordings waiting for your OK", recordings|length) }}
-  <p class="section-help">Most of the time is speech and speakers on the M14; the AI step adds only about {{ ai_step_s|duration }}.
-    {% if m14_wait %}The M14 is busy: one you approve now starts in about {{ m14_wait|duration }}.{% endif %}</p>
-  <div class="card">
-    {% for x in recordings %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.title|recorder_title }}</div>
-        <div class="item-sub"><span>{{ x.payload.minutes }} min recording</span>
-          {% if x.payload.private %}<span class="badge badge-private">{{ m.icon("lock") }}Private · no AI</span>{% endif %}</div>
-        {{ m.est_choices(x.est, x.payload.private) }}</div>
-      <div class="item-actions">
-        <select name="meeting_type" id="mt-{{ x.r.id }}" form="ta-{{ x.r.id }}" aria-label="Meeting type" title="Meeting type: Auto lets the AI spot talks and classes">
-          <option value="">Type: Auto</option>{% for k, label in meeting_types.items() %}<option value="{{ k }}" {{ 'selected' if k == x.type_guess }}>{{ label }}</option>{% endfor %}</select>
-        {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Transcribe + AI", "rc-" ~ x.r.id, include="#mt-" ~ x.r.id) }}{% endif %}
-        <form method="post" action="/review/{{ x.r.id }}/approve" id="ta-{{ x.r.id }}"><input type="hidden" name="ai" value="0"><button class="btn" title="Transcript and speakers only. Nothing leaves the M14, and it's locked as Private.">{{ m.icon("lock") }} Transcript Only (No AI)</button></form>
-        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Skip</button></form>{{ m.later_menu(x.r) }}</div>
-      {{ m.confirm_slot("rc-" ~ x.r.id) }}</div>
-    {% else %}{{ m.none_found() }}{% endfor %}
-    {% if recordings_total %}<div class="item est-total">{{ m.est_choices(recordings_total, label="All " ~ recordings|length) }}</div>{% endif %}
-  </div>
-</section>
+{% if not on_today and inbox_count %}
+<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/inbox">{{ inbox_count }} recording{{ 's' if inbox_count != 1 }} waiting in Inbox</a>
+  <div class="item-sub">Recordings to approve now live on their own page.</div></div></div></div></section>
 {% endif %}
-
 {% if speakers %}
 <section class="section">
   {{ m.section("Speakers to name or check", speakers|length) }}
-  <div class="card">
-    {% for x in speakers %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}
-      <div><a class="item-link" href="/conversations/{{ x.r.conversation_id }}">{{ x.r.conv_title or 'Conversation' }}</a></div>
-      <div class="item-sub"><span>{{ (x.s.talk_seconds / 60)|round(1) }} min of talking</span>{% if x.payload.guess %}<span>sounds like {{ x.payload.guess }}</span>{% endif %}{% if x.payload.guess_id %}<span class="badge badge-outline">Check: voice match {{ (x.payload.score * 100)|round|int }}%, not sure</span>{% endif %}</div>
-      {% if x.s.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ x.s.id }}"></audio>{% endif %}
-      <form class="row" method="post" action="/speakers/{{ x.s.id }}/name" style="margin-top:var(--s2)">
-        <select name="person_id" aria-label="Pick a person"><option value="">Who is this?</option>{% for p in people %}<option value="{{ p.id }}"{% if p.id == x.payload.guess_id %} selected{% endif %}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</select>
-        <input name="new_name" placeholder="or a new name" aria-label="New name" class="grow"><button class="btn btn-primary">{{ 'Confirm' if x.payload.guess_id else 'Save' }}</button>
-      </form></div>
-      <div class="item-actions"><form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Skip</button></form>{{ m.later_menu(x.r) }}</div></div>
+  <div class="card" data-cap="3" data-all="/review">
+    {% for x in speakers %}{# compact (Brian, 2026-11-21): one row; tap for the voice clip and the name in a sheet #}
+    <details class="fx-sheet item sp-row" id="sp-{{ x.s.id }}">
+      <summary class="sp-sum"><span class="ib">?</span><span class="grow"><b>{{ x.r.conv_title or 'Conversation' }}</b>
+        <small>{{ (x.s.talk_seconds / 60)|round(1) }} min of talking{% if x.payload.guess %} · sounds like {{ x.payload.guess }}{% endif %}{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %} · snoozed{% endif %}</small></span><span class="chev-r" aria-hidden="true">›</span></summary>
+      <div class="fx-back" data-fx-close aria-hidden="true"></div>
+      <div class="fx-body" role="dialog" aria-label="Who is this?"><div class="fx-grab" aria-hidden="true"></div>
+        <div class="sh-head"><b>Who is this?</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
+        <div class="meta"><a href="/conversations/{{ x.r.conversation_id }}">{{ x.r.conv_title or 'Conversation' }}</a> · {{ (x.s.talk_seconds / 60)|round(1) }} min{% if x.payload.guess_id %} · voice match {{ (x.payload.score * 100)|round|int }}%, not sure{% endif %}</div>
+        {% if x.s.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ x.s.id }}" style="width:100%;margin:8px 0"></audio>{% endif %}
+        <form class="stack" method="post" action="/speakers/{{ x.s.id }}/name">
+          <select name="person_id" aria-label="Who is it?" data-autosave><option value="">Who is it?</option>{% for p in people %}<option value="{{ p.id }}"{% if p.id == x.payload.guess_id %} selected{% endif %}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>
+          <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits>
+          {% if x.payload.guess_id %}<button class="btn btn-primary">Yes, that's right</button>{% endif %}
+        </form>
+        <div class="chips-row"><form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="chip">Skip</button></form>{{ m.later_menu(x.r) }}</div>
+      </div>
+    </details>
     {% else %}{{ m.none_found() }}{% endfor %}
   </div>
 </section>
@@ -60,18 +47,17 @@
 
 {% if inbox %}
 <section class="section">
-  {{ m.section("Inbox", inbox|length) }}
-  <div class="card">
+  {{ m.section("Unsure tasks", inbox|length) }}
+  <div class="card" data-cap="3" data-all="/tasks?tab=inbox">
     {% for x in inbox %}
-    <div class="item{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is not none %}#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
+    <div class="item rv-unsure{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is not none %}#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
         {% else %}<div class="item-title">{{ x.t.title if x.t else x.payload.title or 'Item' }}</div>{% endif %}
         <div class="item-sub"><span>{{ x.payload.reason or "The AI wasn't sure" }}</span>{% if x.r.conv_title %}<span>{{ x.r.conv_title }}</span>{% endif %}</div></div>
       <div class="item-actions">
-        {% if x.t %}{% for a in ("work", "personal") %}
-        <form method="post" action="/tasks/{{ x.t.id }}/file"><input type="hidden" name="area" value="{{ a }}"><button class="btn btn-ok">{{ m.icon("check") }} Keep · {{ a|area_label }}</button></form>
-        {% endfor %}
-        <form method="post" action="/tasks/{{ x.t.id }}/delete"><button class="btn btn-no">{{ m.icon("x") }} Wrong, remove</button></form>
-        {% else %}<form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn">Dismiss</button></form>{% endif %}
+        {% if x.t %}<form method="post" action="/tasks/{{ x.t.id }}/file" class="keep-f"><select name="area" class="tag-pick" aria-label="Area">{% for a, l in [("work", "Work"), ("personal", "Home"), ("school", "School"), ("other", "Other")] %}<option value="{{ a }}" {{ 'selected' if (x.t.area or 'work') == a }}>{{ l }}</option>{% endfor %}</select>
+          <button class="ib ib-ok" aria-label="Keep" title="Keep">{{ m.icon("check") }}</button></form>
+        <form method="post" action="/tasks/{{ x.t.id }}/delete"><button class="ib ib-no" aria-label="Wrong, remove" title="Wrong, remove">{{ m.icon("x") }}</button></form>
+        {% else %}<form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-sm">Dismiss</button></form>{% endif %}
       {{ m.later_menu(x.r) }}</div></div>
     {% else %}{{ m.none_found() }}{% endfor %}
   </div>
@@ -81,7 +67,7 @@
 {% if approvals %}
 <section class="section">
   {{ m.section("Cloud approvals", approvals|length) }}
-  <div class="card">
+  <div class="card" data-cap="3" data-all="/review">
     {% for x in approvals %}
     <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
         <div class="item-sub">
@@ -102,7 +88,7 @@
 {% if glossary %}
 <section class="section">
   {{ m.section("Glossary suggestions", glossary|length) }}
-  <div class="card">
+  <div class="card" data-cap="3" data-all="/review">
     {% for x in glossary %}
     <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
         {% if x.g %}<div class="item-sub">heard as {{ x.variants|join(', ') }}</div>{% endif %}</div>
@@ -113,24 +99,6 @@
   </div>
 </section>
 {% endif %}
-{% endif %}
-{% if older and on_today %}
-<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/review#older">{{ older|length }} older recording{{ 's' if older|length != 1 }} not processed yet</a>
-  <div class="item-sub">Synced before Scribe Bot started. Use them to test Scribe Bot, one at a time, like new recordings.</div></div>
-  <div class="item-actions">{{ m.snooze_menu("/needs/older/later") }}</div></div></div></section>
-{% elif older %}
-<section class="section" id="older">
-  {{ m.section("Older recordings", older|length, help="Recordings that synced before Scribe Bot started; nothing has been done with them. Each one can be a test meeting: Use as a new recording puts it under Needs you exactly like one that just arrived (with its time and cost estimate, and a Discord ping). Nothing runs until you approve it there; then speech, speakers, AI and the Ready ping happen as usual.") }}
-  <p class="section-help">Times are on the M14, mostly speech and speakers; the AI step adds only about {{ ai_step_s|duration }}.
-    {% if m14_wait %}The M14 is busy: one you use now starts in about {{ m14_wait|duration }} after you approve it.{% endif %}</p>
-  <div class="card">{% if older_total %}<div class="item est-total">{{ m.est_choices(older_total, label="All " ~ older|length) }}</div>{% endif %}
-    {% for r in older %}
-    <div class="item"><div class="item-main"><div class="item-title">{{ r.title|recorder_title }}</div>
-      <div class="item-sub"><span>{{ ((r.duration_s or 0) / 60)|round(1) }} min recording</span><span>synced {{ r.received_at|local_datetime }}</span></div>
-      {{ m.est_choices(r.est) }}</div>
-      <div class="item-actions"><form method="post" action="/recordings/{{ r.id }}/review"><button class="btn" title="Goes under Needs you like a recording that just arrived; nothing runs until you approve it">Use as a new recording</button></form></div></div>
-  {% endfor %}</div>
-</section>
 {% endif %}
 {% if stale %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/tasks?show=old">{{ stale }} old task{{ 's' if stale != 1 }} to check</a>
   <div class="item-sub">Open for a month with no activity. Still need {{ 'them' if stale != 1 else 'it' }}?</div></div></div></div></section>{% endif %}

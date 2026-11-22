@@ -17,6 +17,30 @@
 <div class="notice">{{ m.icon("alert") }}<div><b>Scribe Bot needs attention.</b> The background worker isn't running, so new recordings wait. <a href="/status">See status</a></div></div>
 {% endif %}
 
+{# Redesign (Brian picked sheet 3, 2026-11-21): four number tiles answer "what needs me?" at a glance; everything below
+   is one line per item. Acting on things happens on their own page (Inbox, Tasks, the talk), not in big cards here. #}
+{% set n_speakers = speakers|length if speakers else 0 %}{% set n_unsure = inbox|length if inbox else 0 %}
+<nav class="dash" aria-label="At a glance">
+  <a class="dash-tile{{ ' hot' if n_inbox }}" href="/inbox"><b>{{ n_inbox }}</b><small>to process</small></a>
+  <a class="dash-tile{{ ' hot' if due and due[0].due and due[0].due <= now_iso[:10] }}" href="#sec-due"><b>{{ due|length }}</b><small>due</small></a>
+  <a class="dash-tile" href="/tasks?tab=waiting"><b>{{ n_waiting }}</b><small>waiting</small></a>
+  <a class="dash-tile{{ ' hot' if n_unsure }}" href="/tasks?tab=inbox"><b>{{ n_unsure }}</b><small>unsure</small></a>
+</nav>
+{# Brian, 2026-11-21: delete-from-your-devices. The checklist line while there's something on it; the pop-up once
+   per batch Scribe Bot deleted (no "remind me later": tap outside and it asks again next time you open Today). #}
+{% if cleanup.get('todo') %}<a class="notice cl-notice" href="/cleanup">🧹 <span><b>{{ cleanup.todo }} to delete from your devices</b></span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+{% if cleanup_ask %}
+<details class="fx-sheet cl-ask" open><summary hidden></summary>
+  <div class="fx-back" data-fx-close aria-hidden="true"></div>
+  <div class="fx-body" role="dialog" aria-label="Delete from your devices too?"><div class="fx-grab" aria-hidden="true"></div>
+    <div class="fx-head"><b>Delete these from your devices too?</b></div>
+    <p class="meta cl-lead">Scribe Bot deleted {{ cleanup_ask|length }} recording{{ 's' if cleanup_ask|length != 1 }} (30 days in Trash). Your phone or Mac may still have {{ 'them' if cleanup_ask|length != 1 else 'it' }}.</p>
+    <ul class="cl-names">{% for r in cleanup_ask[:4] %}<li>{{ r.title|recorder_title }}</li>{% endfor %}{% if cleanup_ask|length > 4 %}<li class="meta">+{{ cleanup_ask|length - 4 }} more</li>{% endif %}</ul>
+    <div class="acts">
+      <form method="post" action="/cleanup/answer"><button class="act pri"><span class="ib ib-ai">✓</span><span class="grow">Add to my cleanup list</span><span class="chev-r" aria-hidden="true">›</span></button></form>
+      <form method="post" action="/cleanup/answer"><input type="hidden" name="keep" value="1"><button class="act"><span class="ib ib-plain">✕</span><span class="grow">Keep them on my devices</span><span class="chev-r" aria-hidden="true">›</span></button></form>
+    </div></div></details>
+{% endif %}
 {% if show_help %}
 <section class="help-card" aria-labelledby="help-title">
   <div class="help-head"><h2 id="help-title">How to use Scribe Bot</h2>
@@ -24,55 +48,67 @@
       <form method="post" action="/help/dismiss"><button class="btn btn-ghost">Got it, hide this</button></form></div></div>
   <ol>
     <li><b>Record</b> in Google Recorder as usual. It syncs to the M14 in seconds.</li>
-    <li><b>Approve</b> it under <i>Needs you</i>, right here on Today: <i>Transcribe + AI</i> for a summary and tasks, or <i>Transcript Only (No AI)</i> to keep it fully private.</li>
+    <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>AI notes</i> for a summary and tasks, or <i>Transcript only</i> (free, stays on the M14).</li>
     <li><b>Read</b> it in <a href="/conversations">Conversations</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
     <li><b>Fix</b> anything wrong right there: tap <i>Done</i>, or <i>⋯</i> for <i>Change person</i>, <i>Edit</i> and <i>Remove</i>. Tap a speaker's name to rename them. Every change can be undone.</li>
     <li><b>Find</b> it later in <a href="/conversations">Talks</a> (conversations and people), <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
   </ol>
-  <p class="meta">Corrections teach Scribe Bot: a named voice is recognised next time, and fixes count toward its quality score.</p>
+  <p class="meta">Named voices are recognised next time.</p>
 </section>
 {% endif %}
 
 {% include "_progress.html" %}
 
 {# Only what needs Brian: the Review items themselves (named, approved and skipped right here). Same rows as Review › Open. #}
-{% if needs_count %}
-<div id="needs-you">
-  <h2 class="group-title">Needs you · {{ needs_count }}<a class="aside" href="/review?tab=done" title="Everything you've handled: done and dismissed, with Restore">History</a></h2>
-  {% include "_review.html" %}
-</div>
-{% endif %}
-
-{% if snoozed %}
-<details class="section transcript" id="snoozed">
-  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Snoozed</h2><span class="count meta">{{ snoozed|length }}</span></summary>
-  <p class="section-help">Each comes back under Needs you at its time. Bring one back now, or <a href="/review?tab=snoozed">act on it in Review</a>.</p>
-  {{ m.snoozed_list(snoozed) }}
-</details>
+{% set convs = {} %}{% for x in speakers or [] %}{% set _ = convs.update({x.r.conversation_id: {"n": (convs[x.r.conversation_id].n if x.r.conversation_id in convs else 0) + 1, "t": x.r.conv_title}}) %}{% endfor %}
+{% if m14 or convs or n_inbox or n_unsure or approvals or glossary or stale or reminders or snoozed %}
+<section class="section" id="needs-you">
+  <div class="section-head"><h2>Needs you</h2>{% if needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}<a class="aside" href="/review?tab=done" title="Everything you've handled, with Restore">History</a></div>
+  <div class="card">
+    {% if m14 %}<a class="row1" href="/status"><span class="rdot bad"></span><span class="r1-t">The M14 needs attention<small>{{ m14|join(' · ')|capitalize }}</small></span><span class="go">›</span></a>{% endif %}
+    {% if n_inbox %}<a class="row1" href="/inbox"><span class="rdot warn"></span><span class="r1-t">Process {{ n_inbox }} recording{{ 's' if n_inbox != 1 }}<small>{{ '%.1f'|format(inbox_hours) }} h of audio waiting</small></span><span class="go pri">›</span></a>{% endif %}
+    {% for cid, g in convs.items() %}<a class="row1" href="/conversations/{{ cid }}#speakers"><span class="rdot warn"></span><span class="r1-t">Name {{ g.n }} speaker{{ 's' if g.n != 1 }}<small>{{ g.t or 'Conversation' }}</small></span><span class="go">›</span></a>{% endfor %}
+    {% if n_unsure %}<a class="row1" href="/tasks?tab=inbox"><span class="rdot warn"></span><span class="r1-t">{{ n_unsure }} unsure task{{ 's' if n_unsure != 1 }}<small>Keep or remove</small></span><span class="go">›</span></a>{% endif %}
+    {% if approvals %}<a class="row1" href="/review"><span class="rdot warn"></span><span class="r1-t">{{ approvals|length }} AI run{{ 's' if approvals|length != 1 }} to approve</span><span class="go">›</span></a>{% endif %}
+    {% if glossary %}<a class="row1" href="/review"><span class="rdot"></span><span class="r1-t">{{ glossary|length }} glossary suggestion{{ 's' if glossary|length != 1 }}</span><span class="go">›</span></a>{% endif %}
+    {% if stale %}<a class="row1" href="/tasks?show=old"><span class="rdot"></span><span class="r1-t">{{ stale }} old task{{ 's' if stale != 1 }} to check</span><span class="go">›</span></a>{% endif %}
+    {% if snoozed %}<a class="row1" href="/review?tab=snoozed"><span class="rdot"></span><span class="r1-t">{{ snoozed|length }} snoozed<small>Back at their times</small></span><span class="go">›</span></a>{% endif %}
+    {% for t in reminders or [] %}{{ m.task_row(t, people, show_owner=True, show_conv=True, reminder=True) }}{% endfor %}
+  </div>
+</section>
 {% endif %}
 
 <div id="sec-due">{% if due %}
 <section class="section">
-  {{ m.section("Next up", due|length, help="Everything due today or late, then your next tasks, soonest first. Swipe right on the phone to snooze.") }}
+  <div class="section-head"><h2>Due</h2><a class="aside" href="/tasks">All tasks</a></div>
   <div class="card">{% for t in due %}{{ m.task_row(t, [], show_conv=True, tgt="sec-due") }}{% endfor %}</div>
 </section>
 {% endif %}</div>
 
 {% if overdue_theirs %}
 <section class="section">
-  {{ m.section("Late promises to you", overdue_theirs|length, help="Others said they'd do these by now. Copy a nudge to paste into a text or email; Scribe Bot never sends anything.") }}
-  <div class="card">{% for t in overdue_theirs %}
-    <div class="item{{ ' tap-row' if t.conversation_id }}"><div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.title }}</a>{% else %}<div class="item-title">{{ t.title }}</div>{% endif %}
-      <div class="item-sub"><b>{{ t.owner_name }}</b>{{ m.due(t) }}{% if t.conv_title %}<span>{{ t.conv_title }}</span>{% endif %}</div></div>
-      <div class="item-actions"><button type="button" class="btn" data-copy="#nudge-{{ t.id }}"
-        title="Copies a friendly reminder to paste into a text or email. Nothing is sent.">Copy nudge</button>
+  <div class="section-head"><h2>Late promises to you</h2><a class="aside" href="/tasks?tab=waiting">All</a></div>
+  <div class="card" data-cap="3" data-all="/tasks?tab=waiting">{% for t in overdue_theirs %}
+    <div class="item{{ ' tap-row' if t.conversation_id }}">{{ m.avatar(t.owner_name) }}<div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}
+      <div class="item-sub"><b>{{ t.owner_name }}</b>{{ m.due(t) }}</div></div>
+      <div class="item-actions"><button type="button" class="btn btn-sm" data-copy="#nudge-{{ t.id }}"
+        title="Copies a friendly reminder to paste into a text or email. Nothing is sent.">Nudge</button>
         <textarea id="nudge-{{ t.id }}" hidden readonly aria-hidden="true">{{ t.nudge }}</textarea></div></div>
   {% endfor %}</div>
 </section>
 {% endif %}
 
+{% if recent %}
+<section class="section" id="recent">
+  <div class="section-head"><h2>Recent talks</h2><a class="aside" href="/conversations">All talks</a></div>
+  <div class="card">{% for c in recent %}
+    <a class="row1" href="/conversations/{{ c.id }}"><span class="r1-t">{{ c.short_title or c.title }}<small>{{ (c.started_at or c.created_at)|local_date }}{% if c.duration_s %} · {{ (c.duration_s / 60)|round|int }} min{% endif %}{% if c.n_tasks %} · {{ c.n_tasks }} task{{ 's' if c.n_tasks != 1 }}{% endif %}</small></span>{{ m.area_badge(c.area) }}</a>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <section class="section" id="your-week">
-  {{ m.section("Your week", help="The last 7 days. Tap a tile for the details.") }}
+  <div class="section-head"><h2>Your week</h2></div>
   {% set sp = week.speaking %}{% set lv = speaking_levels(sp) if sp else {} %}
   <div class="tiles">
     {{ m.stat_tile("Conversations", week.conversations, sub="since " ~ week.since|local_date, href="/conversations?start=" ~ week.since) }}
@@ -83,7 +119,7 @@
   </div>
 </section>
 
-{% if not (needs_count or due or overdue_theirs or awaiting or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
+{% if not (needs_count or due or overdue_theirs or n_inbox or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
 <section class="section">
   <div class="card">{{ m.empty("check-circle", "All clear", "Nothing needs you right now. New recordings, due tasks and late promises show up here.") }}</div>
   <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Conversations</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>

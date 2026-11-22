@@ -19,8 +19,9 @@ with an Intel i7 and 16 GB of RAM.
 
 ## 2. Privacy as rules, not promises
 
-- **Private means private.** A meeting marked Private gets a transcript and search, and nothing from it goes to any
-  AI. Turning Private off later goes through a confirm step that says exactly what will be sent and what it costs.
+- **No AI until you ask.** A meeting marked Transcript only gets a transcript and search, and nothing from it goes to
+  any AI. AI notes are a separate step you choose later. (This started as a "Private" switch; in November 2026 it
+  became Transcript only, one plain choice in the Inbox.)
 - **Ask first.** While I was testing, every new recording waited in Review with its length, an estimated processing
   time, and an estimated AI cost, and nothing ran until I chose "Transcribe + AI" or "Transcript only".
 - **A ledger of everything that leaves.** Every outbound AI call is recorded: when, which account, which model, what

@@ -49,7 +49,7 @@ def _seed_meetings(conn: sqlite3.Connection) -> None:
     marcus = person("Marcus Lee (demo)", "work", "green")
     alex = person("Alex Rivera (demo)", "personal", "amber")
 
-    def convo(title, days, ctype, area, people, lines, summary, takeaways=None, private=0, tasks=(), decisions=(), facts=(),
+    def convo(title, days, ctype, area, people, lines, summary, takeaways=None, no_ai=0, tasks=(), decisions=(), facts=(),
               cost=None):
         """people: cluster -> person id (cluster 0 = me). lines: (cluster, text)."""
         start = ago(days)
@@ -57,8 +57,8 @@ def _seed_meetings(conn: sqlite3.Connection) -> None:
         cid = conn.execute(
             "INSERT INTO conversation (title, started_at, duration_s, type, area, area_confidence, summary, takeaways, private, "
             "processed_by, status, created_at, updated_at, type_chosen) VALUES (?, ?, ?, ?, ?, 0.92, ?, ?, ?, ?, 'done', ?, ?, 1)",
-            (title, start, dur * 20, ctype, area, summary, json.dumps(takeaways or []), private,
-             "local" if private else "demo", start, start)).lastrowid
+            (title, start, dur * 20, ctype, area, summary, json.dumps(takeaways or []), 0,
+             "local" if no_ai else "demo", start, start)).lastrowid   # Transcript only = no AI step
         talk = {}
         for c, _ in lines:
             talk[c] = talk.get(c, 0) + 9 * 20
@@ -130,9 +130,9 @@ def _seed_meetings(conn: sqlite3.Connection) -> None:
        tasks=[("Reserve a table for Saturday dinner", 1, 1, due(3)), ("Send the restaurant list", alex, 4, due(0))],
        facts=[(alex, "Alex Rivera (demo)", "preference", "Vegetarian now", 2)], cost=(1800, 400))
 
-    convo("DEMO: Doctor follow-up (private)", 5, "voice_note", "personal", {0: 1}, [
+    convo("DEMO: Doctor follow-up (transcript only)", 5, "voice_note", "personal", {0: 1}, [
         (0, "Notes from my check-up. Everything looks fine, follow up in six months."),
-    ], None, private=1)
+    ], None, no_ai=1)
 
     convo("DEMO: Talk, Leading through uncertainty", 6, "learning", "work", {0: 1, 1: None}, [
         (1, "The best leaders I know say what they don't know, out loud."),

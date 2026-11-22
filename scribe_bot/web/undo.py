@@ -21,10 +21,11 @@ COLUMNS = {
     "decision": ("rated", "text", "people"),
     "conversation": ("title", "summary", "takeaways", "deleted_at"),
     "person_fact": ("person_id", "person_name", "confirmed", "value"),
-    "segment": ("speaker_id", "text"),
+    "segment": ("speaker_id", "text", "idx", "start_s", "end_s"),   # idx/times: split and join (2026-11-20)
     "speaker": ("talk_seconds", "person_id", "confirmed", "match_score"),
     "review_item": ("status", "resolved_at", "snoozed_until"),
     "notification": ("dismissed_at",),
+    "recording": ("status",),   # Inbox Skip / Remove can be undone (2026-11-21)
 }
 
 
@@ -40,7 +41,7 @@ def save(conn: sqlite3.Connection, label: str, rows: list[tuple[str, int]]) -> i
 
 
 # Rows an action deletes outright (a person and their voiceprint): saved whole, put back first on Undo.
-DELETABLE = ("person", "voiceprint")
+DELETABLE = ("person", "voiceprint", "segment")   # segment: "Join with line above" (put back after the restore)
 
 
 def removed(conn: sqlite3.Connection, uid: int, table: str, where: str, args: tuple) -> None:
@@ -51,6 +52,32 @@ def removed(conn: sqlite3.Connection, uid: int, table: str, where: str, args: tu
     a = conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()
     conn.execute("UPDATE undo_action SET removed = ? WHERE id = ?",
                  (json.dumps([*json.loads(a["removed"]), *({"table": table, "row": r} for r in rows)]), uid))
+
+
+def transcript(conn: sqlite3.Connection, uid: int, cid: int) -> None:
+    """Call before splitting or joining lines: the conversation's whole transcript is saved, and Undo puts it back
+    exactly (line numbers, times, words, speakers). Rows are updated in place, so tasks pointing at lines keep them."""
+    rows = [dict(r) for r in conn.execute("SELECT * FROM segment WHERE conversation_id = ?", (cid,))]
+    a = conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()
+    conn.execute("UPDATE undo_action SET removed = ? WHERE id = ?",
+                 (json.dumps([*json.loads(a["removed"]), {"table": "transcript", "cid": cid, "rows": rows}]), uid))
+
+
+def _restore_transcript(conn: sqlite3.Connection, cid: int, rows: list[dict]) -> None:
+    keep = {r["id"] for r in rows}
+    conn.execute("UPDATE segment SET idx = -id WHERE conversation_id = ?", (cid,))   # free every line number first
+    for (sid,) in conn.execute("SELECT id FROM segment WHERE conversation_id = ?", (cid,)).fetchall():
+        if sid not in keep:   # a line the fix added
+            conn.execute("DELETE FROM segment WHERE id = ?", (sid,))
+            conn.execute("DELETE FROM search_index WHERE kind = 'segment' AND ref_id = ?", (sid,))
+    for r in rows:
+        cols = [c for c in r if c != "id"]
+        if conn.execute("SELECT 1 FROM segment WHERE id = ?", (r["id"],)).fetchone():
+            conn.execute(f"UPDATE segment SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?", [r[c] for c in cols] + [r["id"]])
+        else:   # a line the fix joined into another
+            conn.execute(f"INSERT INTO segment (id, {', '.join(cols)}) VALUES (?, {', '.join('?' * len(cols))})",
+                         [r["id"]] + [r[c] for c in cols])
+        _reindex(conn, "segment", r["id"])
 
 
 def created(conn: sqlite3.Connection, uid: int, table: str, rid: int) -> None:
@@ -81,7 +108,16 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
         return new_ids.get(pid, pid)
 
     with db.transaction(conn):
-        for d in json.loads(a["removed"]):   # deleted rows go back first: the restored columns may point at them
+        for c in json.loads(a["created"]):   # lines a split added go first, freeing their line numbers
+            if c["table"] == "segment":
+                conn.execute("DELETE FROM segment WHERE id = ?", (c["id"],))
+                conn.execute("DELETE FROM search_index WHERE kind = 'segment' AND ref_id = ?", (c["id"],))
+        removed_rows = json.loads(a["removed"])
+        for d in removed_rows:
+            if d["table"] == "transcript":
+                _restore_transcript(conn, d["cid"], d["rows"])
+        later = [d for d in removed_rows if d["table"] == "segment"]   # a joined line returns once the lines below moved back
+        for d in [d for d in removed_rows if d["table"] not in ("segment", "transcript")]:   # deleted rows go back first
             row = {k: (base64.b64decode(v["b64"]) if isinstance(v, dict) else v) for k, v in d["row"].items()}
             if d["table"] == "voiceprint":
                 row["person_id"] = person(row["person_id"])
@@ -104,6 +140,10 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
             conn.execute(f"UPDATE {s['table']} SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
                          [before[c] for c in cols] + [s["id"]])
             _reindex(conn, s["table"], s["id"])
+        for d in later:
+            row = d["row"]
+            conn.execute(f"INSERT INTO segment ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})", list(row.values()))
+            _reindex(conn, "segment", row["id"])
         for c in json.loads(a["created"]):
             if c["table"] == "speaker":   # a speaker added for one line goes away again if no line uses it
                 conn.execute("DELETE FROM speaker WHERE id = ? AND NOT EXISTS (SELECT 1 FROM segment WHERE speaker_id = ?)",

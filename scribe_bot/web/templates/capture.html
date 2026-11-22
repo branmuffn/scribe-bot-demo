@@ -3,18 +3,21 @@
 {% block title %}Capture · Scribe Bot{% endblock %}
 {% block body %}
 <div class="page-head"><h1>Capture</h1></div>
-{% if saved %}<div class="notice ok" role="status">{{ m.icon("check-circle") }}<div>{{ {'note': 'Note saved.', 'audio': "Recording received. It shows up in Review in a minute, waiting for your OK, like a synced recording.",
-  'older': "You already had this recording on the M14 (it synced earlier but was never processed). It's now in Review, waiting for your OK.",
-  'known': "Scribe Bot already has this recording, so nothing new was added. Find it in Conversations.", 'share': 'Saved to Capture.'}.get(saved, 'Saved.') }}</div></div>{% endif %}
+{% if saved %}<div class="notice ok" role="status">{{ m.icon("check-circle") }}<div>{{ {'note': 'Note saved.', 'audio': "Recording received. It shows up in the Inbox in a minute, waiting for your OK, like a synced recording.",
+  'older': "You already had this recording on the M14 (it synced earlier but was never processed). It's now in the Inbox, waiting for your OK.",
+  'known': "Scribe Bot already has this recording, so nothing new was added. Find it in Conversations.",
+  'transcript': "Transcript saved. It shows on its recording in the Inbox (the names must match).", 'none': 'Nothing was picked.', 'share': 'Saved to Capture.'}.get(saved, 'Saved.') }}</div></div>{% endif %}
 
 <section class="section">
-  {{ m.section("Voice note") }}
+  {{ m.section("Record here") }}
   <div class="card pad stack">
-    <button type="button" id="record" class="btn btn-primary" hidden>{{ m.icon("mic") }} Record a voice note</button>
+    <button type="button" id="record" class="btn btn-primary" hidden>{{ m.icon("mic") }} Start recording</button>
     <form method="post" action="/capture/upload" enctype="multipart/form-data" class="row">
-      <input type="file" name="file" accept="audio/*" required aria-label="Audio file" class="grow"><button class="btn">Upload</button>
+      <input type="file" name="file" accept="audio/*,.m4a,.txt,text/plain" multiple required aria-label="Audio files and transcripts" class="grow"><button class="btn">Upload</button>
     </form>
-    <div class="meta">m4a, mp3, wav or webm. Put “private” in the file name to keep it away from the AI.</div>
+    <details class="fx-info"><summary>ⓘ Which files work</summary><div class="meta">m4a, mp3, wav or webm; pick several at once. A .txt with the same name as a recording is its transcript
+      for the Inbox.
+      Apple Voice Memos on a Mac: drag memos from the app onto the desktop, then pick them here.</div></details>
   </div>
 </section>
 

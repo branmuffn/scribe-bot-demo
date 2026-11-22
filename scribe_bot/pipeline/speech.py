@@ -15,6 +15,15 @@ from scribe_bot.pipeline.paths import models
 
 SAMPLE_RATE = 16000
 THREADS = 4  # the M14 has 4 physical cores
+
+
+def threads_now() -> int:
+    """Cores for the next piece of work: 4, or 2 in Gentle / Auto while the Mac is in use (pipeline/pace.py)."""
+    try:
+        from scribe_bot.pipeline import pace
+        return pace.threads()
+    except Exception:
+        return THREADS
 THRESHOLD = 1.1
 MIN_ON = 0.1
 MIN_OFF = 0.2
@@ -24,24 +33,40 @@ SEGMENTATION = "sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx"
 MIN_EMBED_TURN_S = 1.5
 
 
-def in_child(fn, *args):
-    """Run fn(*args) in a fresh Python process and return its result (its exceptions are raised here)."""
+class Stopped(Exception):
+    """stop() said to stop (Pause pressed); recording.py turns it into queue.Paused."""
+
+
+def in_child(fn, *args, stop=None):
+    """Run fn(*args) in a fresh Python process and return its result (its exceptions are raised here). With stop (a
+    no-argument check), the child is ended within ~2 s once stop() is true and Stopped is raised (Pause, 2026-11-21)."""
     import multiprocessing
-    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures import ProcessPoolExecutor, TimeoutError as FutTimeout
 
-    with ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn")) as pool:
-        return pool.submit(fn, *args).result()
+    pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+    try:
+        fut = pool.submit(fn, *args)
+        while True:
+            try:
+                return fut.result(timeout=2 if stop else None)
+            except FutTimeout:
+                if stop():
+                    for p in list((getattr(pool, "_processes", None) or {}).values()):
+                        p.terminate()
+                    raise Stopped()
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _diarize(samples, speakers: int | None) -> list[dict]:
+def _diarize(samples, speakers: int | None, threads: int = THREADS) -> list[dict]:
     """Speaker separation itself (runs in a child process: see SherpaEngine.diarize)."""
     import sherpa_onnx
 
     config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(models() / SEGMENTATION)),
-            num_threads=THREADS),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(models() / EMBEDDING), num_threads=THREADS),
+            num_threads=threads),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(models() / EMBEDDING), num_threads=threads),
         clustering=sherpa_onnx.FastClusteringConfig(num_clusters=speakers or -1, threshold=THRESHOLD),
         min_duration_on=MIN_ON, min_duration_off=MIN_OFF,
     )
@@ -83,17 +108,33 @@ class SherpaEngine:
             data = w.readframes(w.getnframes())
         return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
-    def transcribe(self, samples) -> list[dict]:
+    pausable = True
+
+    def transcribe(self, samples, done: list[dict] | None = None, stop=None, save=None) -> list[dict]:
+        """done = pieces already transcribed before a Pause (skipped); after each new ~28 s piece save(out) keeps
+        progress and stop() is checked, raising Stopped (Brian, 2026-11-21: pause a 2-hour talk, resume tonight)."""
         import sherpa_onnx
 
         p = models() / PARAKEET
-        rec = sherpa_onnx.OfflineRecognizer.from_transducer(
-            encoder=str(p / "encoder.int8.onnx"), decoder=str(p / "decoder.int8.onnx"),
-            joiner=str(p / "joiner.int8.onnx"), tokens=str(p / "tokens.txt"),
-            num_threads=THREADS, model_type="nemo_transducer",
-        )
-        out = []
+
+        def recognizer(n):
+            return sherpa_onnx.OfflineRecognizer.from_transducer(
+                encoder=str(p / "encoder.int8.onnx"), decoder=str(p / "decoder.int8.onnx"),
+                joiner=str(p / "joiner.int8.onnx"), tokens=str(p / "tokens.txt"),
+                num_threads=n, model_type="nemo_transducer",
+            )
+        n = threads_now()
+        rec = recognizer(n)
+        out = list(done or [])
+        have = {round(x["start"], 2) for x in out}
         for s0, s1 in quiet_cuts(samples):
+            if round(s0 / SAMPLE_RATE, 2) in have:
+                continue
+            if stop and stop():
+                raise Stopped()
+            if threads_now() != n:   # Auto switched between full speed and Gentle: same words, different speed
+                n = threads_now()
+                rec = recognizer(n)
             stream = rec.create_stream()
             stream.accept_waveform(SAMPLE_RATE, samples[s0:s1])
             rec.decode_stream(stream)
@@ -101,13 +142,15 @@ class SherpaEngine:
             r = stream.result
             out.append({"start": round(start, 2), "end": round(s1 / SAMPLE_RATE, 2), "text": r.text.strip(),
                         "tokens": list(r.tokens), "token_times": [round(start + t, 2) for t in r.timestamps]})
-        return out
+            if save:
+                save(out)
+        return sorted(out, key=lambda x: x["start"])
 
-    def diarize(self, samples, speakers: int | None = None) -> list[dict]:
+    def diarize(self, samples, speakers: int | None = None, stop=None) -> list[dict]:
         """In a child process: sherpa-onnx holds Python's lock (the GIL) for the whole separation, which froze the
         worker's heartbeat thread (8 min for a 23-min recording: false "isn't responding" alerts, 2026-10-20).
         Measured on the M14: same speed, and the worker's other threads keep running."""
-        return in_child(_diarize, samples, speakers)
+        return in_child(_diarize, samples, speakers, threads_now(), stop=stop)
 
     def embeddings(self, samples, turns: list[dict]) -> dict[int, list[float]]:
         """Average, normalised voice embedding per cluster, from turns of at least 1.5 s."""

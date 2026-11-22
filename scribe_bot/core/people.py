@@ -139,7 +139,7 @@ def _merge_voiceprints(conn: sqlite3.Connection, from_id: int, into_id: int) -> 
 def duplicate_suggestions(conn: sqlite3.Connection) -> list[dict]:
     """Pairs that are probably the same person: same first name, or one's name is the other's alias.
     Grouped by name/first-name key, so only people who share a key are compared (not every pair)."""
-    rows = conn.execute("SELECT id, name, aliases FROM person ORDER BY id").fetchall()
+    rows = conn.execute("SELECT id, name, aliases FROM person WHERE stands_for_speaker IS NULL ORDER BY id").fetchall()   # unnamed voices wait in their own row
     groups: dict[str, list[int]] = {}
     for i, r in enumerate(rows):
         first = r["name"].split()[0].lower()
@@ -194,3 +194,48 @@ def undo_rows(conn: sqlite3.Connection, pid: int) -> list[tuple[str, int]]:
     rows += [("person_fact", r[0]) for r in conn.execute("SELECT id FROM person_fact WHERE person_id = ?", (pid,))]
     rows += [("decision", d) for d, ids in conn.execute("SELECT id, people FROM decision") if pid in json.loads(ids or "[]")]
     return rows
+
+
+# ---- People mentioned but not added yet (Brian, 2026-11-20) ----
+# The AI saves facts about people who were talked about; a fact links to a person only when that name or nickname
+# already exists (so a passing name never makes a junk person). These are the rest, grouped by name, for People.
+UNLINKED = ("f.person_id IS NULL AND coalesce(trim(f.person_name), '') != '' AND lower(f.person_name) NOT LIKE 'speaker %' "
+            "AND lower(f.person_name) NOT IN ('unknown', 'me', 'brian') AND coalesce(f.confirmed, 1) != 0 "
+            "AND NOT EXISTS (SELECT 1 FROM conversation z WHERE z.id = f.conversation_id AND z.deleted_at IS NOT NULL)")
+
+
+def mentioned(conn: sqlite3.Connection, hidden: list[str] | None = None) -> list[dict]:
+    hide = {h.lower() for h in hidden or []}
+    groups: dict[str, dict] = {}
+    for f in conn.execute(f"SELECT f.id, trim(f.person_name) AS name, f.value, f.conversation_id, f.created_at "
+                          f"FROM person_fact f WHERE {UNLINKED} ORDER BY f.created_at DESC"):
+        key = f["name"].lower()
+        if key in hide:
+            continue
+        g = groups.setdefault(key, {"name": f["name"], "facts": 0, "convs": set(), "last": f["created_at"], "samples": []})
+        g["facts"] += 1
+        g["convs"].add(f["conversation_id"])
+        if len(g["samples"]) < 2:
+            g["samples"].append(f["value"])
+    out = [{**g, "convs": len(g["convs"])} for g in groups.values()]
+    return sorted(out, key=lambda g: (-g["facts"], g["name"].lower()))
+
+
+def unlinked_fact_ids(conn: sqlite3.Connection, name: str) -> list[int]:
+    return [r[0] for r in conn.execute(f"SELECT f.id FROM person_fact f WHERE {UNLINKED} AND lower(trim(f.person_name)) = ?",
+                                       (name.strip().lower(),))]
+
+
+def link_mentioned(conn: sqlite3.Connection, name: str, pid: int, as_alias: bool = False) -> int:
+    """Move every unlinked fact about `name` to person `pid`; with as_alias, `name` also becomes their nickname, so
+    future mentions link by themselves."""
+    ids = unlinked_fact_ids(conn, name)
+    if ids:
+        conn.execute(f"UPDATE person_fact SET person_id = ? WHERE id IN ({','.join('?' * len(ids))})", (pid, *ids))
+    p = conn.execute("SELECT name, aliases FROM person WHERE id = ?", (pid,)).fetchone()
+    if as_alias and p and name.strip().lower() != p["name"].lower():
+        al = aliases_of(p)
+        if name.strip().lower() not in (a.lower() for a in al):
+            conn.execute("UPDATE person SET aliases = ? WHERE id = ?", (json.dumps(al + [name.strip()]), pid))
+            reindex(conn, pid)
+    return len(ids)

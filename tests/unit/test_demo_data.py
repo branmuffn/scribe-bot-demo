@@ -18,9 +18,9 @@ def test_seed_is_idempotent(conn):
     assert demo_data.seed(conn) == demo_data.seed(conn) == 6
 
 
-def test_private_demo_meeting_never_sent(conn):
+def test_transcript_only_demo_meeting_never_sent(conn):
     demo_data.seed(conn)
-    cid = conn.execute("SELECT id FROM conversation WHERE private = 1").fetchone()[0]
+    cid = conn.execute("SELECT id FROM conversation WHERE processed_by = 'local'").fetchone()[0]
     assert not conn.execute("SELECT 1 FROM ledger_entry WHERE conversation_id = ?", (cid,)).fetchone()
 
 

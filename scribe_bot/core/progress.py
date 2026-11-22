@@ -92,7 +92,7 @@ def queue_wait_s(conn: sqlite3.Connection, now: datetime | None = None) -> float
 def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = None) -> dict | None:
     now = now or datetime.now(timezone.utc)
     job = conn.execute(
-        "SELECT j.*, r.duration_s, r.title AS rec_title, c.id AS conversation_id, c.title AS conv_title "
+        "SELECT j.*, r.duration_s, r.title AS rec_title, c.id AS conversation_id, coalesce(nullif(c.short_title, ''), c.title) AS conv_title "
         "FROM job j LEFT JOIN recording r ON r.id = j.recording_id LEFT JOIN conversation c ON c.recording_id = j.recording_id "
         "WHERE j.id = ?", (job_id,)).fetchone()
     if job is None:
@@ -139,13 +139,39 @@ def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = N
     elapsed = ((eta if done else now) - _parse(first)).total_seconds() if first else 0.0
     return {
         "job_id": job_id, "status": job["status"], "recording_id": job["recording_id"],
-        "conversation_id": job["conversation_id"], "title": job["conv_title"] or job["rec_title"] or "Recording",
+        "conversation_id": job["conversation_id"], "title": job["conv_title"] or _quick(conn, job["recording_id"]) or job["rec_title"] or "Recording",
         "minutes": round((job["duration_s"] or 0) / 60, 1), "stages": stages,
         "step": len(STAGES) if done else current + 1, "steps": len(STAGES),
         "current": None if done else stages[current], "percent": 100 if done else min(int(100 * finished_est / total_est), 99),
         "started_at": first, "started": local_time(first), "elapsed_s": elapsed, "elapsed": duration_label(elapsed),
         "remaining_s": remaining, "eta_at": _iso(eta), "eta": local_time(eta), "done": done,
+        "preview": _preview(conn, job["recording_id"]), **_control(conn, job, runs, done),
     }
+
+
+def _control(conn: sqlite3.Connection, job, runs: dict, done: bool) -> dict:
+    """Pause / Resume / Cancel on the processing card (Brian, 2026-11-21; pipeline/control.py does the work)."""
+    get = lambda k: (conn.execute("SELECT value FROM setting WHERE key = ?", (k,)).fetchone() or [None])[0]  # noqa: E731
+    paused, at = get("pipeline_paused") == "1", get("pipeline_resume_at")
+    filed = "file" in runs and runs["file"]["status"] == "done"
+    return {"paused": paused and not done, "pausing": paused and job["status"] == "running",
+            "resume_label": local_time(at) if at else "",
+            "can_cancel": paused and job["status"] in ("pending", "failed") and not filed and job["kind"] == "recording"}
+
+
+def _quick(conn: sqlite3.Connection, rec_id: int | None) -> str:
+    from scribe_bot.web import inbox as inbox_svc
+    row = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (rec_id,)).fetchone() if rec_id else None
+    return inbox_svc.quick_title(row[0], min_count=1) if row and row[0] else ""
+
+
+def _preview(conn: sqlite3.Connection, rec_id: int | None) -> str:
+    """The Inbox's first words, so you remember what's processing (Brian, 2026-11-21)."""
+    if rec_id is None:
+        return ""
+    row = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (rec_id,)).fetchone()
+    text = (row[0] or "").strip() if row else ""
+    return text if len(text) <= 160 else text[:160].rsplit(" ", 1)[0] + "…"
 
 
 def active_jobs(conn: sqlite3.Connection, now: datetime | None = None) -> list[dict]:

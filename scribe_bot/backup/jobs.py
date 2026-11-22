@@ -16,11 +16,18 @@ from scribe_bot.discord_bot.notify import enqueue
 def nightly_backup(conn: sqlite3.Connection, cfg: settings.Settings, run=None) -> list[dict]:
     results = restic.run_backup(conn, cfg, *([run] if run else []))
     for r in results:
-        if not r["ok"]:
-            enqueue(conn, "alerts", f"🔴 Backup to {r['destination']} failed ({r['error']})"[:150], "/settings/backups")
+        # Brian, 2026-11-21: only when it failed two nights in a row (a one-off, like Nov 20, fixes itself the next night)
+        if not r["ok"] and _failed_twice(conn, r["destination"]):
+            enqueue(conn, "alerts", f"🔴 Backup to {r['destination']} failed two nights in a row ({r['error']})"[:150], "/settings/backups")
     if not results:
         enqueue(conn, "alerts", "⚠️ No backup destinations set up yet (Settings > Backups)", "/settings/backups")
     return results
+
+
+def _failed_twice(conn: sqlite3.Connection, destination: str) -> bool:
+    last = [r[0] for r in conn.execute("SELECT status FROM backup_run WHERE destination = ? AND kind = 'backup' "
+                                       "ORDER BY id DESC LIMIT 2", (destination,))]
+    return len(last) == 2 and all(s != "ok" for s in last)
 
 
 def monthly_restore_test(conn: sqlite3.Connection, cfg: settings.Settings, run=None, at: datetime | None = None) -> list[dict]:
@@ -46,7 +53,7 @@ def _job(fn: Callable[[sqlite3.Connection, settings.Settings], object]) -> Calla
 
 SCHEDULES = [
     Schedule("export", hour=1, minute=30, run=_job(export.export_all)),
-    Schedule("trash-purge", hour=1, minute=45, run=_job(lambda c, cfg: trash.purge(c))),
+    Schedule("trash-purge", hour=1, minute=45, run=_job(lambda c, cfg: trash.purge(c, cfg=cfg))),
     Schedule("backup", hour=2, run=_job(nightly_backup)),
     Schedule("restore-test", hour=3, run=_job(monthly_restore_test)),
 ]

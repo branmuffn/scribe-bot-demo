@@ -54,8 +54,9 @@ def test_duplicate_content_is_ignored(conn, cfg):
 
 
 @pytest.mark.parametrize("title,private", [
-    ("Private chat with Sam", 1), ("call_PRIVATE", 1), ("Privately noted", 1), ("Team sync", 0)])
+    ("Private chat with Sam", 0), ("call_PRIVATE", 0), ("Team sync", 0)])
 def test_private_by_title(conn, cfg, title, private):
+    """Round 7 (Brian, 2026-11-21): no more Private, "private" in a file name means nothing special now."""
     ingest.scan_inbound(conn, cfg)
     drop_file(paths.inbound(cfg), f"{title}.m4a")
     [rec_id] = ingest.scan_inbound(conn, cfg)

@@ -49,7 +49,9 @@ def _prompt(conn: sqlite3.Connection, conversation_id: int) -> tuple[str, str, i
     me = conn.execute("SELECT name FROM person WHERE id = ?", (ME,)).fetchone()[0]
     kind, chosen = conn.execute("SELECT type, type_chosen FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
     custom = conn.execute("SELECT value FROM setting WHERE key = ?", (f"template:{kind}",)).fetchone()
-    return (prompts.extract_system(me, kind, custom[0] if custom else None, detect_learning=not chosen),
+    from scribe_bot.core import tags as tags_svc
+    return (prompts.extract_system(me, kind, custom[0] if custom else None, detect_learning=not chosen,
+                                   tags=tags_svc.names(conn)),
             prompts.render(lines), len(lines))
 
 
@@ -251,12 +253,16 @@ def _write(conn: sqlite3.Connection, conv: sqlite3.Row, data: dict, processed_by
         # The AI topic title replaces the fallback; recording.title keeps the original Recorder name.
         if data.get("learning") is True:  # the AI spotted a talk/class (only asked when Brian didn't pick the type)
             conn.execute("UPDATE conversation SET type = 'learning' WHERE id = ? AND type_chosen = 0", (cid,))
-        conn.execute("UPDATE conversation SET title = coalesce(?, title), summary = ?, takeaways = '[]', processed_by = ?, "
+        conn.execute("UPDATE conversation SET title = coalesce(?, title), short_title = NULL, summary = ?, takeaways = '[]', processed_by = ?, "
                      "status = 'extracted', summary_type = type, updated_at = ? WHERE id = ?",
                      (data.get("title"), data["summary"], processed_by, t, cid))
         if conv["area"] is None:
             conn.execute("UPDATE conversation SET area = ?, area_confidence = ?, area_guess = ? WHERE id = ?",
                          (area, data.get("area_confidence"), guess, cid))
+        from scribe_bot.core import tags as tags_svc   # M4: the AI's picks from existing tags (never new ones)
+        conn.execute("DELETE FROM conversation_tag WHERE conversation_id = ? AND by_ai = 1", (cid,))
+        for name in data.get("tags") or []:
+            tags_svc.add(conn, cid, name, by_ai=True)
         for item in data["tasks"] + data["waiting_on"]:
             owner = _person_id(conn, item["owner"], area, conv=conv, title=data.get("title")) or ME
             confidence = item.get("confidence")
@@ -286,7 +292,8 @@ def _write(conn: sqlite3.Connection, conv: sqlite3.Row, data: dict, processed_by
 
 
 def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, approved: bool = False,
-                         factory: router.ProviderFactory = router.default_factory) -> dict:
+                         factory: router.ProviderFactory = router.default_factory, chain: list | None = None,
+                         keep: bool = True) -> dict:
     conv = conn.execute("SELECT * FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
     if conv is None or conv["deleted_at"]:
         return {"status": "failed", "cost_usd": 0.0, "error": "no such conversation"}
@@ -301,7 +308,7 @@ def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, appr
     for attempt in range(2):  # one retry on invalid output
         try:
             call = router.run(conn, TASK, system, user, sent_summary=summary, conversation_id=conversation_id,
-                              area=conv["area"], approved=approved, factory=factory)
+                              area=conv["area"], approved=approved, factory=factory, chain=chain)
         except router.NeedsApproval as e:
             return {"status": "pending_approval", "cost_usd": spent, "estimate": e.estimate}
         except router.Blocked as e:
@@ -317,6 +324,12 @@ def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, appr
         except prompts.InvalidOutput as e:
             last_error = str(e)
             continue
+        if not keep:  # Compare: hold the other model's version beside the current one; nothing is replaced yet
+            with transaction(conn):
+                conn.execute("INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                             (COMPARE_KEY.format(conversation_id), json.dumps(
+                                 {"by": f"{call.account_nickname}:{call.model}", "data": data, "cost_usd": round(spent, 6), "at": now()})))
+            return {"status": "compared", "cost_usd": round(spent, 6)}
         _write(conn, conv, data, f"{call.account_nickname}:{call.model}")
         return {"status": "done", "cost_usd": round(spent, 6)}
 
@@ -324,3 +337,78 @@ def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, appr
         conn.execute("INSERT INTO review_item (kind, conversation_id, payload, created_at) VALUES ('inbox', ?, ?, ?)",
                      (conversation_id, json.dumps({"reason": f"AI extraction failed: {last_error}"}), now()))
     return {"status": "inbox", "cost_usd": round(spent, 6), "error": last_error}
+
+
+# ---------- Compare with the other model (Brian, 2026-11-19: "until I land on the model for me") ----------
+# Runs only the AI step again (the transcript is reused; no audio work) on the other Claude model, and keeps that
+# version in setting 'compare:<id>' until Brian keeps one of the two. Keeping the other one replaces the AI rows the
+# same way Re-run AI does (items Brian already acted on stay).
+COMPARE_KEY = "compare:{}"
+COMPARE_MODELS = (router.SONNET, router.HAIKU)
+
+
+def other_model(conn: sqlite3.Connection, conversation_id: int) -> list:
+    """[provider, model] to compare against: Haiku if Sonnet made the current notes, else Sonnet."""
+    by = (conn.execute("SELECT processed_by FROM conversation WHERE id = ?", (conversation_id,)).fetchone()[0] or "")
+    return router.HAIKU if "sonnet" in by else router.SONNET
+
+
+def compare_estimate(conn: sqlite3.Connection, conversation_id: int) -> dict:
+    system, user, _ = _prompt(conn, conversation_id)
+    model = other_model(conn, conversation_id)[1]
+    return {"model": model, **costs.estimate(model, system, user)}
+
+
+def compared(conn: sqlite3.Connection, conversation_id: int) -> dict | None:
+    row = conn.execute("SELECT value FROM setting WHERE key = ?", (COMPARE_KEY.format(conversation_id),)).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def keep_compared(conn: sqlite3.Connection, conversation_id: int, which: str) -> None:
+    """which='other': the compared version replaces the current notes; 'current': the compared one is thrown away."""
+    other = compared(conn, conversation_id)
+    if other and which == "other":
+        conv = conn.execute("SELECT * FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
+        _write(conn, conv, other["data"], other["by"])
+    with transaction(conn):
+        conn.execute("DELETE FROM setting WHERE key = ?", (COMPARE_KEY.format(conversation_id),))
+
+
+# ---------- Short / Detailed notes (Brian, 2026-11-20) ----------
+DETAIL_OUTPUT_TOKENS = 3000
+
+
+def _detail_prompt(conn: sqlite3.Connection, conversation_id: int) -> tuple[str, str, int]:
+    lines = _lines(conn, conversation_id)
+    me = conn.execute("SELECT name FROM person WHERE id = ?", (ME,)).fetchone()[0]
+    return prompts.detail_system(me), prompts.render(lines), len(lines)
+
+
+def detail_estimate(conn: sqlite3.Connection, conversation_id: int) -> dict:
+    system, user, _ = _detail_prompt(conn, conversation_id)
+    provider, model = router.task_config(conn, TASK)["chain"][0]
+    return {"model": model, **costs.estimate(model, system, user, output_tokens=DETAIL_OUTPUT_TOKENS)}
+
+
+def detail_conversation(conn: sqlite3.Connection, conversation_id: int, *, approved: bool = True,
+                        factory: router.ProviderFactory = router.default_factory, chain: list | None = None) -> dict:
+    conv = conn.execute("SELECT * FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
+    if conv is None or conv["deleted_at"]:
+        return {"status": "failed", "error": "no such conversation"}
+    if conv["private"]:
+        return {"status": "skipped_private"}
+    system, user, n = _detail_prompt(conn, conversation_id)
+    try:
+        call = router.run(conn, TASK, system, user, sent_summary=f"conversation #{conversation_id} transcript ({n} lines) for detailed notes",
+                          conversation_id=conversation_id, area=conv["area"], approved=approved, factory=factory, chain=chain,
+                          max_tokens=6000)
+    except (router.NeedsApproval, router.Blocked, router.CallFailed) as e:
+        return {"status": "failed", "error": str(e)}
+    text = prompts.clean_detail(call.text)
+    if not text:
+        return {"status": "failed", "error": "empty notes", "cost_usd": call.cost_usd}
+    with transaction(conn):
+        conn.execute("UPDATE conversation SET detailed = ?, detailed_at = ? WHERE id = ?", (text, now(), conversation_id))
+        conn.execute("INSERT INTO search_index (kind, ref_id, conversation_id, text) VALUES ('summary', ?, ?, ?)",
+                     (conversation_id, conversation_id, text))
+    return {"status": "done", "cost_usd": round(call.cost_usd, 6)}

@@ -26,9 +26,11 @@ someone else's cloud.
 - **Transcribes locally** with Parakeet speech recognition (sherpa-onnx) on the server, separates speakers, and
   recognizes known voices from voiceprints, asking me to confirm unsure matches.
 - **Extracts** a title, summary, tasks with owners and due dates ("you owe" and "they owe you"), decisions, and notes
-  about people, using Claude on the transcript text only. Meetings marked **Private** never go to any AI.
-- **Asks first.** Each new recording waits for approval with its length, an estimated processing time, and an estimated
-  AI cost. Every outbound AI call is written to a Data Ledger, and spend has hard monthly caps.
+  about people, using Claude on the transcript text only. Meetings marked **Transcript only** never go to any AI
+  (AI notes can still be made later, on request).
+- **Asks first.** Each new recording waits in the Inbox with its length, an estimated processing time, and an estimated
+  AI cost: AI notes, Transcript only, Remind me later, Delete, or Process at a set time. Overnight, recordings still
+  waiting get a transcript with no AI. Every outbound AI call is written to a Data Ledger, and spend has hard monthly caps.
 - **Web app** (installable on phone and desktop): Today, Conversations (click any line to play from that word),
   People, Tasks (swipe to finish or snooze), Search, Costs, Status, Settings. Exports to Markdown or PDF.
 - **Stays up on its own:** every processing step saves its output, so jobs resume after a crash or power cut;
@@ -46,7 +48,7 @@ flowchart LR
         I[Inbox]
         S["Local speech<br/>Parakeet via sherpa-onnx<br/>+ VAD"]
         D["Speaker ID<br/>segmentation + voiceprints"]
-        X{"Private?"}
+        X{"AI notes<br/>chosen?"}
         DB[("SQLite + FTS5<br/>job queue")]
         WEB[FastAPI + HTMX web app]
         L[Data Ledger + cost caps]
@@ -56,14 +58,14 @@ flowchart LR
 
     R -- "Syncthing over Tailscale" --> I
     I --> S --> D --> X
-    X -- "no" --> L --> C --> DB
-    X -- "yes: never sent" --> DB
+    X -- "yes" --> L --> C --> DB
+    X -- "no: Transcript only, never sent" --> DB
     DB --> WEB
     WEB -- "Tailscale" --> W1
     DB -. "titles and links only" .-> DC
 ```
 
-- Audio and speech processing stay on the server. Only transcript text of non-Private meetings goes to the AI, and
+- Audio and speech processing stay on the server. Only transcript text of meetings chosen for AI notes goes to the AI, and
   only after the cost estimate passes the caps.
 - There are no open ports: phone and laptop reach the web app over Tailscale.
 - Discord gets alerts (server health, backups, spend, a new recording waiting), never meeting content.
@@ -104,7 +106,7 @@ uv run python -m scribe_bot.demo_data ./demo-data
 SCRIBE_BOT_DATA=./demo-data uv run python -m scribe_bot.web
 ```
 
-In Demo mode you can browse the sample meetings, open people and tasks, search, edit lines, mark a meeting Private,
+In Demo mode you can browse the sample meetings, open people and tasks, search, edit lines, swipe rows for quick actions,
 and see the Data Ledger and Costs pages. Processing new audio needs the speech models and the worker, which are set up
 by the `scripts/setup/` helpers on a real server. To start over, delete `demo-data/`.
 
@@ -123,7 +125,7 @@ Recording people has legal and ethical rules, and they differ by place.
 
 - **Consent.** Some states, including Massachusetts, require the consent of everyone in a conversation before it is
   recorded. Tell people you are recording and get their OK, or don't record.
-- **Consent-first design.** Audio stays on your own devices. Meetings marked Private never reach a cloud AI. Every
+- **Consent-first design.** Audio stays on your own devices. Meetings marked Transcript only never reach a cloud AI. Every
   item shows where it was processed, every outbound AI call is in the Data Ledger, and anything can be deleted.
   Nothing is ever sent or posted on your behalf.
 - **Your accounts, your policies.** If you use it for work, check your employer's rules on recording and on AI tools.

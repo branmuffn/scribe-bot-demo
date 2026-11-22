@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Merge people · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/people">‹ People</a>{% endblock %}
+{% block body %}
+<div class="page-head"><div><h1>Merge {{ picked|length }} people</h1><div class="meta">They become one person. Pick the name to keep.</div></div></div>
+<form method="post" action="/people/merge-many" class="card pad stack">
+  <input type="hidden" name="ids" value="{{ ids }}">
+  {% for p in picked %}
+  <label class="pick-keep">{{ m.avatar(p.name) }}<input type="radio" name="into" value="{{ p.id }}" {{ 'checked' if p.id == keep }}>
+    <span class="grow"><b>{{ p.name }}{{ ' (me)' if p.id == 1 }}</b>{% if previews.get(p.id) %}<small class="meta"> · {{ previews[p.id].conversations }} talk{{ 's' if previews[p.id].conversations != 1 }}, {{ previews[p.id].tasks }} task{{ 's' if previews[p.id].tasks != 1 }}, {{ previews[p.id].notes }} note{{ 's' if previews[p.id].notes != 1 }}</small>{% endif %}</span></label>
+  {% endfor %}
+  <p class="meta">Tasks, notes, talks and voices move to the one you keep; the other names stay as its aliases. This can't be undone.</p>
+  <div class="row"><button class="btn btn-primary">Merge</button><a class="btn" href="/people">Cancel</a></div>
+</form>
+{% endblock %}

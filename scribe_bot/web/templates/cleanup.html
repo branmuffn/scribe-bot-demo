@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Clean up devices · Scribe Bot{% endblock %}
+{% block body %}
+{# Brian, 2026-11-21: what Scribe Bot deleted that's still on the Pixel or the M4. Tick it once deleted there too. #}
+<div class="page-head"><h1>Clean up devices</h1></div>
+<p class="meta cl-lead">Deleted from Scribe Bot. Tick each one once you've deleted it there too.</p>
+<div class="card">
+  {% set gs = namespace(g="") %}
+  {% for r in rows %}
+  {% set lab = devices[r.device] %}{% if lab != gs.g %}{% set gs.g = lab %}<h3 class="list-head">{{ lab }} · {{ rows|selectattr("device", "equalto", r.device)|selectattr("status", "equalto", "todo")|list|length }}</h3>{% endif %}
+  <div class="cl-row{{ ' cl-done' if r.status == 'done' }}">
+    <form method="post" action="/cleanup/{{ r.id }}/{{ 'todo' if r.status == 'done' else 'done' }}"><button class="cl-tick" aria-label="{{ 'Not deleted yet' if r.status == 'done' else 'Deleted there' }}: {{ r.title }}">{% if r.status == 'done' %}{{ m.icon("check") }}{% endif %}</button></form>
+    <div class="grow"><b>{{ r.title|recorder_title }}</b><small>{% if r.recorded_at %}{{ r.recorded_at|local_datetime }}{% endif %}{% if r.duration_s %} · {{ (r.duration_s / 60)|round|int }} min{% endif %}</small></div>
+    {% if r.status != 'done' %}<form method="post" action="/cleanup/{{ r.id }}/kept"><button class="cl-keep">Keep</button></form>{% endif %}
+  </div>
+  {% else %}{{ m.empty("check-circle", "Nothing to clean up", "When Scribe Bot deletes a recording, it shows here so you can delete it from your phone or Mac too.") }}{% endfor %}
+</div>
+{% if rows %}<p class="meta cl-lead">Ticked ones leave the list after a day. Keep takes one off the list without deleting anything.</p>{% endif %}
+{% endblock %}

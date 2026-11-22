@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Processing history · Scribe Bot{% endblock %}
+{% block body %}
+<div class="page-head"><h1>Processing history</h1></div>
+<p class="meta page-lede">Newest first.</p>
+{# Brian, 2026-11-21: the Discord "Processing started" message links here: pause / resume from the phone in one tap #}
+<section class="section" id="now">
+  {# Brian picked R10-A (2026-11-21): one slim line: a dot, the state, and the button(s) on the right #}
+  <div class="ctl-bar">
+    {% if heat and not ctl.paused %}<span class="ctl-dot hot" aria-hidden="true"></span><span class="grow"><b>Paused</b> <span class="meta">the Mac is hot</span></span>
+    {% elif ctl.paused %}<span class="ctl-dot paused" aria-hidden="true"></span><span class="grow"><b>Paused</b>{% if ctl.resume_label %} <span class="meta">until {{ ctl.resume_label }}</span>{% endif %}</span>
+      <form method="post" action="/processing/resume"><input type="hidden" name="when" value="now"><button class="pill pill-pri" aria-label="Resume now">▶ Resume</button></form>
+      <form method="post" action="/processing/resume"><input type="hidden" name="when" value="tonight"><button class="pill" aria-label="Resume at 1 AM">☾ 1 AM</button></form>
+    {% else %}{% set busy = rows|selectattr('p')|list %}<span class="ctl-dot{% if busy %} on{% endif %}" aria-hidden="true"></span><span class="grow">{% if busy %}<b>Processing now</b>{% else %}Idle{% endif %}</span>
+      <form method="post" action="/processing/pause"><button class="pill" aria-label="Pause processing">❚❚ Pause</button></form>{% endif %}
+  </div>
+  {# Brian, 2026-11-21: how hard processing works. One tap picks; the lit one is on. R10-A: a one-row switch. #}
+  <div class="card pad speed-card">
+    <div class="speed-head"><b>Speed</b>{% if pace_label %}<span class="meta">Now: {{ pace_label }}</span>{% endif %}</div>
+    <form method="post" action="/processing/speed" class="seg-switch">
+      {% for k, label, sub in [("auto", "Auto", "Gentle while you use the Mac"), ("full", "Full", "All 4 cores"),
+                               ("gentle", "Gentle", "Half the cores, cooler"), ("night", "Night", "Night only: waits for 1 AM")] %}
+      <button name="mode" value="{{ k }}" class="seg-opt{% if speed == k %} on{% endif %}" aria-pressed="{{ 'true' if speed == k else 'false' }}" title="{{ sub }}">{{ label }}</button>
+      {% endfor %}
+    </form>
+    <p class="meta speed-note">Auto = gentle while you use the Mac. Pauses itself if hot.</p>
+  </div>
+  {% for r in rows if r.p %}<div class="card" style="margin-top:8px">{{ m.progress_item(r.p) }}</div>{% endfor %}
+</section>
+<div class="card" id="history-list">
+  {% set gs = namespace(g="") %}
+  {% for r in rows %}
+  {{ m.list_head(r.sent|date_group, gs) }}
+  <details class="fx-sheet in-row hist-row" id="job-{{ r.id }}">
+    <summary class="item tap-row"><div class="item-main">
+      <div class="item-title">{{ r.title|recorder_title }}</div>
+      <div class="item-sub"><span>{{ r.sent|short_when }}</span><span>{{ r.minutes }} min</span>
+        <span class="badge {{ {'done': 'badge-ok', 'failed': 'badge-bad', 'running': 'badge-warn'}.get(r.status, 'badge-outline') }}">{{ {'done': 'done', 'failed': 'failed', 'running': 'paused' if ctl.paused else 'processing', 'pending': 'paused' if ctl.paused else 'waiting'}[r.status] }}</span>
+        <span>{{ 'AI notes' if r.ai else 'Transcript only' }}</span></div></div></summary>
+    <div class="fx-back" data-fx-close aria-hidden="true"></div>
+    <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div>
+      <div class="sh-head"><b>{{ r.title|recorder_title }}</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
+      {% if r.preview %}<p class="inbox-preview">“{{ r.preview }}”</p>{% endif %}
+      <dl class="hist-dl">
+        <dt>Sent</dt><dd>{{ r.sent|local_datetime }}</dd>
+        {% if r.started %}<dt>Started</dt><dd>{{ r.started|local_datetime }}</dd>{% endif %}
+        {% if r.finished %}<dt>{{ 'Finished' if r.status == 'done' else 'Stopped' }}</dt><dd>{{ r.finished|local_datetime }}{% if r.took %} · took {{ r.took }}{% endif %}</dd>{% endif %}
+        <dt>Kind</dt><dd>{{ 'AI notes' if r.ai else 'Transcript only' }}</dd>
+      </dl>
+      {% if r.p %}<div class="card">{{ m.progress_item(r.p) }}</div>{% endif %}
+      <div class="chips-row">{% if r.cid %}<a class="chip chip-on" href="/conversations/{{ r.cid }}">Open the talk ›</a>{% endif %}</div>
+    </div>
+  </details>
+  {% else %}{{ m.empty("clock", "Nothing processed yet", "Recordings you send from the Inbox show up here.") }}{% endfor %}
+</div>
+{% endblock %}

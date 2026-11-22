@@ -2,12 +2,53 @@
 {% import "macros.html" as m with context %}
 {% block title %}People · Scribe Bot{% endblock %}
 {% block body %}
+<form id="add-person" method="post" action="/people" hidden></form>
 {{ m.talks_head("people") }}
-<form class="quick-add" method="post" action="/people">
-  <input name="name" placeholder="Add a person" required class="grow" aria-label="Name">
-  <select name="area" aria-label="Area"><option value="both">Work + home</option><option value="work">Work</option><option value="personal">Home</option></select>
-  <button class="btn btn-primary">{{ m.icon("plus") }} Add</button>
-</form>
+{% if mentioned %}{# Brian, 2026-11-21: one row that opens a sheet (it took the top of the page) #}
+<details class="fx-sheet mention-sheet" id="mentioned">
+  <summary class="item tap-row mention-row"><span class="ib">＋</span><div class="item-main"><div class="item-title">{{ mentioned|length }} name{{ 's' if mentioned|length != 1 }} mentioned, not added</div>
+    <div class="item-sub"><span>{{ mentioned[:3]|map(attribute='name')|join(', ') }}{{ '…' if mentioned|length > 3 }}</span></div></div><span class="chev-r" aria-hidden="true">›</span></summary>
+  <div class="fx-back" data-fx-close aria-hidden="true"></div>
+  <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div>
+  <div class="sh-head"><b>Mentioned, not added</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
+  <p class="meta">Add, link to someone (Same as…), or ✕ hide.</p>
+  <div class="card">
+    {% for g in mentioned %}
+    <div class="item mentioned-item"><div class="item-main"><div class="item-title">{{ g.name }}</div>
+      <div class="item-sub"><span>{{ g.facts }} note{{ 's' if g.facts != 1 }}</span><span>{{ g.convs }} conversation{{ 's' if g.convs != 1 }}</span><span>last {{ g.last|local_date }}</span></div>
+      {% if g.samples %}<p class="inbox-preview">“{{ g.samples|join('”, “') }}”</p>{% endif %}</div>
+      <div class="item-actions">
+        <form method="post" action="/people/mentioned"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="add"><button class="btn btn-primary btn-sm">{{ m.icon("plus") }} Add</button></form>
+        <details class="row-menu same-as"><summary class="btn btn-sm">Same as…</summary>
+          <form method="post" action="/people/mentioned" class="menu-panel picker-form"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="same">
+            <select name="person_id" aria-label="Who {{ g.name }} is">{% for p in everyone if p.id != 1 %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+            <button class="btn">Link</button></form></details>
+        <form method="post" action="/people/mentioned"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="hide"><button class="btn btn-ghost btn-icon" aria-label="Hide {{ g.name }}" title="Don't list this name again">{{ m.icon("x") }}</button></form>
+      </div></div>
+    {% endfor %}
+  </div></div>
+</details>
+{% endif %}
+{% if unnamed %}{# Brian, 2026-11-21: voices heard but not named yet wait here, like Mentioned; naming one updates it everywhere #}
+<details class="fx-sheet mention-sheet" id="unnamed">
+  <summary class="item tap-row mention-row"><span class="ib">?</span><div class="item-main"><div class="item-title">{{ unnamed|length }} voice{{ 's' if unnamed|length != 1 }} not named yet</div>
+    <div class="item-sub"><span>Tap to name them</span></div></div><span class="chev-r" aria-hidden="true">›</span></summary>
+  <div class="fx-back" data-fx-close aria-hidden="true"></div>
+  <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div>
+  <div class="sh-head"><b>Voices not named yet</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
+  <p class="meta">Pick who it is, or type a name.</p>
+  <div class="card">
+    {% for u in unnamed %}
+    <div class="item unnamed-item"><div class="item-main"><div class="item-title">Speaker {{ u.num }} · <a href="/conversations/{{ u.cid }}#speakers">{{ u.conv_title or 'Conversation' }}</a></div>
+      <div class="item-sub"><span>{{ u.at|local_date }}</span>{% if u.talk_seconds %}<span>{{ u.talk_seconds|duration }} talking</span>{% endif %}{% if u.n_tasks %}<span>{{ u.n_tasks }} task{{ 's' if u.n_tasks != 1 }}</span>{% endif %}{% if u.n_facts %}<span>{{ u.n_facts }} note{{ 's' if u.n_facts != 1 }}</span>{% endif %}</div>
+      {% if u.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ u.sid }}" style="width:100%;margin-top:6px"></audio>{% endif %}
+      <form method="post" action="/speakers/{{ u.sid }}/name" class="row" style="margin-top:6px">
+        <select name="person_id" aria-label="Who this is" class="grow" data-autosave><option value="">Who is it?</option>{% for p in everyone %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>
+        <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits></form></div></div>
+    {% endfor %}
+  </div></div>
+</details>
+{% endif %}
 {% if duplicates %}
 <section class="section">
   {{ m.section("Possibly the same person", duplicates|length + [more_duplicates, 0]|max, help="Same first name or a matching alias. Merge them so tasks, notes and voices are in one place.") }}
@@ -22,17 +63,26 @@
 </section>
 <div class="section"></div>
 {% endif %}
-<form class="toolbar" method="get" action="/people" role="search" {{ m.live("/people") }}>
+<form class="toolbar people-tools" method="get" action="/people" role="search" {{ m.live("/people") }}>
   <input type="search" id="people-q" name="q" value="{{ q }}" placeholder="Find a person" aria-label="Find a person" class="grow">
-  <label class="inline-label">Sort <select name="sort">{% for k, (label, _) in sorts.items() %}
-    <option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select></label>
-  <noscript><button class="btn">Find</button></noscript>{% if q %}<a class="btn btn-ghost" href="/people{{ '?sort=' ~ sort if sort != 'recent' }}">Clear</a>{% endif %}
+  <label class="inline-label"><span class="sr-only">Sort</span><select name="sort" class="sort-mini" aria-label="Sort">{% for k, (label, _) in sorts.items() %}
+    <option value="{{ k }}" {{ 'selected' if sort == k }}>↕ {{ label }}</option>{% endfor %}</select></label>
+  <details class="fx-sheet"><summary class="btn" aria-label="Add a person">{{ m.icon("plus") }}</summary>
+    <div class="fx-back" data-fx-close aria-hidden="true"></div>
+    <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div><div class="fx-head"><b>Add a person</b></div>
+      <input form="add-person" name="name" placeholder="Name" required aria-label="Name" style="width:100%">
+      <label class="fx-f"><span>Area</span><select form="add-person" name="area"><option value="both">Any</option><option value="work">Work</option><option value="personal">Home</option><option value="school">School</option><option value="other">Other</option></select></label>
+      <div class="fx-foot"><button type="button" class="btn btn-ghost" data-fx-close>Cancel</button><button form="add-person" class="btn btn-primary">Add</button></div></div></details>
+  <button type="button" class="btn btn-ghost" data-pk-start="people-list">Select</button>
+  <noscript><button class="btn">Find</button></noscript>{% if q %}<a class="btn btn-ghost" href="/people{{ '?sort=' ~ sort if sort != 'name' }}">Clear</a>{% endif %}
 </form>
-<div class="card" id="people-list">
+<div class="card" id="people-list" data-picker>
+  {% set gs = namespace(g="") %}
   {% for p in rows %}
-  <div class="item tap-row"><div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
+  {% if p.id != 1 and not q %}{% if sort == 'name' %}{{ m.list_head((p.name or "?")[:1]|upper, gs) }}{% elif sort == 'recent' %}{{ m.list_head(p.last_spoken_at|date_group if p.last_spoken_at else "Never recorded", gs) }}{% endif %}{% endif %}
+  <div class="item tap-row person-row"{% if p.id != 1 %} data-pick-id="{{ p.id }}"{% endif %}>{{ m.avatar(p.name) }}<div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
       <div class="item-sub">{% if sort == 'talked' and p.talked %}<span>talked {{ p.talked|hours }}</span>{% endif %}
-        {% if p.last_spoken_at %}<span>last spoke {{ p.last_spoken_at|local_date }}</span>{% endif %}<span>{{ p.n_facts }} note{{ 's' if p.n_facts != 1 }}</span>
+        {% if p.last_spoken_at %}<span>{{ p.last_spoken_at|local_date }}</span>{% endif %}{% if p.n_facts %}<span>{{ p.n_facts }} note{{ 's' if p.n_facts != 1 }}</span>{% endif %}
         {% if p.id == 1 %}{% if p.n_owed %}<span>{{ p.n_owed }} open task{{ 's' if p.n_owed != 1 }}</span>{% endif %}
         {% else %}{% if p.n_i_owe %}<span>you owe {{ p.n_i_owe }}</span>{% endif %}{% if p.n_owed %}<span>owes you {{ p.n_owed }}</span>{% endif %}{% endif %}</div></div>
     <div class="item-actions badges">{% if p.area != 'both' %}{{ m.area_badge(p.area) }}{% endif %}</div></div>
@@ -40,4 +90,12 @@
   {% else %}{{ m.empty("users", "Nobody yet", "Name a speaker in a conversation and they're added here.") }}{% endif %}{% endfor %}
   {{ m.more("people-list", rows|length, total) }}
 </div>
+{# Select (Brian, 2026-11-21, like Gmail): long-press or Select, tick people, then Merge or Remove. Tap outside to stop. #}
+<div class="pk2" data-pk-bar="people-list" hidden role="region" aria-label="Selected people">
+  <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
+    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish" data-pk-all>Select all</button></div>
+  <div class="pk-bot">
+    <button type="button" data-pk-go="/people/merge-many" data-pk-min="2" title="Same person: keep one name"><i aria-hidden="true">⧉</i><span class="pk-l">Merge</span></button>
+    <button type="button" data-pk-post="/people/delete-many" data-pk-confirm="Remove these people? Undo works for 10 minutes." class="pk-danger"><i aria-hidden="true">🗑</i><span class="pk-l">Remove</span></button>
+  </div></div>
 {% endblock %}

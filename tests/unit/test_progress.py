@@ -138,7 +138,7 @@ def test_waiting_for_ok_count_on_today(tmp_path):
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
                  (rec, f'{{"recording_id": {rec}, "title": "Synthetic", "minutes": 10, "ai_cost": 0.01}}', iso(NOW)))
     page = client.get("/").text
-    assert "Needs you · 1" in page and "Recordings waiting for your OK" in page and "1 recording waiting for your OK" not in page
+    assert "Process 1 recording" in page and 'aria-label="1 waiting"' in page and "1 recording waiting for your OK" not in page
 
 
 def test_review_estimate_from_model(tmp_path):
@@ -147,13 +147,13 @@ def test_review_estimate_from_model(tmp_path):
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
                  (rec, f'{{"recording_id": {rec}, "title": "Synthetic", "minutes": 17.9, "m14_minutes": 5, "ai_cost": 0.02}}', iso(NOW)))
     e = progress.choices(conn, [17.9 * 60])[0]
-    page = client.get("/review").text   # both choices side by side: time on the M14 (+ AI cost), and transcript only
-    assert f"With AI ~{progress.duration_label(e['ai_s'])} · ~$0.02" in page
-    assert f"Transcript only ~{progress.duration_label(e['local_s'])} · free" in page and e["local_s"] < e["ai_s"]
+    page = client.get("/inbox").text   # both choices side by side: time on the M14 (+ AI cost), and transcript only
+    assert f"{progress.duration_label(e['ai_s'])} · $0.02" in page          # the sheet: ✦ with AI, and transcript only
+    assert f"{progress.duration_label(e['local_s'])} · free" in page and e["local_s"] < e["ai_s"]
     rec2 = add_recording(conn, 30 * 60, status="awaiting_approval")
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
                  (rec2, f'{{"recording_id": {rec2}, "title": "Synthetic 2", "minutes": 30, "ai_cost": 0.03}}', iso(NOW)))
-    assert '<b>All 2:</b>' in client.get("/review").text   # and the total when several wait
+    assert 'All 2: with AI' in client.get("/inbox").text   # and the total when several wait
     assert progress.duration_label(250 * 60) == "4 h 10 min" and progress.duration_label(120 * 60) == "2 h"
 
 

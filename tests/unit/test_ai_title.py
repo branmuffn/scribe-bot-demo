@@ -42,7 +42,8 @@ def test_prompt_v22_asks_for_area_and_parses_it():
     assert "- area: \"work\" if this conversation is mainly about Brian's job" in system and '"area_confidence": number' in system
     empty = '"decisions": [], "tasks": [], "waiting_on": [], "people_facts": []'
     assert prompts.parse_extract('{"summary": "s", "area": "work", "area_confidence": 0.9, %s}' % empty)["area_confidence"] == 0.9
-    bad = prompts.parse_extract('{"summary": "s", "area": "school", "area_confidence": true, %s}' % empty)
+    assert prompts.parse_extract('{"summary": "s", "area": "school", "area_confidence": 0.8, %s}' % empty)["area"] == "school"   # 2026-11-21
+    bad = prompts.parse_extract('{"summary": "s", "area": "gym", "area_confidence": true, %s}' % empty)
     assert bad["area"] is None and bad["area_confidence"] is None
 
 

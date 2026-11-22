@@ -30,7 +30,7 @@
       listed as “Matched to the Anthropic console”), and Scribe Bot's own calls add on top from then on. It counts toward the monthly cap. Nothing is sent anywhere.</p>
     <form class="quick-add" method="post" action="/costs/console" aria-label="Update from the Anthropic console">
       <label class="field"><span>Spent this month ($)</span><input name="spent" required inputmode="decimal" size="6" value="{{ '%.2f'|format(month) }}"></label>
-      <label class="field"><span>Credits left ($)</span><input name="credits" inputmode="decimal" size="6" placeholder="optional"{% if credits is not none %} value="{{ '%.2f'|format(credits) }}"{% endif %}></label>
+      <label class="field"><span>Credits left ($)</span><input name="credits" inputmode="decimal" size="8" placeholder="Optional"{% if credits is not none %} value="{{ '%.2f'|format(credits) }}"{% endif %}></label>
       <button class="btn btn-primary" style="align-self:end">{{ m.icon("check") }} Match</button>
     </form>
   </div>

@@ -40,8 +40,9 @@ def test_transcript_only_talk_gets_ai_from_the_confirm_step(env):
     conn.execute("UPDATE conversation SET summary = NULL WHERE id = 1")
     assert client.post("/conversations/1/private").status_code in (404, 405)
     page = client.get("/conversations/1").text
-    assert "Make AI notes · ~$0.0" in page and 'action="/conversations/1/rerun"' not in page
-    assert "Make AI notes?" in client.get("/conversations/1/rerun/confirm").text
+    assert 'cv-sum' in page and "/conversations/1/rerun/confirm" in page and 'action="/conversations/1/rerun"' not in page
+    assert "Summarize · ~$" not in page   # one Summarize per page: the button on top, not also in ⋯ (bug list)
+    assert "Summarize this talk?" in client.get("/conversations/1/rerun/confirm").text
     r = client.post("/conversations/1/rerun", data={"confirm": "1"}, follow_redirects=False)
     assert r.status_code == 303
     assert jobs(conn) == [("ai_rerun", {"conversation_id": 1, "approved": True}, "pending")]

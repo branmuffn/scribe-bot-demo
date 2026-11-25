@@ -178,3 +178,28 @@ def test_status_page_lists_active_jobs(tmp_path):
     add_job(conn, add_recording(conn, 600), "pending")
     page = client.get("/status").text
     assert "Processing now" in page and "Step 1 of 7" in page
+
+
+def test_waiting_jobs_get_their_turn_times_one_after_another(conn):
+    """B39 (Brian, 2026-11-25): three waiting recordings all said "ready ~11:52". The M14 does one at a time, so each
+    waiting one starts when the one ahead finishes."""
+    running = add_job(conn, add_recording(conn, 600), "running")
+    add_run(conn, running, "prepare", NOW - timedelta(minutes=1), NOW - timedelta(seconds=50))
+    add_run(conn, running, "transcribe", NOW - timedelta(seconds=50))
+    w1 = add_job(conn, add_recording(conn, 600), "pending")
+    w2 = add_job(conn, add_recording(conn, 600), "pending")
+    jobs = progress.active_jobs(conn, NOW)
+    assert [j["job_id"] for j in jobs] == [running, w1, w2]
+    first, second, third = (datetime.fromisoformat(j["eta_at"]) for j in jobs)
+    assert first < second < third
+    assert jobs[1]["starts"] and jobs[2]["starts"] and "starts" not in jobs[0]
+    single = progress.estimate(conn, 600)["total_s"]
+    assert abs((third - second).total_seconds() - single) < 5
+
+
+def test_status_folds_the_rest_of_the_queue(tmp_path):
+    conn, client = web(tmp_path)
+    for _ in range(4):
+        add_job(conn, add_recording(conn, 600), "pending")
+    page = client.get("/status").text
+    assert "2 more waiting" in page and "starts ~" in page

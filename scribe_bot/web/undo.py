@@ -16,14 +16,17 @@ SHOW_FOR_S = 15          # the bar shows on pages rendered this soon after the a
 UNDO_WITHIN_S = 600      # Undo still works this long after (a slow tap, a phone that slept)
 
 # Columns each undoable action may change. Table names come from code only, never from a request.
+# U10 (Brian, 2026-11-25): Undo of "Not needed" kept the tag and the gray title, because closed_as / closed_note were
+# not saved, so the task came back open but still marked closed. Every column an undoable action changes is listed.
 COLUMNS = {
-    "task": ("title", "owner_person_id", "due", "status", "rated", "inbox", "area", "confidence", "updated_at"),
+    "task": ("title", "short_title", "owner_person_id", "due", "status", "closed_as", "closed_note", "remind_at", "rated",
+             "inbox", "area", "confidence", "archived_at", "stale_at", "updated_at"),
     "decision": ("rated", "text", "people"),
-    "conversation": ("title", "summary", "takeaways", "deleted_at"),
+    "conversation": ("title", "short_title", "summary", "takeaways", "detailed", "deleted_at", "type", "area", "private"),
     "person_fact": ("person_id", "person_name", "confirmed", "value"),
     "segment": ("speaker_id", "text", "idx", "start_s", "end_s"),   # idx/times: split and join (2026-11-20)
-    "speaker": ("talk_seconds", "person_id", "confirmed", "match_score"),
-    "review_item": ("status", "resolved_at", "snoozed_until"),
+    "speaker": ("talk_seconds", "person_id", "confirmed", "match_score", "unknown", "color"),
+    "review_item": ("status", "resolved_at", "snoozed_until", "payload"),
     "notification": ("dismissed_at",),
     "recording": ("status",),   # Inbox Skip / Remove can be undone (2026-11-21)
 }
@@ -41,7 +44,7 @@ def save(conn: sqlite3.Connection, label: str, rows: list[tuple[str, int]]) -> i
 
 
 # Rows an action deletes outright (a person and their voiceprint): saved whole, put back first on Undo.
-DELETABLE = ("person", "voiceprint", "segment")   # segment: "Join with line above" (put back after the restore)
+DELETABLE = ("person", "voiceprint", "segment", "tag", "conversation_tag", "glossary_term")   # segment: "Join with line above" (put back after the restore); tag rows: U12 Undo on tag remove (2026-11-25)
 
 
 def removed(conn: sqlite3.Connection, uid: int, table: str, where: str, args: tuple) -> None:
@@ -103,6 +106,7 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
     if a is None:
         return False
     new_ids: dict[int, int] = {}   # deleted person id -> id it comes back as (ids are reused: a newer person may hold it)
+    tag_ids: dict[int, int] = {}   # removed tag id -> the id its name has now (it may have been made again since)
 
     def person(pid):
         return new_ids.get(pid, pid)
@@ -119,6 +123,16 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
         later = [d for d in removed_rows if d["table"] == "segment"]   # a joined line returns once the lines below moved back
         for d in [d for d in removed_rows if d["table"] not in ("segment", "transcript")]:   # deleted rows go back first
             row = {k: (base64.b64decode(v["b64"]) if isinstance(v, dict) else v) for k, v in d["row"].items()}
+            if d["table"] == "tag":   # by name: the same tag may exist again (added to another talk since)
+                t = conn.execute("SELECT id FROM tag WHERE name = ?", (row["name"],)).fetchone()
+                tag_ids[row["id"]] = t[0] if t else conn.execute(
+                    "INSERT INTO tag (name, created_at) VALUES (?, ?)", (row["name"], row["created_at"])).lastrowid
+                continue
+            if d["table"] == "conversation_tag":   # no id column; saved after its tag
+                row["tag_id"] = tag_ids.get(row["tag_id"], row["tag_id"])
+                conn.execute(f"INSERT OR IGNORE INTO conversation_tag ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+                             list(row.values()))
+                continue
             if d["table"] == "voiceprint":
                 row["person_id"] = person(row["person_id"])
             old = row["id"]
@@ -134,9 +148,20 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
             for c in ("person_id", "owner_person_id"):
                 if before.get(c) is not None:
                     before[c] = person(before[c])
+                    if not conn.execute("SELECT 1 FROM person WHERE id = ?", (before[c],)).fetchone():
+                        del before[c]   # R5-08: merged or removed since (often on the other device): keep who it is now
             if s["table"] == "decision" and new_ids and before.get("people"):
                 before["people"] = json.dumps([person(p) for p in json.loads(before["people"])])
             cols = [c for c in before if c in COLUMNS[s["table"]]]
+            after = _after(conn, uid, s["table"], s["id"])
+            if after is not None:
+                # R5-21: a later action changed this row too (often on the other device). Put back only what this
+                # action changed, and leave a column alone if it was changed again since, so the later edit stays.
+                now_row = conn.execute(f"SELECT {', '.join(cols)} FROM {s['table']} WHERE id = ?", (s["id"],)).fetchone()
+                cols = [c for c in cols if c in after and after[c] != s["before"].get(c)
+                        and (now_row is None or now_row[c] == after[c])]
+                if not cols:
+                    continue
             conn.execute(f"UPDATE {s['table']} SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
                          [before[c] for c in cols] + [s["id"]])
             _reindex(conn, s["table"], s["id"])
@@ -145,11 +170,22 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
             conn.execute(f"INSERT INTO segment ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})", list(row.values()))
             _reindex(conn, "segment", row["id"])
         for c in json.loads(a["created"]):
+            if c["table"] == "person_not_same":   # "Don't merge" / ✕ on a merge suggestion
+                conn.execute("DELETE FROM person_not_same WHERE id = ?", (c["id"],))
             if c["table"] == "speaker":   # a speaker added for one line goes away again if no line uses it
                 conn.execute("DELETE FROM speaker WHERE id = ? AND NOT EXISTS (SELECT 1 FROM segment WHERE speaker_id = ?)",
                              (c["id"], c["id"]))
         conn.execute("UPDATE undo_action SET undone_at = ? WHERE id = ?", (db.now(), uid))
     return True
+
+
+def _after(conn: sqlite3.Connection, uid: int, table: str, rid: int) -> dict | None:
+    """The row as action `uid` left it, when a later action saved it (its "before" is this one's "after"); else None."""
+    for (snap,) in conn.execute("SELECT snapshot FROM undo_action WHERE id > ? ORDER BY id", (uid,)):
+        for s in json.loads(snap):
+            if s["table"] == table and s["id"] == rid:
+                return s["before"]
+    return None
 
 
 def _reindex(conn: sqlite3.Connection, table: str, rid: int) -> None:

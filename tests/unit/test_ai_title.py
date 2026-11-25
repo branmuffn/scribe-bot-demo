@@ -62,3 +62,25 @@ def test_ai_files_work_or_personal_when_sure_and_leaves_a_guess_when_not(conn):
     conn.execute("UPDATE conversation SET area = 'work' WHERE id = ?", (cid3,))   # Brian filed it: the AI never overrides
     extract.extract_conversation(conn, cid3, factory=factory([{**GOOD, "area": "personal", "area_confidence": 0.99}]))
     assert conn.execute("SELECT area FROM conversation WHERE id = ?", (cid3,)).fetchone()[0] == "work"
+
+
+def test_one_ai_run_brings_the_list_names_and_detailed_notes_for_long_talks(conn):
+    """Brian, 2026-11-22: one AI run per talk. Short list names come in the notes reply (no separate send); detailed
+    notes too when the talk is 30 minutes or longer."""
+    assert "short_title" in prompts.extract_system("Brian") and "detailed" not in prompts.extract_system("Brian")
+    assert '"detailed": str' in prompts.extract_system("Brian", detailed=True)
+    cid, _ = make_conversation(conn)
+    task = {**GOOD["tasks"][0], "short": "Send the budget"} if GOOD["tasks"] else None
+    reply = {**GOOD, "short_title": "Fair planning", "detailed": "Sure, here you go:\n## Budget\n- Agreed on $500",
+             "tasks": [task] if task else []}
+    conn.execute("UPDATE segment SET end_s = 1900 WHERE conversation_id = ?", (cid,))       # a 31-minute talk
+    assert extract.extract_conversation(conn, cid, factory=factory([reply]))["status"] == "done"
+    row = conn.execute("SELECT short_title, detailed FROM conversation WHERE id = ?", (cid,)).fetchone()
+    assert row[0] == "Fair planning" and row[1] == "## Budget\n- Agreed on $500"                # preamble dropped
+    if task:
+        assert conn.execute("SELECT short_title FROM task WHERE conversation_id = ?", (cid,)).fetchone()[0] == "Send the budget"
+
+
+def test_bare_number_due_dates_are_dropped():
+    assert prompts.clean_due("two") is None and prompts.clean_due(" 2 ") is None and prompts.clean_due("") is None
+    assert prompts.clean_due("Friday") == "Friday" and prompts.clean_due("in two weeks") == "in two weeks"

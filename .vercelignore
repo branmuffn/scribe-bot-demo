@@ -1,0 +1,8 @@
+# Not needed to serve the web demo (keeps uploads to Vercel small)
+tests/
+docs/
+scripts/
+.github/
+.githooks/
+demo-data/
+.venv/

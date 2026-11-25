@@ -10,6 +10,7 @@ import math
 import sqlite3
 from array import array
 
+from scribe_bot.core.names import first_name
 from scribe_bot.core.db import now, transaction
 
 ME = 1
@@ -142,13 +143,17 @@ def duplicate_suggestions(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute("SELECT id, name, aliases FROM person WHERE stands_for_speaker IS NULL ORDER BY id").fetchall()   # unnamed voices wait in their own row
     groups: dict[str, list[int]] = {}
     for i, r in enumerate(rows):
-        first = r["name"].split()[0].lower()
+        first = first_name(r["name"]).lower()   # B8: two "Dr. ..." are not the same person
         keys = {r["name"].lower(), *(x.lower() for x in aliases_of(r))}
         if not first.startswith("speaker"):
             keys.add("first:" + first)
         for k in keys:
             groups.setdefault(k, []).append(i)
     pairs = sorted({(g[x], g[y]) for g in groups.values() for x in range(len(g)) for y in range(x + 1, len(g))})
+    # "Don't merge" (for good) and ✕ (for 30 days) on a suggestion (2026-11-25)
+    hidden = set()
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'person_not_same'").fetchone():
+        hidden = {(r[0], r[1]) for r in conn.execute("SELECT a, b FROM person_not_same WHERE until IS NULL OR until > ?", (now(),))}
     out, seen = [], set()
     for i, j in pairs:
         a, b = rows[i], rows[j]
@@ -156,6 +161,8 @@ def duplicate_suggestions(conn: sqlite3.Connection) -> list[dict]:
         if drop["id"] == ME:
             keep, drop = drop, keep
         key = (drop["id"], keep["id"])
+        if (min(key), max(key)) in hidden:
+            continue
         if key not in seen:
             seen.add(key)
             out.append({"from_id": drop["id"], "from_name": drop["name"], "into_id": keep["id"], "into_name": keep["name"]})
@@ -239,3 +246,11 @@ def link_mentioned(conn: sqlite3.Connection, name: str, pid: int, as_alias: bool
             conn.execute("UPDATE person SET aliases = ? WHERE id = ?", (json.dumps(al + [name.strip()]), pid))
             reindex(conn, pid)
     return len(ids)
+
+
+def not_same(conn: sqlite3.Connection, x: int, y: int, days: int | None = None) -> int:
+    """Stop suggesting that x and y are the same person: for good (days=None) or for `days` days. Returns the row id."""
+    from datetime import datetime, timedelta
+    until = None if days is None else (datetime.fromisoformat(now()) + timedelta(days=days)).isoformat(timespec="seconds")
+    return conn.execute("INSERT INTO person_not_same (a, b, until, created_at) VALUES (?, ?, ?, ?)",
+                        (min(x, y), max(x, y), until, now())).lastrowid

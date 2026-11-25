@@ -1,35 +1,40 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
 {% block title %}Conversations · Scribe Bot{% endblock %}
+{% block back %}{% if trash or unsorted %}<a class="back-link" href="/conversations">‹ Talks</a>{% endif %}{% endblock %}
 {% block body %}
 {{ m.talks_head("conversations") }}
 {% if trash %}
 <div class="section-head"><h2>Trash</h2><span class="count">{{ rows|length + skipped|length }}</span></div>
 <p class="section-help">Removed for good {{ trash_days }} days after it lands here, audio included. Restore brings it back before then.</p>
-<div class="card">
-  {% for c in rows %}
-  <div class="item"><div class="item-main"><div class="item-title">{{ c.title }}</div>
+{# N4 / A3.3 (Brian, 2026-11-25): pick several, the same way as Inbox and People #}
+<div class="pk2" data-pk-bar="trash-list" hidden role="region" aria-label="Selected items in Trash">
+  <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
+    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-pk-all aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
+  <div class="pk-bot">
+    <button type="button" data-pk-post="/trash-bulk/restore"><i aria-hidden="true">↺</i><span class="pk-l">Restore</span></button>
+    <button type="button" data-pk-post="/trash-bulk/forever" data-pk-confirm="Delete the picked talks forever? This can't be undone. (Recordings skipped in the Inbox leave by themselves after {{ trash_days }} days.)" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete forever</span></button>
+  </div></div>
+<div class="card" id="trash-list" data-picker>
+  {% for c in items %}{% if c.from_inbox %}
+  <div class="item tr-row" data-pick-id="r{{ c.id }}"><span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span><div class="item-main"><div class="item-title">{{ c.title|recorder_title }}</div>
+    <div class="item-sub"><span>From Inbox</span><span>{{ c.received_at|local_date }}</span>{% if c.duration_s %}<span>{{ (c.duration_s / 60)|round|int }} min</span>{% endif %}
+      <span title="Removed for good on this day">kept until {{ c.gone_on|local_date }}</span></div></div>
+    <div class="item-actions tr-act"><form method="post" action="/recordings/{{ c.id }}/unskip"><button class="btn btn-sm">Restore</button></form></div></div>
+  {% else %}
+  <div class="item tr-row" data-pick-id="c{{ c.id }}"><span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span><div class="item-main"><div class="item-title">{{ c.title }}</div>
     <div class="item-sub"><span>{{ (c.started_at or c.created_at)|local_date }}</span><span>trashed {{ c.deleted_at|local_date }}</span>
-      <span>removed for good {{ c.gone_on|local_date }}</span></div></div>
-    <div class="item-actions"><form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn">Restore</button></form></div></div>
-  {% else %}{% if not skipped %}{{ m.empty("trash", "Trash is empty") }}{% endif %}{% endfor %}
-  {% if skipped %}<h3 class="list-head" id="g-skipped">Deleted from the Inbox</h3>{% endif %}
-  {% for r in skipped %}
-  <div class="item"><div class="item-main"><div class="item-title">{{ r.title|recorder_title }}</div>
-    <div class="item-sub"><span>{{ r.received_at|local_date }}</span>{% if r.duration_s %}<span>{{ (r.duration_s / 60)|round|int }} min</span>{% endif %}
-      <span>removed for good {{ r.gone_on|local_date }}</span></div></div>
-    <div class="item-actions"><form method="post" action="/recordings/{{ r.id }}/unskip"><button class="btn">Restore</button></form></div></div>
-  {% endfor %}
+      <span title="Removed for good on this day">kept until {{ c.gone_on|local_date }}</span></div></div>
+    <div class="item-actions tr-act"><form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn btn-sm">Restore</button></form></div></div>
+  {% endif %}{% else %}{{ m.empty("trash", "Trash is empty") }}{% endfor %}
 </div>
-<p class="meta" style="margin-top:var(--s3)"><a href="/conversations">← Talks</a></p>
 {% elif unsorted %}
 <div class="section-head"><h2>Not sorted</h2><span class="count">{{ total }}</span></div>
 <p class="section-help">Not filed yet. Tap one to file it.</p>
-<div class="card" id="conv-list">
+<div class="card" id="conv-list"{% if not night %} data-fold-groups{% endif %}>
   {% for c in rows %}{{ m.conv_row(c, sort=True) }}{% else %}{{ m.empty("check-circle", "All sorted") }}{% endfor %}
   {{ m.more("conv-list", rows|length, total) }}
 </div>
-<p class="meta" style="margin-top:var(--s3)"><a href="/conversations">← Talks</a></p>
 {% else %}
 {% if n_unsorted %}<a class="notice" href="/conversations?unsorted=1" style="margin-bottom:var(--s3)">{{ m.icon("inbox") }}
   <span><b>Not sorted · {{ n_unsorted }}</b><br><span class="meta">Not filed as Work or Home yet. Tap to sort.</span></span></a>{% endif %}
@@ -37,7 +42,10 @@
 {% set pname = (people|selectattr("id", "equalto", f.person)|map(attribute="name")|first) if f.person else "" %}
 {% set n_on = [f.person, f.type, f.start, f.end, f.tag]|select|list|length %}
 {# FX-A (Brian, 2026-11-20): Filter button with the dropdowns inside, Sort beside it, chips for what's on, Export under ⋯ #}
-<form class="fx-row" method="get" action="/conversations" aria-label="Filter and sort">
+{# Brian picked A (2026-11-22 night): one line. Filter + a compact sort on the left; Export and a red Trash (with a
+   count) as icons on the right. No Select button on phones (long-press a talk); computers keep a small Select. #}
+<form class="fx-row tb-a lbar" method="get" action="/conversations" aria-label="Search, filter and sort">
+  {{ m.list_search("/conversations", f.q, "Search talks", "talks-q") }}
   {{ m.filter_sheet(n_on, "/conversations" ~ ("?order=" ~ f.order if f.order != 'newest' else "")) }}
     <label class="fx-f"><span>Person</span><select name="person"><option value="">Anyone</option>
       {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if f.person == p.id }}>{{ p.name }}</option>{% endfor %}</select></label>
@@ -52,7 +60,9 @@
     {% for k, (label, _) in orders.items() %}<option value="{{ k }}" {{ 'selected' if f.order == k }}>↕ {{ label }}</option>{% endfor %}</select>
   {% set qs = request.query_params|string %}
   {# Brian, 2026-11-20: one "Export" button; two rows (Notes / Notes + transcripts), each with .md and .pdf #}
-  <details class="fx-sheet fx-more"><summary class="btn btn-ghost">{{ m.icon("note") }} Export</summary>
+  <span class="tb-sp" aria-hidden="true"></span>
+  <button type="button" class="btn btn-ghost tb-select" data-pick-mode aria-pressed="false">Select</button>
+  <details class="fx-sheet fx-more"><summary class="tb-ib" aria-label="Export" title="Export">{{ m.icon("note") }}</summary>
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
     <div class="fx-body" role="group" aria-label="Export"><div class="fx-grab" aria-hidden="true"></div>
       <div class="fx-head" data-export-head><b>Export the talks shown</b> <span class="muted">(up to 100)</span></div>
@@ -64,8 +74,7 @@
         <span class="dl-fmt"><a class="btn btn-sm" href="/conversations/export.md?{{ qs }}{{ extra }}" download hx-boost="false" aria-label="{{ label }}, .md text file">.md</a>
           <a class="btn btn-sm" href="/conversations/export.pdf?{{ qs }}{{ extra }}" download hx-boost="false" aria-label="{{ label }}, PDF">.pdf</a></span></div>{% endfor %}</div>
       <div class="fx-foot"><button type="button" class="btn btn-ghost" data-fx-close>Close</button></div></div></details>
-  {# E (Brian, 2026-11-20): Select › tick talks › Export (the same 4 choices, for just those) #}
-  <button type="button" class="btn btn-ghost" data-pick-mode aria-pressed="false">Select</button>
+  <a class="tb-ib tb-trash" href="/conversations?trash=1" aria-label="Trash{% if n_trash %}, {{ n_trash }} items{% endif %}" title="Trash: deleted talks and recordings, restore within 30 days">{{ m.icon("trash") }}</a>{# Brian, 2026-11-22: no count on the bin #}
   {% macro drop(name) %}{% set q = request.query_params.multi_items()|rejectattr(0, "equalto", name)|list %}/conversations{% if q %}?{{ q|urlencode }}{% endif %}{% endmacro %}
   {% if f.person %}<a class="fx-chip" href="{{ drop('person') }}">{{ pname }} ✕</a>{% endif %}
   {% if f.type %}<a class="fx-chip" href="{{ drop('type') }}">{{ types|selectattr(0, "equalto", f.type)|map(attribute=1)|first }} ✕</a>{% endif %}
@@ -73,7 +82,20 @@
   {% if f.start %}<a class="fx-chip" href="{{ drop('start') }}">From {{ f.start }} ✕</a>{% endif %}
   {% if f.end %}<a class="fx-chip" href="{{ drop('end') }}">To {{ f.end }} ✕</a>{% endif %}
 </form>
+{% if night %}<div class="notice" role="status">{{ m.icon("clock") }}<div style="flex:1"><b>Transcribed {{ night_label }}</b> (9 PM to 7 AM): {{ total }} talk{{ 's' if total != 1 }}. Tap one to read it or Summarize it.</div>
+  <a class="btn btn-sm" href="/conversations">All talks</a></div>{% endif %}
 {% include "_talks_now.html" %}
+<div class="pick-bar" id="pick-bar" hidden role="region" aria-label="Picked talks">
+  {# Brian, 2026-11-22: Select only exported; now Summarize, Merge and Delete too. Long-press a talk, tap its icon, or tick its box.
+     N3 (Brian, 2026-11-25): on a phone it looks like Inbox and People: the count and Select all on top, labelled
+     buttons at the bottom in the tab bar's place. On computers it stays the toolbar above the list. #}
+  <div class="pk-top"><button type="button" class="icon-btn pk-x" data-pick-mode aria-label="Stop selecting">✕</button>
+  <button type="button" class="btn btn-ghost btn-sm pk-all" data-pick-all role="checkbox" aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button><span class="pick-n" aria-live="polite">0 picked</span><span class="pk-break" aria-hidden="true"></span></div>
+  <div class="pk-bot">
+  <button type="button" class="btn btn-sm" data-pick-act="ai" disabled title="AI notes for the picked talks (you see the cost first)">{{ m.icon("sparkle") }}<span>Summarize</span></button>
+  <button type="button" class="btn btn-sm" data-pick-act="merge" disabled title="Join 2 or more into one talk, in recorded order; the originals go to Trash">{{ m.icon("merge") }}<span>Merge</span></button>
+  <button type="button" class="btn btn-sm danger" data-pick-act="trash" disabled title="Move to Trash (Undo, or Restore within 30 days)">{{ m.icon("trash") }}<span>Delete</span></button>
+  <button type="button" class="btn btn-sm" data-pick-export disabled title="Export the picked talks">{{ m.icon("download") }}<span>Export</span></button></div></div>
 <div class="card" id="conv-list">
   {% set gs = namespace(g="") %}
   {% for c in rows %}{% if f.order in ('newest', 'oldest') %}{{ m.list_head((c.started_at or c.created_at)|date_group, gs) }}{% elif f.order == 'tag' %}{{ m.list_head("# " ~ c.first_tag if c.first_tag else "No tag", gs) }}{% endif %}{{ m.conv_row(c) }}
@@ -83,11 +105,9 @@
   {% endfor %}
   {{ m.more("conv-list", rows|length, total) }}
 </div>
-<div class="pick-bar" id="pick-bar" hidden role="region" aria-label="Picked talks">
-  <button type="button" class="btn btn-ghost btn-sm" data-pick-all>Select all</button><span class="pick-n" aria-live="polite">0 picked</span>
-  <button type="button" class="btn btn-primary" data-pick-export disabled>Export ›</button></div>
-{% if n_older or n_trash %}<p class="meta row" style="margin-top:var(--s3)">
+
+{% if n_older %}<p class="meta row" style="margin-top:var(--s3)">
   {% if n_older %}<a href="/inbox?show=older">{{ m.icon("inbox") }} Older recordings · {{ n_older }}</a>{% endif %}
-  {% if n_trash %}<a href="/conversations?trash=1">{{ m.icon("trash") }} Trash · {{ n_trash }}</a>{% endif %}</p>{% endif %}
+</p>{% endif %}
 {% endif %}
 {% endblock %}

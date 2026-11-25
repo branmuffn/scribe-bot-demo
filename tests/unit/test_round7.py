@@ -45,7 +45,7 @@ def test_make_ai_notes_on_a_transcript_only_talk(env):
     cid = one(conn, "SELECT id FROM conversation ORDER BY id LIMIT 1")
     conn.execute("UPDATE conversation SET summary = NULL WHERE id = ?", (cid,))
     r = client.get(f"/conversations/{cid}/rerun/confirm")
-    assert r.status_code == 200 and "Make AI notes?" in r.text and "Private" not in r.text
+    assert r.status_code == 200 and "Summarize this talk?" in r.text and "Private" not in r.text
     r = client.post(f"/conversations/{cid}/rerun", data={"confirm": "1"}, follow_redirects=False)
     assert r.status_code == 303
     assert any(json.loads(p[0]).get("conversation_id") == cid for p in conn.execute("SELECT payload FROM job"))

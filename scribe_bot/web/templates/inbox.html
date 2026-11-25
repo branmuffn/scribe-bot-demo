@@ -8,7 +8,8 @@
 </div>
 
 {% if total %}
-<form method="get" action="/inbox" class="fx-row" aria-label="Filter and sort">
+<form method="get" action="/inbox" class="fx-row lbar" aria-label="Search, filter and sort">
+  {{ m.list_search("/inbox", rng.q, "Search recordings", "inbox-q") }}
   {{ m.filter_sheet(n_on, clear_url, items|length ~ " recording" ~ ('s' if items|length != 1)) }}
     {% for name, (label, opts) in fx.items() %}{% if name != 'length' and (counts[name].values()|sum or chosen.get(name)) %}
     <label class="fx-f"><span>{{ label }}</span><select name="{{ name }}"><option value="">Any</option>
@@ -38,17 +39,33 @@
 {# Redesign (Brian picked sheet 3, 2026-11-21): one line per recording (it used to take 18 screens for 6). ✦ = process
    with AI notes (asks to confirm the cost). Tap the row for everything else in a sheet from the bottom: preview, time and
    cost, type, Transcript only, Read/Add transcript, Delete (to Trash; was "Skip", Brian 2026-11-21), Remind me. Long-press (or Select) to pick several. #}
+<div class="pk2" id="in-pick" hidden role="region" aria-label="Selected recordings">
+  <div class="pk-top"><button type="button" class="icon-btn" data-inpick="done" aria-label="Stop selecting">✕</button>
+    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-inpick="all"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
+  <div class="pk-bot">
+    <button type="button" data-inpick="ai" class="pk-pri" title="AI notes for each (the total cost shows first)"><i class="ib ib-go" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Summarize</span></button>
+    <button type="button" data-inpick="local" title="Transcript only, no AI, free"><i class="ib ib-plain" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Transcribe</span></button>
+    <button type="button" data-inpick="merge" title="Join into one recording, in recorded order"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-merge"/></svg></i><span class="pk-l">Merge</span></button>
+    <button type="button" data-inpick="skip" title="Move to Trash (Restore there within 30 days)"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete</span></button>
+  </div></div>
 <div class="card inbox-list" id="inbox-list">
 {% set gs = namespace(g="") %}
 {% for it in items %}{{ m.list_head(it.when|date_group|group_phrase("Recorded"), gs) }}
   {% set x = it.x if it.x is defined else None %}
   {% set name = ('“' ~ it.quick_title ~ '”') if it.quick_title else it.title|recorder_title %}
   {# Redesign v2 (Brian, 2026-11-21): the row and ▶ open the SAME short sheet; line 2 is short enough to read whole. #}
-  {% set swl = [{"t": "☾ Remind", "c": "ink", "f": '.chip-pop form:has(input[value="tomorrow"])'}, {"t": "🗑 Delete", "c": "red", "f": 'form[action$="/dismiss"]'}] %}
-  {% set swr = [{"t": "▶ AI notes", "c": "blue", "f": "#ai-" ~ x.r.id}, {"t": "▶ Transcript", "c": "dark", "f": "#ta-" ~ x.r.id}] if x else [] %}
-  <details class="fx-sheet in-row item" id="rec-{{ it.rec_id }}" data-pick-id="{{ it.rec_id }}" data-review="{{ x.r.id if x else '' }}"{% if x %} data-sw='{{ {"l": swl, "r": swr}|tojson }}'{% endif %}>
-    <summary class="in-sum">{# Q3-A (Brian, 2026-11-21): ▶ first (blue = AI notes, white = transcript only), › last = opens #}
-      <span class="ib {{ 'ib-plain' if x and x.payload.private else 'ib-go' }}" aria-hidden="true">▶</span>
+  {# Swipe (Brian, 2026-11-22): right-to-left = Delete; left-to-right = Transcript only (long swipe, free) or Summarize
+     (a button, so a long swipe never spends money by accident). Older recordings swipe the same way. #}
+  {% if x %}
+  {% set swl = [{"t": "Delete", "i": "trash", "c": "red", "f": 'form[action$="/dismiss"]'}] %}
+  {% set swr = [{"t": "Transcribe", "i": "note", "c": "dark", "f": "#ta-" ~ x.r.id}] + ([] if x.payload.private else [{"t": "Summarize", "i": "cloud", "c": "blue", "f": "form.sw-sum"}]) %}
+  {% else %}
+  {% set swl = [{"t": "Delete", "i": "trash", "c": "red", "f": 'form[action="/inbox/bulk"]:has(input[value="skip"])'}] %}
+  {% set swr = [{"t": "Transcribe", "i": "note", "c": "dark", "f": 'form[action="/inbox/bulk"]:has(input[value="local"])'}, {"t": "Summarize", "i": "cloud", "c": "blue", "f": "form.sw-sum"}] %}
+  {% endif %}
+  <details class="fx-sheet in-row item" id="rec-{{ it.rec_id }}" data-pick-id="{{ it.rec_id }}" data-review="{{ x.r.id if x else '' }}" data-sw='{{ {"l": swl, "r": swr}|tojson }}'>
+    <summary class="in-sum"><span class="row-cb in-cb" data-in-cb role="checkbox" aria-label="Pick" aria-checked="false"></span>{# Q3-A (Brian, 2026-11-21): ▶ first (blue = AI notes, white = transcript only), › last = opens #}
+      <span class="ib {{ 'ib-plain' if x and x.payload.private else 'ib-go' }}" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span>
       <span class="r1-t">{{ name }}
         <small>{{ it.when|short_when }} · {{ it.duration_s|mins }}
           {%- if it.merged %} · {{ it.merged.n }} parts{% endif %}{% if it.transcript %} · {{ m.icon("note") }}{% endif %}
@@ -57,11 +74,14 @@
           {%- if x and x.payload.private %} · {{ m.icon("lock") }}{% endif %}</small></span>
       <span class="chev-r" aria-hidden="true">›</span>
     </summary>
+    {# R5-24: swipe › Summarize opens the cost first (it spent money straight away); the row stays where it is #}
+    {% if x %}{% if not x.payload.private %}<form method="get" action="/review/{{ x.r.id }}/confirm" class="sw-sum" data-sw-keep hidden></form>{% endif %}
+    {% else %}<form method="get" action="/inbox-bulk/ai" class="sw-sum" data-sw-keep hidden><input type="hidden" name="ids" value="{{ it.rec_id }}"></form>{% endif %}
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
     <div class="fx-body in-sheet" role="dialog" aria-label="{{ name }}"><div class="fx-grab" aria-hidden="true"></div>
       <div class="sh-head"><b>{{ name }}</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
       <div class="meta">{{ it.title|recorder_title }} · {{ it.duration_s|mins }}{% if it.source %} · {{ it.source }}{% endif %}{% if it.merged %} · joined from {{ it.merged.n }}{% endif %}</div>
-      {% if it.preview %}{# Brian, 2026-11-21: See more / less (the first 2 minutes, or more of a whole transcript) #}
+      {% if it.preview %}{# Brian, 2026-11-21: See more / Hide (the first 2 minutes, or more of a whole transcript) #}
       {% if it.preview_full and it.preview_full|length > it.preview|length + 10 %}
       <div class="sh-prev-wrap"><p class="sh-preview" data-less>“{{ it.preview }}”</p><p class="sh-preview sh-full" data-more hidden>“{{ it.preview_full }}”</p>
         <button type="button" class="linkish" data-prev-toggle data-peek="{{ ' (first 2 min)' if it.peek }}">See more{{ ' (first 2 min)' if it.peek }}</button>{% if it.transcript %} · <a class="linkish" href="/inbox/{{ it.rec_id }}/transcript">Whole transcript ›</a>{% endif %}</div>
@@ -70,8 +90,8 @@
       <form method="post" action="/review/{{ x.r.id }}/approve" id="ai-{{ x.r.id }}"><input type="hidden" name="ai" value="1"><input type="hidden" name="confirm" value="1"></form>
       <form method="post" action="/review/{{ x.r.id }}/approve" id="ta-{{ x.r.id }}"><input type="hidden" name="ai" value="0"><input type="hidden" name="meeting_type" data-type-copy="mt-{{ x.r.id }}" value="{{ x.type_guess or '' }}"></form>
       <div class="acts">
-        {% if not x.payload.private %}<button class="act pri" form="ai-{{ x.r.id }}"><span class="ib ib-ai">▶</span><span class="grow">AI notes</span><small>{{ x.est.ai_s|duration }} · ${{ '%.2f'|format(x.est.cost) }}</small><span class="chev-r" aria-hidden="true">›</span></button>{% endif %}
-        <button class="act" form="ta-{{ x.r.id }}"><span class="ib ib-plain">▶</span><span class="grow">Transcript only</span><small>{{ x.est.local_s|duration }} · free</small><span class="chev-r" aria-hidden="true">›</span></button>
+        {% if not x.payload.private %}<button class="act pri" form="ai-{{ x.r.id }}"><span class="ib ib-ai"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Summarize</span><small>{{ x.est.ai_s|duration }} · ${{ '%.2f'|format(x.est.cost) }}</small><span class="chev-r" aria-hidden="true">›</span></button>{% endif %}
+        <button class="act" form="ta-{{ x.r.id }}"><span class="ib ib-plain"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Transcribe</span><small>{{ x.est.local_s|duration }} · free</small><span class="chev-r" aria-hidden="true">›</span></button>
         <label class="act"><span class="ib">≡</span><span class="grow">Type</span><select name="meeting_type" id="mt-{{ x.r.id }}" form="ai-{{ x.r.id }}" class="sh-select" aria-label="Meeting type">
           <option value="">Auto</option>{% for k, label in meeting_types.items() %}<option value="{{ k }}" {{ 'selected' if k == x.type_guess }}>{{ label }}</option>{% endfor %}</select></label>
       </div>
@@ -82,12 +102,19 @@
         <button type="button" class="chip" data-panel="pat-{{ it.rec_id }}">⏱ Process at…</button>
         <details class="chip-menu"><summary class="chip">{{ m.icon("clock") }} Remind me</summary><div class="chip-pop">{{ m.snooze_forms("/review/" ~ x.r.id ~ "/later", "/review/" ~ x.r.id ~ "/now" if x.r.snoozed_until and x.r.snoozed_until > now_iso else None) }}</div></details>
         {% if it.merged %}<form method="post" action="/inbox/{{ it.rec_id }}/unmerge"><button class="chip">↶ Unmerge</button></form>{% endif %}
-        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="chip danger">🗑 Delete</button></form>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
       </div>
       {% else %}
-      <div class="acts"><form method="post" action="/recordings/{{ it.rec_id }}/review"><button class="act pri"><span class="ib">↺</span><span class="grow">Get it ready</span><small>synced earlier</small><span class="chev-r" aria-hidden="true">›</span></button></form></div>
+      {# Brian, 2026-11-22: no separate "Get it ready" step; an older recording goes straight to AI notes or Transcript only #}
+      <div class="acts">
+        <form method="post" action="/inbox/bulk"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="ai"><input type="hidden" name="confirm" value="1">{# the cost is on the button #}
+          <button class="act pri"><span class="ib ib-ai"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Summarize</span><small>${{ '%.2f'|format(it.ai_cost or 0) }}</small><span class="chev-r" aria-hidden="true">›</span></button></form>
+        <form method="post" action="/inbox/bulk"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="local">
+          <button class="act"><span class="ib ib-plain"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Transcribe</span><small>free</small><span class="chev-r" aria-hidden="true">›</span></button></form>
+      </div>
       <div class="chips-row">{% if it.transcript %}<a class="chip" href="/inbox/{{ it.rec_id }}/transcript">{{ m.icon("note") }} Read</a>{% endif %}
-        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">＋ Transcript</button></div>
+        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">＋ Transcript</button>
+        <form method="post" action="/inbox/bulk"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="skip"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form></div>
       {% endif %}
       {% if x %}
       {% if x.payload.process_at %}<div class="sched-box"><span>⏱ Set to process {{ x.payload.process_at|when_back }} with {{ 'AI notes' if x.payload.process_ai else 'Transcript only' }}.</span>
@@ -96,7 +123,7 @@
       <div id="pat-{{ it.rec_id }}" class="pat-panel" hidden>
         <div class="seg-switch" role="radiogroup" aria-label="Process at a set time: how">
           {% if not x.payload.private %}<label class="seg-opt"><input type="radio" name="ai" value="1" form="pat-f-{{ it.rec_id }}" class="sr-only">▶ AI notes · ${{ '%.2f'|format(x.est.cost) }}</label>{% endif %}
-          <label class="seg-opt"><input type="radio" name="ai" value="0" form="pat-f-{{ it.rec_id }}" checked class="sr-only">Transcript only</label></div>
+          <label class="seg-opt"><input type="radio" name="ai" value="0" form="pat-f-{{ it.rec_id }}" checked class="sr-only">Transcribe</label></div>
         <form id="pat-f-{{ it.rec_id }}" method="post" action="/review/{{ x.r.id }}/process-at" class="acts">
           <input type="hidden" name="meeting_type" data-type-copy="mt-{{ x.r.id }}" value="{{ x.type_guess or '' }}">
           <button name="when" value="tonight" class="act"><span class="ib" aria-hidden="true">☾</span><span class="grow">Tonight, 1 AM</span><span class="chev-r" aria-hidden="true">›</span></button>
@@ -119,13 +146,5 @@
 {# Long-press a row (or Select) to pick several: Transcript only or Delete for all of them at once. Merge comes next. #}
 {# Q2-A (Brian, 2026-11-21; like Google Photos / Files): the count and Select all on top, the actions with a word under
    each at the bottom (in place of the tab bar). ✕, Esc or a tap outside stops selecting. #}
-<div class="pk2" id="in-pick" hidden role="region" aria-label="Selected recordings">
-  <div class="pk-top"><button type="button" class="icon-btn" data-inpick="done" aria-label="Stop selecting">✕</button>
-    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish" data-inpick="all">Select all</button></div>
-  <div class="pk-bot">
-    <button type="button" data-inpick="ai" class="pk-pri" title="AI notes for each (the cost is confirmed per recording)"><i class="ib ib-go" aria-hidden="true">▶</i><span class="pk-l">AI notes</span></button>
-    <button type="button" data-inpick="local" title="Transcript only, no AI, free"><i class="ib ib-plain" aria-hidden="true">▶</i><span class="pk-l">Transcript</span></button>
-    <button type="button" data-inpick="merge" title="Join into one recording, in recorded order"><i aria-hidden="true">⧉</i><span class="pk-l">Merge</span></button>
-    <button type="button" data-inpick="skip" title="Move to Trash (Restore there within 30 days)"><i aria-hidden="true">🗑</i><span class="pk-l">Delete</span></button>
-  </div></div>
+
 {% endblock %}

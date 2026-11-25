@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime, timezone
 
 from scribe_bot.ai import extract
 from scribe_bot.ai.prompts import MEETING_TYPES
 
 ME = 1
+
+
+# The app's names for areas ('personal' shows as Home). app.py reads this same list for the pages.
+AREAS = {"work": "Work", "personal": "Home", "school": "School", "other": "Other"}
 
 
 def _mmss(s: float) -> str:
@@ -20,6 +25,16 @@ def _people(conn: sqlite3.Connection) -> dict[int, str]:
     return {r[0]: r[1] for r in conn.execute("SELECT id, name FROM person")}
 
 
+def _when(ts: str) -> str:
+    """'Tue Nov 25, 2026, 3:24 pm' in the M14's local time, as the app shows it (R5-16: the file said UTC)."""
+    try:
+        dt = datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return ts or ""
+    dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
+    return dt.strftime("%a %b %-d, %Y, %-I:%M %p").replace("AM", "am").replace("PM", "pm")
+
+
 def conversation_md(conn: sqlite3.Connection, cid: int, transcript: bool = True, level: int = 1) -> str:
     c = conn.execute("SELECT * FROM conversation WHERE id = ?", (cid,)).fetchone()
     names = _people(conn)
@@ -28,9 +43,9 @@ def conversation_md(conn: sqlite3.Connection, cid: int, transcript: bool = True,
            for r in conn.execute("SELECT id, person_id FROM speaker WHERE conversation_id = ?", (cid,))}
     h = "#" * level
     out = [f"{h} {c['title']}", "",
-           f"- When: {(c['started_at'] or c['created_at'])[:16].replace('T', ' ')} (UTC)",
+           f"- When: {_when(c['started_at'] or c['created_at'])}",
            f"- Length: {round((c['duration_s'] or 0) / 60)} min",
-           f"- Type: {MEETING_TYPES.get(c['type'], c['type'] or 'unknown')} · Area: {c['area'] or 'not sorted'}",
+           f"- Type: {MEETING_TYPES.get(c['type'], c['type'] or 'unknown')} · Area: {AREAS.get(c['area'], c['area'] or 'not sorted')}",
            f"- Speakers: {', '.join(sorted(set(spk.values()))) or 'none'}", ""]
     if c["summary"]:
         out += [f"{h}# Summary", "", c["summary"], ""]
@@ -40,7 +55,8 @@ def conversation_md(conn: sqlite3.Connection, cid: int, transcript: bool = True,
         for t in tasks:
             who = "Me" if t["owner_person_id"] == ME else names.get(t["owner_person_id"], "Unassigned")
             box = "x" if t["status"] == "done" else " "
-            out.append(f"- [{box}] {t['title']} ({who}{', due ' + t['due'] if t['due'] else ''})")
+            note = ", not needed" if t["closed_as"] == "not_needed" else (", due " + t["due"] if t["due"] else "")
+            out.append(f"- [{box}] {t['title']} ({who}{note})")
         out.append("")
     decisions = conn.execute("SELECT text FROM decision WHERE conversation_id = ? ORDER BY id", (cid,)).fetchall()
     if decisions:
@@ -92,6 +108,17 @@ _PLAIN = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "
 
 
 _TURN = re.compile(r"\[\d+:\d\d\] \*\*")   # a transcript line: "[12:05] **Name:** text"
+_SPEAKER = re.compile(r"^(\[\d+:\d\d\] )\*\*(.+?):\*\* (.*)$")
+_MARK = re.compile(r"(\*\*|__|--|~~)")
+
+
+def _plain_md(text: str) -> str:
+    """R5-09: the PDF reads **, __, -- and ~~ as bold, italics, underline and strike, and drops them, so "we -- I
+    think -- ship" lost its dashes and came out underlined. Only the speaker's name is meant to be bold."""
+    def esc(t: str) -> str:
+        return _MARK.sub(r"\\\1", t)
+    m = _SPEAKER.match(text)
+    return f"{m[1]}**{esc(m[2])}:** {esc(m[3])}" if m else esc(text)
 
 
 def _latin(text: str) -> str:
@@ -133,5 +160,5 @@ def to_pdf(md: str, title: str) -> bytes:
         pdf.set_font("Helvetica", "", 10)
         indent = 4 if line.startswith("- ") else 0
         pdf.set_x(pdf.l_margin + indent)
-        pdf.multi_cell(0, 5, line, markdown=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(0, 5, _plain_md(line), markdown=True, new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())

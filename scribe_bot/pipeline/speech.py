@@ -17,6 +17,9 @@ SAMPLE_RATE = 16000
 THREADS = 4  # the M14 has 4 physical cores
 
 
+MAX_EMBED_PIECE_S = 60.0   # the TitaNet model fails past ~122 s of audio in one go
+
+
 def threads_now() -> int:
     """Cores for the next piece of work: 4, or 2 in Gentle / Auto while the Mac is in use (pipeline/pace.py)."""
     try:
@@ -163,11 +166,25 @@ class SherpaEngine:
         for t in turns:
             if t["end"] - t["start"] < MIN_EMBED_TURN_S:
                 continue
-            s = ex.create_stream()
-            s.accept_waveform(SAMPLE_RATE, samples[int(t["start"] * SAMPLE_RATE):int(t["end"] * SAMPLE_RATE)])
-            s.input_finished()
-            e = np.array(ex.compute(s))
-            acc.setdefault(t["speaker"], []).append(e / np.linalg.norm(e))
+            # The voice model takes at most ~122 s at a time (2026-11-22: a 2 min 10 s turn failed "Recognizing voices"
+            # 3 times). Long turns go in pieces of up to 60 s; a piece the model still rejects is skipped, not fatal.
+            a, b = t["start"], t["end"]
+            while b - a >= MIN_EMBED_TURN_S:
+                z = min(b, a + MAX_EMBED_PIECE_S)
+                if b - z < MIN_EMBED_TURN_S:
+                    z = b
+                    if z - a > MAX_EMBED_PIECE_S * 1.9:
+                        z = a + MAX_EMBED_PIECE_S
+                try:
+                    s = ex.create_stream()
+                    s.accept_waveform(SAMPLE_RATE, samples[int(a * SAMPLE_RATE):int(z * SAMPLE_RATE)])
+                    s.input_finished()
+                    e = np.array(ex.compute(s))
+                    if np.linalg.norm(e) > 0:
+                        acc.setdefault(t["speaker"], []).append(e / np.linalg.norm(e))
+                except RuntimeError:
+                    pass
+                a = z
         out = {}
         for c, v in acc.items():
             m = np.mean(v, axis=0)

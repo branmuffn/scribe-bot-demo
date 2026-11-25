@@ -32,7 +32,7 @@
 <section class="section">
   {{ m.section("M14 health") }}
   {% include "_machine.html" %}
-  <details class="card pad" id="ranges" style="margin-top:var(--s3)"><summary><b>What's normal?</b> The ranges behind each color (or hover over a tile)</summary>
+  <details class="card pad" id="ranges"><summary><b>What's normal?</b> The ranges behind each color (or hover over a tile)</summary>
     <table class="ranges"><tr><th>Reading</th><th>Ranges</th><th>Why it matters</th></tr>
       {% for k, r in ranges_full %}<tr><td>{{ r[0] }}</td><td>{{ ranges[k] }}</td><td>{{ r[5] }}</td></tr>{% endfor %}
       <tr><td>Disk health (SMART)</td><td>Good = Verified · Problem = anything else</td><td>A failing drive can lose recordings. Back up and replace.</td></tr>
@@ -70,8 +70,8 @@
 <section class="section">
   {{ m.section("Processing now", jobs|length) }}
   <div class="card">
-    {% for j in jobs %}{{ m.progress_item(j) }}
-    {% else %}{{ m.empty("check-circle", "Nothing processing", "Approved recordings show their progress here.") }}{% endfor %}
+    {% if jobs %}{{ m.progress_list(jobs) }}
+    {% else %}{{ m.empty("check-circle", "Nothing processing", "Approved recordings show their progress here.") }}{% endif %}
   </div>
 </section>
 {% endblock %}

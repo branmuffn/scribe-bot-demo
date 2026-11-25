@@ -26,7 +26,7 @@ def conn(cfg):
 
 
 def ask_mode(conn):
-    conn.execute("DELETE FROM setting WHERE key = 'processing_mode'")  # default = ask
+    conn.execute("INSERT OR REPLACE INTO setting (key, value) VALUES ('approval_mode', 'ask')")
 
 
 def new_recording(conn, cfg, name="Weekly sync.m4a"):
@@ -36,8 +36,15 @@ def new_recording(conn, cfg, name="Weekly sync.m4a"):
     return rec_id
 
 
-def test_default_mode_is_ask_first(conn):
-    conn.execute("DELETE FROM setting WHERE key = 'processing_mode'")
+def test_default_is_transcript_only_right_away_and_speed_setting_does_not_change_it(conn, cfg):
+    """2026-11-23: the speed setting shared this setting's name; uploads skipped the Inbox and got paid AI notes."""
+    for speed in ("auto", "full", "gentle", "night"):
+        conn.execute("INSERT OR REPLACE INTO setting (key, value) VALUES ('processing_mode', ?)", (speed,))
+        assert not ingest.ask_first(conn)
+    rec = new_recording(conn, cfg)
+    job = conn.execute("SELECT payload FROM job WHERE recording_id = ?", (rec,)).fetchone()
+    assert json.loads(job["payload"])["ai"] is False   # Transcript only: AI notes only when Brian taps Summarize
+    ask_mode(conn)
     assert ingest.ask_first(conn)
 
 
@@ -86,7 +93,7 @@ def test_review_page_lists_waiting_recordings(conn, cfg):
     ask_mode(conn)
     new_recording(conn, cfg)
     page = web(cfg).get("/inbox").text
-    assert "1 waiting" in page and ">Transcript only<" in page and ">AI notes<" in page   # redesign 2026-11-21: in the row's sheet
+    assert "1 waiting" in page and ">Transcribe<" in page and ">Summarize<" in page   # redesign 2026-11-21: in the row's sheet
 
 
 def test_transcript_only_skips_ai_stage(conn, cfg, monkeypatch):

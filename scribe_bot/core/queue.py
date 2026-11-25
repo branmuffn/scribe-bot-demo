@@ -26,7 +26,8 @@ def hold_requested(conn: sqlite3.Connection | None) -> bool:
     if conn is None:
         return False
     # ❚❚ Pause, or the heat guard (pipeline/pace.py, Brian "heat OK" 2026-11-21): both stop at the same safe points
-    return conn.execute("SELECT 1 FROM setting WHERE key IN ('pipeline_paused', 'heat_paused') AND value = '1'").fetchone() is not None
+    # and Auto's pause while other apps use more than 6 of the 8 cores (pace.busy_step, 2026-11-22)
+    return conn.execute("SELECT 1 FROM setting WHERE key IN ('pipeline_paused', 'heat_paused', 'busy_paused') AND value = '1'").fetchone() is not None
 
 
 @dataclass
@@ -137,3 +138,16 @@ def run_all(conn: sqlite3.Connection, pipelines: dict[str, Pipeline], jobs_dir: 
         if status == "pending":  # a stage failed and will retry; don't spin on it within this drain
             break
     return ran
+
+
+def retry(conn: sqlite3.Connection, job_id: int) -> bool:
+    """Try a failed job again from the step that failed (Brian, 2026-11-22: a failed recording could only be cancelled,
+    which threw away the finished transcript). Steps already done are kept. False if the job isn't failed."""
+    with transaction(conn):
+        row = conn.execute("SELECT status FROM job WHERE id = ?", (job_id,)).fetchone()
+        if not row or row[0] != "failed":
+            return False
+        conn.execute("UPDATE stage_run SET attempts = 0 WHERE job_id = ? AND status = 'failed'", (job_id,))
+        conn.execute("UPDATE job SET status = 'pending', error = NULL, updated_at = ? WHERE id = ?", (now(), job_id))
+    return True
+

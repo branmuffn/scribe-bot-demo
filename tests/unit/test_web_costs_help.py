@@ -23,11 +23,11 @@ def test_costs_and_help_are_in_navigation(env):
 def test_theme_from_cookie_and_gear_everywhere(env):
     client = env[0]
     page = client.get("/").text
-    assert '<html lang="en">' in page and "data-theme-toggle" not in page     # default: follow the system; Dark mode is in Settings only
-    assert page.count('href="/settings" aria-label="Settings"') == 2            # phone header + desktop sidebar
+    assert '<html lang="en" data-density' in page and "data-theme-toggle" not in page     # default: follow the system; Dark mode is in Settings only
+    assert page.count('summary class="icon-btn" aria-label="Quick settings"') == 2 and page.count('href="/settings"') >= 3   # ⚙ Quick settings (phone + desktop) with All settings
     client.cookies.set("theme", "dark")
     dark = client.get("/tasks").text
-    assert '<html lang="en" data-theme="dark">' in dark                        # rendered server-side: no flash
+    assert '<html lang="en" data-theme="dark" data-density' in dark                        # rendered server-side: no flash
     assert '<meta name="theme-color" content="#1c1917">' in dark and "prefers-color-scheme" not in dark.split("</head>")[0]
     client.cookies.set("theme", "light")
     assert '<meta name="theme-color" content="#fafaf9">' in client.get("/").text   # phone status bar follows the pick
@@ -76,9 +76,5 @@ def test_page_code_links_carry_a_version(env):
     v = re.search(r'/static/app\.js\?v=([0-9a-f]{10})"', page)
     assert v and f"/static/app.css?v={v.group(1)}" in page                         # a new deploy = new URLs = no stale code
     assert env[0].get(f"/static/app.js?v={v.group(1)}").status_code == 200
-    # A window left open keeps its old page code (htmx swaps only the body): every response names the code the M14
-    # serves, and app.js loads the next page in full when it differs (2026-10-22: a fix that "didn't work" on desktop).
-    for path in ("/", "/conversations/1", "/tasks"):
-        assert env[0].get(path).headers["x-asset-v"] == v.group(1), path
-    js = env[0].get("/static/app.js").text
-    assert 'getResponseHeader("X-Asset-V")' in js and "d.shouldSwap = false" in js
+    # Every link is a full page load since 2026-11-22 (no hx-boost), so a new deploy's ?v= reaches every page by itself.
+    # The old "newer page code" header and its swap check went with boost (R5-20).

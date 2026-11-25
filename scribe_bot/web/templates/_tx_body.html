@@ -1,0 +1,29 @@
+{# The transcript (player + lines). Loaded only when the Transcript section opens (Brian, 2026-11-22: talk pages were
+   424 KB, 80% of it this; phones lagged after a few talks). #}
+  {% if segments %}<p class="fix-help">Fix it: tap a <b>coloured name</b> to change who said those lines, <b>✂ split</b> where someone else starts, or <b>✎ fix words</b>. Tap a line to play it.</p>{% endif %}
+  {% if has_audio %}<div class="player"><audio id="player" controls preload="none" data-warm src="/audio/conversation/{{ c.id }}"></audio></div>{% endif %}
+  {% set palette = person_colors.keys()|list %}{% set sp_color = {} %}
+  {% set split_sp = [] %}
+  {% for sp in speakers %}{% set _ = sp_color.update({sp.id: sp.color or palette[loop.index0 % 8]}) %}{% set _ = split_sp.append([sp.id, sp.name, sp_color[sp.id]]) %}{% endfor %}
+  {% set used = segments|map(attribute='speaker_id')|reject('none')|unique|list %}
+  <div class="card pad lines" data-split-speakers='{{ split_sp|tojson }}' data-two="{{ 1 if used|length == 2 else 0 }}">
+    {% set pn = namespace(i=0) %}
+    {% for s in segments %}
+    {% if parts and pn.i < parts|length and s.start_s >= parts[pn.i].offset_s - 0.5 %}{# merged talk: a label where each recording starts #}
+    <div class="part-div" id="part-{{ pn.i + 1 }}"><b>Part {{ pn.i + 1 }} of {{ parts|length }}</b> · {{ parts[pn.i].title|recorder_title }}</div>{% set pn.i = pn.i + 1 %}{% endif %}
+    {% set pv = loop.previtem if not loop.first else none %}{% set same = pv and pv.speaker_id is not none and pv.speaker_id == s.speaker_id %}
+    <div class="line{{ ' same' if same }}{{ ' pause' if same and s.start_s - pv.end_s >= 30 }}" id="L{{ s.idx }}" data-seg="{{ s.id }}" data-sp="{{ s.speaker_id }}" data-start="{{ s.start_s }}" data-end="{{ s.end_s }}">
+      {% set ts = '%d:%02d'|format(s.start_s // 60, s.start_s % 60) %}
+      {% if has_audio %}<button type="button" class="t" data-seek="{{ s.start_s }}" aria-label="Play from {{ ts }}" title="Play from here">{{ ts }}</button>
+      {% else %}<span class="t">{{ ts }}</span>{% endif %}
+      <div><button type="button" class="who" style="--c:{{ sp_color.get(s.speaker_id, 'currentColor') }}" aria-label="{{ s.name }}: change who said this">{{ s.name }}</button><span {{ m.editable("/segments/" ~ s.id ~ "/text", "text", s.text, "line " ~ (s.idx + 1), "L" ~ s.idx, same=True) }}>{{ s.text }}</span></div>
+      <details class="line-edit">
+        <summary class="icon-btn" aria-label="Fix line {{ s.idx + 1 }}" title="Fix this line">{{ m.icon("dots") }}</summary>
+        <div class="chip-panel"><p class="meta">Loading…</p></div>{# filled on first open: 250 hidden forms made the page 840 KB.
+          U12 (Brian, 2026-11-25: "unusable as built"): filled at once from #line-edit-tpl below, with no trip to the M14 #}
+      </details>
+    </div>
+    {% else %}{{ m.empty("clock", "No transcript yet", "Speech-to-text runs on the M14, about 13 minutes per hour of audio.") }}{% endfor %}
+  </div>
+  {# U12: one copy of a line's fix panel; app.js fills in the line's id, speaker and words when its ⋯ opens #}
+  {% if segments %}<template id="line-edit-tpl">{% with s = {"id": "__SID__", "idx": "__IDX__", "text": "", "speaker_id": none} %}{% include "_line_edit.html" %}{% endwith %}</template>{% endif %}

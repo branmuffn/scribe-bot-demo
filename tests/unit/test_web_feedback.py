@@ -28,7 +28,7 @@ def test_small_actions_swap_only_their_section(env):
 def test_facts_are_kept_by_default_and_only_removed(env):
     client, conn, _ = env
     page = client.get("/conversations/1").text
-    assert "Has a dog named Biscuit" in page and "Wrong, remove" in page
+    assert "Has a dog named Biscuit" in page and "Delete note: Has a dog named Biscuit" in page
     assert 'name="ok" value="1"' not in page                         # no ✓ to tap per note
     client.post("/facts/1/confirm", data={"ok": 0}, headers=HX)
     assert one(conn, "SELECT confirmed FROM person_fact WHERE id = 1") == 0
@@ -39,7 +39,7 @@ def test_check_strip_counts(env):
     page = env[0].get("/conversations/1").text
     strip = page[page.index('id="check-strip"'):page.index("</nav>", page.index('id="check-strip"'))]
     assert "2 you owe" in strip and "1 they owe you" in strip and "1 note" in strip
-    assert "1 unsure" in strip and "1 speaker to name" in strip
+    assert "1 unsure" in strip and '1 to name</button>' in page   # speakers to name: the chip beside the speaker bar (2026-11-23)
 
 
 def test_rename_speaker_relabels_lines_and_closes_review(env, monkeypatch):
@@ -51,7 +51,7 @@ def test_rename_speaker_relabels_lines_and_closes_review(env, monkeypatch):
     assert one(conn, "SELECT name FROM person WHERE id = ?", pid) == "Casey Sample"
     assert enrolled == [(3, pid)]
     assert one(conn, "SELECT status FROM review_item WHERE kind = 'speaker' AND ref_id = 3") == "done"
-    page = client.get("/conversations/1").text
+    page = client.get("/conversations/1?tx=1").text
     assert '>Casey Sample</button><span data-edit-url="/segments/4/text"' in page
     client.post("/speakers/3/name", data={"new_name": "casey sample"}, headers=HX)  # typed again: matched, not duplicated
     assert one(conn, "SELECT count(*) FROM person WHERE lower(name) = 'casey sample'") == 1
@@ -62,6 +62,22 @@ def test_this_isnt_x_unassigns_and_reopens_review(env):
     client.post("/speakers/1/unassign", headers=HX)
     assert one(conn, "SELECT person_id FROM speaker WHERE id = 1") is None
     assert one(conn, "SELECT count(*) FROM review_item WHERE kind = 'speaker' AND ref_id = 1 AND status = 'open'") == 1
+
+
+def test_this_isnt_x_takes_the_name_out_of_the_notes_and_naming_puts_the_right_one_in(env):
+    """Brian, 2026-11-23: after "Not Morgan" the summary and tasks still said Morgan. Naming before or after the AI notes
+    must end the same, with no new AI run."""
+    client, conn, _ = env
+    spent = one(conn, "SELECT count(*) FROM ledger_entry")
+    conn.execute("UPDATE conversation SET summary = 'Alex Example asked for the deck. Alex will send the budget.' WHERE id = 1")
+    client.post("/speakers/1/unassign", headers=HX)
+    assert one(conn, "SELECT summary FROM conversation WHERE id = 1") == "Speaker 1 asked for the deck. Speaker 1 will send the budget."
+    assert one(conn, "SELECT owner_person_id FROM task WHERE id = 2") != 2          # Alex's task left Alex
+    client.post("/speakers/1/name", data={"new_name": "Casey Sample"}, headers=HX)
+    casey = one(conn, "SELECT id FROM person WHERE name = 'Casey Sample'")
+    assert one(conn, "SELECT summary FROM conversation WHERE id = 1") == "Casey Sample asked for the deck. Casey Sample will send the budget."
+    assert one(conn, "SELECT owner_person_id FROM task WHERE id = 2") == casey
+    assert one(conn, "SELECT count(*) FROM ledger_entry") == spent   # no AI run, no cost
 
 
 def test_change_task_person_moves_between_lists_and_counts_as_wrong(env):
@@ -136,7 +152,7 @@ def test_transcript_only_label_and_private(env):
                  "VALUES (7, 'recorder', '/y', 'def', ?, 'Oct 16 at 09_29', 'awaiting_approval')", (t,))
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', 7, ?, ?)",
                  (json.dumps({"recording_id": 7, "title": "Oct 16 at 09_29", "minutes": 5, "ai_cost": 0.01}), t))
-    assert ">Transcript only<" in client.get("/inbox").text
+    assert ">Transcribe<" in client.get("/inbox").text
     rid = one(conn, "SELECT id FROM review_item WHERE ref_id = 7 AND kind = 'approval'")
     client.post(f"/review/{rid}/approve", data={"ai": "0"})
     assert one(conn, "SELECT private FROM recording WHERE id = 7") == 0   # round 7: nothing is locked
@@ -179,7 +195,8 @@ def test_help_card_dismiss(env):
 def test_change_one_lines_speaker(env):
     client, conn, _ = env
     sid = one(conn, "SELECT id FROM segment WHERE idx = 3")                          # "Quick interruption", unnamed Speaker 3
-    assert f'hx-get="/segments/{sid}/edit"' in client.get("/conversations/1").text     # the fix panel loads on first open
+    page = client.get("/conversations/1?tx=1").text                                   # U12: the fix panel is built on the page
+    assert 'id="line-edit-tpl"' in page and 'action="/segments/__SID__/speaker"' in page
     assert f'action="/segments/{sid}/speaker"' in client.get(f"/segments/{sid}/edit").text
     client.post(f"/segments/{sid}/speaker", data={"speaker_id": 1})                  # it was Alex
     assert one(conn, "SELECT speaker_id FROM segment WHERE id = ?", sid) == 1
@@ -189,7 +206,7 @@ def test_change_one_lines_speaker(env):
     client.post(f"/segments/{sid}/speaker", data={"new_name": "Pat Example"})        # someone not in the conversation yet
     new = one(conn, "SELECT speaker_id FROM segment WHERE id = ?", sid)
     assert one(conn, "SELECT p.name FROM speaker s JOIN person p ON p.id = s.person_id WHERE s.id = ?", new) == "Pat Example"
-    assert "Pat Example" in client.get("/conversations/1").text
+    assert "Pat Example" in client.get("/conversations/1?tx=1").text
     assert client.post(f"/segments/{sid}/speaker", data={"speaker_id": 999}).status_code == 400
     assert client.post("/segments/9999/speaker", data={"speaker_id": 1}).status_code == 404
 
@@ -237,8 +254,10 @@ def test_secondary_actions_live_in_menus(env):
     visible, menu = row.split('class="fx-sheet task-sheet"')              # 2026-11-21: ○ Done · title · ⋯ = the task's sheet
     assert "/tasks/1/done" in visible and "/tasks/1/delete" not in visible and "/tasks/1/owner" not in visible
     assert "/tasks/1/delete" in menu and "/tasks/1/not-needed" in menu and "⋯</button>" not in menu and "/tasks/1/owner" in menu and "/tasks/1/edit" in menu and 'action="/tasks/1/remind"' in menu
-    head = page.split('class="conv-controls"')[1].split("</header>")[0]
-    assert "Move to Trash" in head.split('class="row-menu"')[1] and "Mark private" not in head
+    head = page.split('class="cv-bar"')[1].split("</header>")[0]
+    # B6 (Brian, 2026-11-25): Trash is a button on the talk's top row, beside ⋯ (and only there)
+    assert 'class="cv-trash"' in head.split('class="row-menu"')[0] and "Move to Trash" not in head.split('class="row-menu"')[1]
+    assert "Mark private" not in head
 
 
 def test_naming_a_speaker_fixes_speaker_n_in_the_ai_text(env, monkeypatch):
@@ -277,3 +296,89 @@ def test_waiting_recordings_sort_by_when_recorded():
     assert (a.month, a.day, a.hour, a.minute) == (10, 23, 9, 7) and b > a
     assert recorded_at("Dec 30 at 10_00", "2027-01-02T10:00:00+00:00").year == 2026          # last year's file
     assert recorded_at("Team sync", "2026-10-24T20:18:01+00:00").isoformat().startswith("2026-10-24T20:18:01")
+
+
+def test_someone_new_with_a_typed_name_is_not_error_422(env, monkeypatch):
+    """Brian, 2026-11-22: "＋ Someone new…" sent person_id=__new and the name form answered error 422."""
+    client, conn, _ = env
+    monkeypatch.setattr("scribe_bot.web.routes.identify.enroll", lambda *a, **k: None)
+    r = client.post("/speakers/3/name", data={"person_id": "__new", "new_name": "Robin Sample"}, follow_redirects=False)
+    assert r.status_code in (200, 303)
+    pid = one(conn, "SELECT person_id FROM speaker WHERE id = 3")
+    assert one(conn, "SELECT name FROM person WHERE id = ?", pid) == "Robin Sample"
+    r = client.post("/speakers/3/name", data={"person_id": "__new", "new_name": ""}, follow_redirects=False)
+    assert r.status_code == 400   # nothing picked, nothing typed: a plain message, not a 422
+
+
+
+def test_note_kind_change_and_bad_kind(env):
+    """Notes A (2026-11-22): the note pop-up's Kind row saves a new kind; unknown kinds are refused."""
+    client, conn, _ = env
+    page = client.get("/conversations/1").text
+    assert 'data-open-sheet="fs-1"' in page and "Move to someone else" in page and ">Delete</button>" in page
+    client.post("/facts/1/kind", data={"kind": "family"}, headers=HX)
+    assert one(conn, "SELECT type FROM person_fact WHERE id = 1") == "family"
+    assert client.post("/facts/1/kind", data={"kind": "nonsense"}, headers=HX).status_code == 400
+
+
+def test_long_task_text_shows_full_task_under_short_title(env):
+    """Long task text A (2026-11-22): a bold short title, the full task in grey under it; no grey line when they match."""
+    client, conn, _ = env
+    t = "2026-11-22T10:00:00"
+    conn.execute("INSERT INTO task (conversation_id, title, short_title, owner_person_id, created_at, updated_at) "
+                 "VALUES (1, 'Send the revised budget to Priya with the travel line split out', 'Send the revised budget', 1, ?, ?)", (t, t))
+    conn.execute("INSERT INTO task (conversation_id, title, short_title, owner_person_id, created_at, updated_at) "
+                 "VALUES (1, 'Book the room', 'Book the room', 1, ?, ?)", (t, t))
+    conn.commit()
+    page = client.get("/conversations/1").text
+    assert '<div class="item-full">Send the revised budget to Priya with the travel line split out</div>' in page
+    assert '<div class="item-full">Book the room</div>' not in page
+
+
+def test_desktop_trash_link_has_no_count(env):
+    """Brian (2026-11-22): the sidebar says just "Trash", no number."""
+    client, conn, _ = env
+    page = client.get("/").text
+    assert '<span class="nl">Trash</span></a>' in page   # under More in the sidebar (Gmail redesign, 2026-11-23)
+
+
+def test_voice_memo_names_give_the_recorded_date_and_old_talks_are_fixed(env):
+    """Brian, 2026-11-23: uploaded memos showed on the upload day in Talks, not the day they were recorded."""
+    from datetime import datetime
+    from scribe_bot.pipeline import ingest, recorder_names
+    client, conn, _ = env
+    real = recorder_names.parse_stamp("20251009 143052")
+    assert real.astimezone().replace(tzinfo=None) == datetime(2025, 10, 9, 14, 30, 52)
+    assert recorder_names.fallback_title("20251009 143052") == "Conversation"
+    conn.execute("UPDATE recording SET original_path = '/x/uploads/20251009 143052.m4a' WHERE id = 1")
+    conn.execute("UPDATE conversation SET started_at = '2026-11-23T04:43:24+00:00' WHERE id = 1")
+    assert ingest.fix_recorded_dates(conn) == 1 and ingest.fix_recorded_dates(conn) == 0
+    assert datetime.fromisoformat(one(conn, "SELECT started_at FROM conversation WHERE id = 1")) == real
+
+
+def test_name_swap_tidies_name_in_brackets(env):
+    """"Casey (Morgan Example)" after Not Morgan + naming Casey must read just "Casey"."""
+    client, conn, _ = env
+    conn.execute("UPDATE conversation SET summary = 'Casey (Alex Example), the supplier, called.' WHERE id = 1")
+    client.post("/speakers/1/unassign", headers=HX)
+    client.post("/speakers/1/name", data={"new_name": "Casey"}, headers=HX)
+    assert one(conn, "SELECT summary FROM conversation WHERE id = 1") == "Casey, the supplier, called."
+
+
+def test_gmail_redesign_rows_and_frame(env):
+    """Brian's picks (2026-11-23): checkbox + round pick icon on talk rows, swipe right = Summarize on transcript-only
+    talks, Quick settings, advanced search fields, reading pane on Talks, compact speaker bar with its sheet."""
+    client, conn, _ = env
+    talks = client.get("/conversations").text
+    assert 'data-row-cb' in talks and 'data-pick-ic' in talks and 'id="rpane"' in talks and 'aria-label="Quick settings"' in talks
+    conn.execute("UPDATE conversation SET summary = NULL WHERE id = 1")
+    row = client.get("/conversations").text.split('data-id="1"')[1].split('class="item tap-row conv-row"')[0]
+    assert '"Summarize"' in row and 'class="sw-sum"' in row and 'action="/talks-bulk/ai"' in row
+    adv = client.get("/search/advanced?q=budget&sort=new").text
+    assert 'name="q" value="budget"' in adv and '<option value="new" selected>' in adv
+    framed = client.get("/conversations/1", headers={"sec-fetch-dest": "iframe"}).text
+    assert 'class="in-pane' in framed and 'class="sidebar"' not in framed and 'id="rpane"' not in framed
+    conn.execute("UPDATE conversation SET summary = 'A short summary.' WHERE id = 1")
+    page = client.get("/conversations/1").text
+    assert 'class="talk sp-bar"' in page and 'id="sp-sheet"' in page and 'data-pill-fold' in page and 'data-hold-copy' in page
+    assert "Copy summary</button>" in page and "No key points" not in page

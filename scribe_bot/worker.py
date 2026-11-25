@@ -140,6 +140,19 @@ def main() -> int:
         recording.retitle_plain(conn)   # once per start: old no-AI talks called just "Conversation" get a quick title
     except Exception:
         log.exception("retitle failed")
+    try:   # once per start: talks get the date they were recorded, from the file name (2026-11-23)
+        from scribe_bot.pipeline import ingest as _ingest
+        with db.transaction(conn):
+            _ingest.fix_recorded_dates(conn)
+    except Exception:
+        log.exception("recorded-date fix failed")
+    try:   # once per start, no AI: named speakers' "Speaker N" in short titles and detailed notes becomes their name
+        from scribe_bot.ai import extract   # (2026-11-22 short titles; 2026-11-23 detailed notes)
+        for (cid,) in conn.execute("SELECT DISTINCT conversation_id FROM task WHERE short_title LIKE '%Speaker %' UNION "
+                                   "SELECT id FROM conversation WHERE short_title LIKE '%Speaker %' OR detailed LIKE '%Speaker %'").fetchall():
+            extract.relabel_speakers(conn, cid)
+    except Exception:
+        log.exception("short-title relabel failed")
     SCHEDULES.extend(recording.make_schedules(conn, cfg))
     stopping = False
 

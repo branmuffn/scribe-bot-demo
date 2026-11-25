@@ -11,8 +11,8 @@ def test_date_groups():
     at = lambda d: (now - timedelta(days=d)).isoformat()  # noqa: E731
     assert date_group(at(0), now) == "This week" and date_group(at(4), now) == "This week"
     assert date_group(at(6), now) == "Last week" and date_group(at(11), now) == "Last week"
-    assert date_group(at(15), now) == "Earlier in November"
-    assert date_group(at(40), now) == "October" and date_group("2025-10-02T10:00:00+00:00", now) == "October 2025"
+    assert date_group(at(15), now) == f"Earlier in November {now.year}"
+    assert date_group(at(40), now) == f"October {now.year}" and date_group("2025-10-02T10:00:00+00:00", now) == "October 2025"
     assert date_group(None) == "No date" and date_group("junk") == "No date"
     assert group_phrase("This week", "Recorded") == "Recorded this week" and group_phrase("October", "Added") == "Added in October"
     assert due_group(None) == "No due date" and due_group("Friday") == "Rough due date" and due_group("2020-01-01") == "Overdue"
@@ -63,7 +63,7 @@ def test_school_and_other_areas(env):
     client, conn, _ = env
     client.post("/conversations/1/area", data={"area": "school"})
     assert one(conn, "SELECT area FROM conversation WHERE id = 1") == "school"
-    assert "School" in client.get("/conversations?area=school").text and 'class="badge badge-school"' in client.get("/conversations").text
+    assert "School" in client.get("/conversations?area=school").text and 'class="cr-area cr-school"' in client.get("/conversations").text
     tid = one(conn, "SELECT min(id) FROM task")
     client.post(f"/tasks/{tid}/file", data={"area": "other"})
     assert one(conn, "SELECT area FROM task WHERE id = ?", tid) == "other"

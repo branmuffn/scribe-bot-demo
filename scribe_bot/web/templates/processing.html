@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
 {% block title %}Processing history · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/status">‹ Status</a>{% endblock %}
 {% block body %}
 <div class="page-head"><h1>Processing history</h1></div>
 <p class="meta page-lede">Newest first.</p>
@@ -19,14 +20,14 @@
   <div class="card pad speed-card">
     <div class="speed-head"><b>Speed</b>{% if pace_label %}<span class="meta">Now: {{ pace_label }}</span>{% endif %}</div>
     <form method="post" action="/processing/speed" class="seg-switch">
-      {% for k, label, sub in [("auto", "Auto", "Gentle while you use the Mac"), ("full", "Full", "All 4 cores"),
+      {% for k, label, sub in [("auto", "Auto", "Half speed while other apps are busy"), ("full", "Full", "All 4 cores"),
                                ("gentle", "Gentle", "Half the cores, cooler"), ("night", "Night", "Night only: waits for 1 AM")] %}
       <button name="mode" value="{{ k }}" class="seg-opt{% if speed == k %} on{% endif %}" aria-pressed="{{ 'true' if speed == k else 'false' }}" title="{{ sub }}">{{ label }}</button>
       {% endfor %}
     </form>
-    <p class="meta speed-note">Auto = half speed while you use the Mac. Half speed if it gets warm (90 °C), pauses if hot (95 °C).</p>
+    <p class="meta speed-note">Scribe Bot's own speed: full = 4 cores, half = 2. Auto goes to half speed while other apps are busy and pauses if they use most of the Mac. Every setting: half speed at 90 °C, pause at 95 °C.</p>
   </div>
-  {% for r in rows if r.p %}<div class="card" style="margin-top:8px">{{ m.progress_item(r.p) }}</div>{% endfor %}
+  {% set live = rows|selectattr("p")|map(attribute="p")|sort(attribute="queue_pos")|list %}{% if live %}<div class="card" style="margin-top:8px">{{ m.progress_list(live) }}</div>{% endif %}
 </section>
 <div class="card" id="history-list">
   {% set gs = namespace(g="") %}
@@ -49,7 +50,9 @@
         <dt>Kind</dt><dd>{{ 'AI notes' if r.ai else 'Transcript only' }}</dd>
       </dl>
       {% if r.p %}<div class="card">{{ m.progress_item(r.p) }}</div>{% endif %}
-      <div class="chips-row">{% if r.cid %}<a class="chip chip-on" href="/conversations/{{ r.cid }}">Open the talk ›</a>{% endif %}</div>
+      {% if r.status == 'failed' %}<p class="meta">A step failed 3 times. Try again picks up at that step; the finished steps are kept.</p>{% endif %}
+      <div class="chips-row">{% if r.status == 'failed' %}<form method="post" action="/processing/{{ r.id }}/retry"><button class="chip chip-on">↻ Try again</button></form>{% endif %}
+        {% if r.cid %}<a class="chip chip-on" href="/conversations/{{ r.cid }}">Open the talk ›</a>{% endif %}</div>
     </div>
   </details>
   {% else %}{{ m.empty("clock", "Nothing processed yet", "Recordings you send from the Inbox show up here.") }}{% endfor %}

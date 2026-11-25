@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
+{% block back %}<a class="back-link" href="/inbox">‹ Inbox</a>{% endblock %}
 {% block body %}
 {# The whole Recorder transcript, unedited (Brian, 2026-11-20): read it before choosing what to process. #}
-<div class="page-head"><div><a class="meta" href="/inbox">‹ Inbox</a>
+<div class="page-head"><div>
   <h1>{% if it.quick_title %}“{{ it.quick_title }}”{% else %}{{ it.title|recorder_title }}{% endif %}</h1>
   <div class="meta">{{ it.title|recorder_title }} · {{ ((it.duration_s or 0) / 60)|round(1) }} min · {{ words }} words · from Google Recorder, not processed yet</div></div></div>
 
@@ -27,7 +28,7 @@
 <div class="tx-actions">
   {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Transcribe + AI", "rc-" ~ x.r.id) }}{% endif %}
   <form method="post" action="/review/{{ x.r.id }}/approve"><input type="hidden" name="ai" value="0"><button class="btn">{{ m.icon("lock") }} Transcript Only (No AI)</button></form>
-  <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">🗑 Delete</button></form>
+  <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
 </div>{{ m.confirm_slot("rc-" ~ x.r.id) }}
 {% endif %}
 <p class="meta">Speaker labels are Recorder's. After processing, Scribe Bot makes its own transcript on the M14 and names the people it knows.</p>

@@ -5,20 +5,20 @@
 {% block body %}
 {# Compact pass (Brian, 2026-11-21): short sections that fold open, plus what each button does. #}
 <div class="page-head"><div><h1>Help</h1><div class="meta">What each screen is for, and what the buttons do.</div></div>
-  <button type="button" class="btn btn-primary btn-sm" data-tour-start="{{ tour_conv or '' }}">1-minute tour</button></div>
+  <button type="button" class="btn btn-primary tour-cta" data-tour-start="{{ tour_conv or '' }}">1-minute tour</button></div>
 
 <details class="section help-sec" id="help-buttons" open>
   <summary><span class="chev">{{ m.icon("chev") }}</span><h2>What each button does</h2></summary>
   <div class="card pad help-dl">
     <h3>Inbox (a recording waiting for your OK)</h3>
     <dl>
-      <dt>▶ / AI notes</dt><dd>Transcribe it on the M14, then the AI writes the summary, tasks and decisions. Shows the time and cost first.</dd>
-      <dt>Transcript only</dt><dd>Transcribed on the M14, free. Make AI notes on the talk later if you want them.</dd>
+      <dt>▶ Summarize</dt><dd>Transcribe it on the M14, then the AI writes the summary, tasks and decisions. Shows the time and cost first.</dd>
+      <dt>Transcribe</dt><dd>Transcript only: made on the M14, free. Tap Summarize on the talk later if you want AI notes.</dd>
       <dt>⏱ Process at…</dt><dd>Pick a time (or <b>Tonight at 1 am</b>) and AI notes or Transcript only: it waits, then starts by itself. The row shows ⏱ and the time; <i>Cancel that</i> in its sheet undoes it.</dd>
       <dt>Remind me</dt><dd>A reminder only: it hides the recording from Needs you until the time you pick. Nothing is processed; you still decide.</dd>
       <dt>Delete</dt><dd>Moves it to Trash (bottom of Talks). Restore it there within 30 days; after that it and its audio are deleted for good.</dd>
       <dt>Read / + Transcript</dt><dd>Read a phone transcript that synced with it, or paste one in.</dd>
-      <dt>Select</dt><dd>Long-press a row (or Select). The top shows how many and <b>Select all</b>; the bottom bar has <b>AI notes</b>, <b>Transcript</b>, <b>Merge</b> (one recording, in recorded order; Unmerge works until it's processed) and <b>Delete</b>. ✕ or a tap anywhere else stops selecting.</dd>
+      <dt>Select</dt><dd>Long-press a row (or Select). The top shows how many and <b>Select all</b>; the bottom bar has <b>Summarize</b>, <b>Transcript</b>, <b>Merge</b> (one recording, in recorded order; Unmerge works until it's processed) and <b>Delete</b>. ✕ or a tap anywhere else stops selecting.</dd>
     </dl>
     <h3>While something is processing</h3>
     <dl>
@@ -26,7 +26,7 @@
       <dt>▶ Resume now · ☾ Resume at 1 am</dt><dd>Carries on from where it stopped, now or tonight.</dd>
       <dt>✕ Cancel</dt><dd>Only while paused: back to the Inbox as it was; the half-done files are deleted.</dd>
       <dt>Processing history</dt><dd>⋯ at the top › Processing history: Pause / Resume at the top, then everything you sent, when, how long it took, AI or not.</dd>
-      <dt>Speed (Processing history)</dt><dd><b>Auto</b> (normal): full speed while nobody uses the Mac; half the cores while someone does (keyboard or mouse, SSH, Screen Sharing, RustDesk, or a Claude / Codex chat while it runs heavy work), back to full 10 minutes after. <b>Heat</b>: at 90 °C it drops to half the cores until the Mac cools under 80 °C; at 95 °C it pauses. <b>Every night 1 to 7 AM</b>: the Inbox is worked through oldest first as Transcript only (no AI, no cost), one after another; recordings with a Process at time wait for it. Make AI notes on any of them later. <b>Full</b>: always all 4 cores. <b>Gentle</b>: always half, about twice as long, cooler. <b>Night only</b>: new recordings wait until 1 AM.</dd>
+      <dt>Speed (Processing history)</dt><dd>How fast Scribe Bot itself works: <b>full speed</b> = all 4 cores, <b>half speed</b> = 2 cores (about twice as long, cooler). <b>Auto</b> (normal): full speed unless other apps keep the Mac busy: more than 2 of its 8 cores or under 20% memory free means half speed (back to full after 3 calm minutes); more than 6 cores means pause (resumes once they drop under 4). <b>Heat</b>: at 90 °C it drops to half the cores until the Mac cools under 80 °C; at 95 °C it pauses. <b>Every night 1 to 7 AM</b>: the Inbox is worked through oldest first as Transcript only (no AI, no cost), one after another; recordings with a Process at time wait for it. Summarize any of them later. <b>Full</b>: always all 4 cores. <b>Gentle</b>: always half, about twice as long, cooler. <b>Night only</b>: new recordings wait until 1 AM; nothing new starts after 7 AM.</dd>
       <dt>🌡️ Hot Mac</dt><dd>At 95 °C for 5 minutes processing pauses by itself (Discord says so) and carries on once the Mac has been under 80 °C for 5 minutes. After 2 hours it carries on with half the cores.</dd>
       <dt>From Discord</dt><dd>The pinned M14 board in #m14-health has ❚❚ Pause processing and ▶ Resume buttons.</dd>
     </dl>
@@ -53,8 +53,8 @@
   <div class="card help-screens">
     {% for ic, title, href, text in [
       ("sun", "Today", "/", "Only what needs you: Next up, the Inbox line, Needs you, due tasks, recent talks. The clock on an item reminds you later; until then it waits under Snoozed. History keeps what you handled, with Restore."),
-      ("inbox", "Inbox", "/inbox", "Recordings waiting for your OK; nothing is transcribed until you give it. Quick titles come from the first 2 minutes or a synced transcript (no AI). Older recordings that synced earlier: Get it ready."),
-      ("chat", "Talks", "/conversations", "Lists show a short name; the talk page has the full one. "~"Every talk with its summary, tasks, decisions, notes and transcript. Trash (at the bottom of Talks) keeps removed talks and deleted Inbox recordings 30 days, then deletes them with their audio."),
+      ("inbox", "Inbox", "/inbox", "Recordings waiting for your OK; nothing is transcribed until you give it. Quick titles come from the first 2 minutes or a synced transcript (no AI). Older recordings (on the phone before Scribe Bot was set up) work the same: AI notes, Transcript only or Delete, one at a time or several with Select."),
+      ("chat", "Talks", "/conversations", "Lists show a short name; the talk page has the full one. "~"Every talk with its summary, tasks, decisions, notes and transcript. Trash (the bin next to Select on Talks) keeps removed talks and deleted Inbox recordings 30 days, then deletes them with their audio."),
       ("users", "People", "/people", "Everyone you've talked to, A to Z. Names mentioned but not added, and voices not named yet, each wait in one row at the top."),
       ("check", "Tasks", "/tasks", "Mine, Waiting (others owe you), Unsure (the AI wasn't sure), Decisions."),
       ("search", "Search (🔍)", "/search", "Any word across transcripts, summaries, tasks, people and notes."),
@@ -93,7 +93,17 @@
         <form method="post" action="/demo/remove"><button class="btn btn-ghost">Remove demo data</button></form>
       {% else %}<form method="post" action="/demo/load"><button class="btn btn-primary">Load demo data</button></form>{% endif %}
     </div>
-    <p class="meta">To try a real one: Inbox › an <i>older</i> recording › Get it ready.</p>
+    <p class="meta">To try a real one: Inbox › an <i>older</i> recording › Transcript only.</p>
+    <h3 id="test-recordings">Test recordings for the Inbox</h3>
+    <p>Three made-up recordings titled <b>TEST 1–3</b>: one waiting with a phone transcript, one waiting without (its quick
+      title appears on its own within a few minutes), and one older. Search them for “pineapple”, “volcano” or “tomato”.
+      Transcript only is free and runs on the M14; Transcribe + AI costs about a cent. Add 30 more gives the Inbox enough rows to scroll (short tones, no words). Remove takes them all away. Your real recordings are never touched.</p>
+    <div class="row">
+      {% if test_recs %}<a class="btn btn-primary" href="/inbox">Open the Inbox</a>
+        {% if test_recs < 33 %}<form method="post" action="/test-inbox/add"><input type="hidden" name="more" value="1"><button class="btn btn-ghost" title="30 short made-up recordings (a tone, no words), so the Inbox has enough to scroll">Add 30 more for scrolling</button></form>{% endif %}
+        <form method="post" action="/test-inbox/remove"><button class="btn btn-ghost">Remove test recordings ({{ test_recs }})</button></form>
+      {% else %}<form method="post" action="/test-inbox/add"><button class="btn btn-primary">Add 3 test recordings</button></form>{% endif %}
+    </div>
   </div>
 </details>
 

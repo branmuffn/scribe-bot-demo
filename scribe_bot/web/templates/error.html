@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{# R5-02 (2026-11-25): a link to something deleted, or a bad address, gets a page in the app frame, never raw code text #}
+{% block title %}{{ title }} · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
+{% block body %}
+{{ m.empty("search", title, hint) }}
+<p class="err-acts"><a class="btn btn-primary" href="/">Go to Today</a> <button type="button" class="btn" onclick="history.back()">Back</button></p>
+{% endblock %}

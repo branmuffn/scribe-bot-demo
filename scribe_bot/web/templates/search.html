@@ -5,7 +5,7 @@
 {% macro hit(h, title=None) %}
 {% set kinds = {'segment': 'Line', 'summary': 'Summary', 'task': 'Task', 'decision': 'Decision', 'fact': 'Note', 'person': 'Person', 'capture': 'Capture'} %}
 {% if h.kind == 'person' %}{% set href = "/people/" ~ h.ref_id %}{% elif h.kind == 'capture' %}{% set href = "/capture" %}
-{% elif h.cid %}{% set href = "/conversations/" ~ h.cid ~ ('#L' ~ h.line if h.line is defined and h.line is not none else '#sec-summary' if h.kind == 'summary' else '') %}
+{% elif h.cid %}{% set href = "/conversations/" ~ h.cid ~ ('?tx=1#L' ~ h.line if h.line is defined and h.line is not none else '#sec-summary' if h.kind == 'summary' else '') %}
 {% else %}{% set href = "/tasks" %}{% endif %}
 <div class="item tap-row hit"><div class="item-main">
   <a class="item-link snip" href="{{ href }}">{{ h.snip|e|replace('[[', '<mark>'|safe)|replace(']]', '</mark>'|safe) }}</a>
@@ -19,6 +19,7 @@
 <div class="page-head"><h1>Search</h1></div>
 {% set nf = (1 if f.person else 0) + (1 if f.said else 0) + (1 if f.start else 0) + (1 if f.end else 0) + (1 if f.sort != 'best' else 0) %}
 {# The box: ✕ clears the search (back to your recent searches); tapping it after a search drops recent ones down (app.js). #}
+<div class="sb-row">
 <form class="searchbar" method="get" action="/search" role="search">
   <div class="search-field">
     <input type="search" name="q" value="{{ q }}" placeholder="Search everything" aria-label="Search" {{ 'autofocus' if not q }}
@@ -33,6 +34,8 @@
   {% if tab != 'all' %}<input type="hidden" name="type" value="{{ tab }}">{% endif %}
   <button class="btn btn-primary" title="Search">{{ m.icon("search") }}<span class="sr-only">Search</span></button>
 </form>
+{# Advanced search on the phone too (Brian, 2026-11-23: it was only in the computer's top bar) #}
+<div class="sb-adv">{{ m.adv_search() }}</div></div>
 {% if q %}
 <nav class="tabs" aria-label="Kinds of results">
   {% for key, label in search_tabs.items() %}
@@ -40,22 +43,21 @@
      {{ 'aria-current=page' if tab == key }}>{{ label }}{% if counts and counts.get(key, 0) %} <span class="n">{{ counts.get(key, 0) }}</span>{% endif %}</a>
   {% endfor %}
 </nav>
-<details class="filters"{{ ' open' if nf }}>
-  <summary class="btn btn-ghost">{{ m.icon("filter") }} Filter{% if nf %} · {{ nf }}{% endif %}</summary>
-  <form class="toolbar" method="get" action="/search" {{ m.live("/search") }}>
-    <input type="hidden" name="q" value="{{ q }}">{% if tab != 'all' %}<input type="hidden" name="type" value="{{ tab }}">{% endif %}
-    <label class="inline-label">With <select name="person"><option value="">Anyone</option>
-      {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if f.person == p.id }}>{{ p.name }}</option>{% endfor %}</select></label>
-    <label class="inline-label">Said by <select name="said"><option value="">Anyone</option>
-      {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if f.said == p.id }}>{{ 'Me' if p.id == 1 else p.name }}</option>{% endfor %}</select></label>
-    <label class="inline-label">From <input type="date" name="start" value="{{ f.start }}"></label>
-    <label class="inline-label">To <input type="date" name="end" value="{{ f.end }}"></label>
-    <label class="inline-label">Sort <select name="sort">{% for k, l in [("best", "Best match"), ("new", "Newest"), ("old", "Oldest")] %}
-      <option value="{{ k }}" {{ 'selected' if f.sort == k }}>{{ l }}</option>{% endfor %}</select></label>
-    <noscript><button class="btn">Apply</button></noscript>
-    {% if nf %}<a class="btn btn-ghost" href="/search?q={{ q|urlencode }}{{ '&type=' ~ tab if tab != 'all' }}">Clear</a>{% endif %}
-  </form>
-</details>
+{# C2 + C3 (Brian, 2026-11-23): filter pills like the Gmail app. Each pill opens a full list to pick from (with its own
+   search for people); a set pill shows its value and an ✕ to clear it. #}
+{% set ppl = [] %}{% for p in people %}{% set _ = ppl.append({"v": p.id|string, "label": 'Me' if p.id == 1 else p.name}) %}{% endfor %}
+{% set others = ppl|rejectattr("v", "equalto", "1")|list %}
+{% set sorts = [{"v": "best", "label": "Best match"}, {"v": "new", "label": "Newest first"}, {"v": "old", "label": "Oldest first"}] %}
+{% macro pill(key, title, opts, cur, shown, people_list=False, dates=False) %}
+<button type="button" class="s-pill{{ ' on' if cur }}" data-spill='{{ {"key": key, "title": title, "opts": opts, "cur": cur|string if cur else "", "people": people_list, "dates": dates}|tojson }}'>
+  <span>{{ shown if cur else title }}</span>{% if cur %}<span class="s-pill-x" data-spill-clear="{{ key }}" role="button" aria-label="Clear {{ title }}"></span>{% else %}<span class="s-pill-chev" aria-hidden="true"></span>{% endif %}</button>
+{% endmacro %}
+<div class="s-pills" aria-label="Filters">
+  {{ pill("person", "With", others, f.person, (others|selectattr("v", "equalto", f.person|string)|map(attribute="label")|first) if f.person else "", True) }}
+  {{ pill("said", "Said by", ppl, f.said, (ppl|selectattr("v", "equalto", f.said|string)|map(attribute="label")|first) if f.said else "", True) }}
+  {{ pill("date", "Date", [], f.start or f.end, ((f.start ~ " to " ~ f.end) if f.start and f.end else ("From " ~ f.start) if f.start else ("Until " ~ f.end)) if (f.start or f.end) else "", False, True) }}
+  {{ pill("sort", "Sort", sorts, f.sort if f.sort != 'best' else "", (sorts|selectattr("v", "equalto", f.sort)|map(attribute="label")|first)) }}
+</div>
 
 {% if conv is defined %}
 <div class="section-head"><h2>“{{ q }}” in {{ conv.title if conv else 'this conversation' }}</h2><span class="count">{{ total }}</span>
@@ -81,7 +83,7 @@
     <div class="item tap-row group-head"><div class="item-main">
       <a class="item-link" href="/conversations/{{ g.id }}">{{ g.title }}</a>
       <div class="item-sub"><span>{{ g.at|local_date }}</span>{% if g.people %}<span>{{ g.people }}</span>{% endif %}</div></div>
-      <div class="item-actions badges">{{ m.area_badge(g.area, g.status == 'done') }}<span class="badge badge-outline">{{ g.hits }} hit{{ 's' if g.hits != 1 }}</span></div></div>
+      <div class="item-actions badges">{{ m.area_badge(g.area, g.status in ('done', 'transcribed')) }}<span class="badge badge-outline">{{ g.hits }} hit{{ 's' if g.hits != 1 }}</span></div></div>
     {% for h in g.rows %}{{ hit(h) }}{% endfor %}
     {% if g.hits > g.rows|length %}<a class="item show-more" href="{{ request.url.remove_query_params(['n']).include_query_params(conv=g.id) }}">
       All {{ g.hits }} in this conversation →</a>{% endif %}

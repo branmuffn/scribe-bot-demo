@@ -15,6 +15,7 @@ import re
 import sqlite3
 from datetime import datetime
 
+from scribe_bot.core.names import first_name
 from scribe_bot.ai import costs, prompts, router
 from scribe_bot.core import people
 from scribe_bot.core.db import now, transaction
@@ -50,8 +51,11 @@ def _prompt(conn: sqlite3.Connection, conversation_id: int) -> tuple[str, str, i
     kind, chosen = conn.execute("SELECT type, type_chosen FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
     custom = conn.execute("SELECT value FROM setting WHERE key = ?", (f"template:{kind}",)).fetchone()
     from scribe_bot.core import tags as tags_svc
+    long_s = conn.execute("SELECT coalesce((SELECT r.duration_s FROM recording r JOIN conversation c ON c.recording_id = r.id "
+                          "WHERE c.id = ?), (SELECT max(end_s) FROM segment WHERE conversation_id = ?), 0)",
+                          (conversation_id, conversation_id)).fetchone()[0] or 0
     return (prompts.extract_system(me, kind, custom[0] if custom else None, detect_learning=not chosen,
-                                   tags=tags_svc.names(conn)),
+                                   tags=tags_svc.names(conn), detailed=long_s >= prompts.DETAIL_MIN_S),
             prompts.render(lines), len(lines))
 
 
@@ -126,7 +130,7 @@ def _person_id(conn: sqlite3.Connection, name: str, area: str | None, create: bo
         if key in [p["name"].lower()] + [a.lower() for a in json.loads(p["aliases"])]:
             return p["id"]
     if " " not in key:
-        firsts = [p["id"] for p in rows if p["name"].lower().split()[0] == key]
+        firsts = [p["id"] for p in rows if first_name(p["name"]).lower() == key]
         if len(firsts) == 1:
             return firsts[0]
     if not create:
@@ -168,20 +172,72 @@ def relabel_speakers(conn: sqlite3.Connection, cid: int) -> None:
         reindex_ai_text(conn, cid)
 
 
+_PAREN_SAME = re.compile(r"\b([A-Z][\w'-]*(?: [A-Z][\w'-]*)*) \((?:\1|Speaker \d+)\)")
+
+
 def _patch_text(conn: sqlite3.Connection, cid: int, subs: list[tuple[re.Pattern, str]]) -> None:
     """Apply name replacements to this conversation's AI text (title, summary, key points, tasks, decisions, notes)."""
     def fix(text: str | None) -> str | None:
         for pat, name in subs:
             text = pat.sub(name, text) if text else text
-        return text
+        # "Casey (Casey)" / "Casey (Speaker 2)" after a swap -> "Casey" (Brian, 2026-11-23: "Casey (Morgan Example)")
+        return _PAREN_SAME.sub(r"\1", text) if text else text
 
-    c = conn.execute("SELECT title, summary, takeaways FROM conversation WHERE id = ?", (cid,)).fetchone()
-    conn.execute("UPDATE conversation SET title = ?, summary = ?, takeaways = ? WHERE id = ?",
-                 (fix(c["title"]), fix(c["summary"]), json.dumps([fix(t) for t in json.loads(c["takeaways"] or "[]")]), cid))
+    # Detailed notes too (Brian, 2026-11-23: Detailed still said "Speaker 1" after he named Morgan)
+    c = conn.execute("SELECT title, summary, takeaways, detailed FROM conversation WHERE id = ?", (cid,)).fetchone()
+    conn.execute("UPDATE conversation SET title = ?, summary = ?, takeaways = ?, detailed = ? WHERE id = ?",
+                 (fix(c["title"]), fix(c["summary"]), json.dumps([fix(t) for t in json.loads(c["takeaways"] or "[]")]),
+                  fix(c["detailed"]), cid))
     for table, col in (("task", "title"), ("decision", "text"), ("person_fact", "value")):
         for r in conn.execute(f"SELECT id, {col} FROM {table} WHERE conversation_id = ?", (cid,)).fetchall():
             if fix(r[col]) != r[col]:
                 conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (fix(r[col]), r["id"]))
+    # Short titles for lists too (Brian, 2026-11-22: "You owe" still said "Speaker 1" after he named her Morgan).
+    # They stay short: the first name only ("Dr. Riley Example" -> "Riley").
+    def first(name: str) -> str:
+        parts = [w for w in name.split() if not re.fullmatch(r"(?i)(dr|mr|mrs|ms|prof)\.?", w)]
+        return parts[0] if parts else name
+    def fix_short(text: str | None) -> str | None:
+        for pat, name in subs:
+            text = pat.sub(first(name), text) if text else text
+        return text
+    for table, where in (("task", "conversation_id = ?"), ("conversation", "id = ?")):
+        for r in conn.execute(f"SELECT id, short_title FROM {table} WHERE {where}", (cid,)).fetchall():
+            if r["short_title"] and fix_short(r["short_title"]) != r["short_title"]:
+                conn.execute(f"UPDATE {table} SET short_title = ? WHERE id = ?", (fix_short(r["short_title"]), r["id"]))
+
+
+def unname_in_text(conn: sqlite3.Connection, sid: int, pid: int) -> None:
+    """"This isn't X" (Brian, 2026-11-23: the summary and tasks still said Morgan after he un-named her). In this
+    talk, X's name in the AI text goes back to "Speaker N", and X's tasks and notes from this talk go to that
+    speaker's placeholder. Naming the right person later patches "Speaker N" to them (relabel_speakers), so naming
+    before or after the AI notes ends the same, with no AI call or cost. Call after speaker.person_id is cleared."""
+    sp = conn.execute("SELECT conversation_id FROM speaker WHERE id = ?", (sid,)).fetchone()
+    person = conn.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()
+    if sp is None or person is None:
+        return
+    cid = sp["conversation_id"]
+    if conn.execute("SELECT 1 FROM speaker WHERE conversation_id = ? AND person_id = ?", (cid, pid)).fetchone():
+        return   # X really is another voice in this talk: their name stays
+    conv = conn.execute("SELECT * FROM conversation WHERE id = ?", (cid,)).fetchone()
+    n = speaker_numbers(conn, cid).get(sid)
+    if n is None:
+        return
+    ph = _speaker_person(conn, conv, n, None, conv["area"], create=True)
+    name = person["name"].strip()
+    word = lambda w: re.compile(rf"(?<![\w-]){re.escape(w)}(?![\w-])")  # noqa: E731
+    subs = [(word(name), f"Speaker {n}")]
+    first = first_name(name)
+    others = conn.execute("SELECT p.name FROM speaker s JOIN person p ON p.id = s.person_id WHERE s.conversation_id = ?",
+                          (cid,)).fetchall()
+    if first != name and not any(first_name(o[0]) == first for o in others):
+        subs.append((word(first), f"Speaker {n}"))
+    _patch_text(conn, cid, subs)   # the caller holds the transaction
+    ph_name = conn.execute("SELECT name FROM person WHERE id = ?", (ph,)).fetchone()[0]
+    conn.execute("UPDATE task SET owner_person_id = ? WHERE conversation_id = ? AND owner_person_id = ?", (ph, cid, pid))
+    conn.execute("UPDATE person_fact SET person_id = ?, person_name = ? WHERE conversation_id = ? AND person_id = ?",
+                 (ph, ph_name, cid, pid))
+    reindex_ai_text(conn, cid)
 
 
 def rename_in_text(conn: sqlite3.Connection, pid: int, old: str, new: str) -> int:
@@ -190,7 +246,7 @@ def rename_in_text(conn: sqlite3.Connection, pid: int, old: str, new: str) -> in
     name too, unless someone else in that conversation shares it. Adding a surname ("Alex" → "Alex Rivera") changes
     nothing: "Alex" is still right. Returns how many conversations were patched."""
     old, new = old.strip(), new.strip()
-    old_first, new_first = old.split()[0], new.split()[0]
+    old_first, new_first = first_name(old), first_name(new)
     if old == new or old_first.lower() == "speaker":   # placeholders are patched by relabel_speakers
         return 0
     cids = [r[0] for r in conn.execute(
@@ -205,7 +261,7 @@ def rename_in_text(conn: sqlite3.Connection, pid: int, old: str, new: str) -> in
         if old_first != new_first:
             others = conn.execute("SELECT p.name FROM speaker s JOIN person p ON p.id = s.person_id "
                                   "WHERE s.conversation_id = ? AND p.id != ?", (cid, pid)).fetchall()
-            if not any(o[0].split()[0] == old_first for o in others):
+            if not any(first_name(o[0]) == old_first for o in others):
                 subs.append((word(old_first), new_first))
         if subs:
             _patch_text(conn, cid, subs)
@@ -253,9 +309,11 @@ def _write(conn: sqlite3.Connection, conv: sqlite3.Row, data: dict, processed_by
         # The AI topic title replaces the fallback; recording.title keeps the original Recorder name.
         if data.get("learning") is True:  # the AI spotted a talk/class (only asked when Brian didn't pick the type)
             conn.execute("UPDATE conversation SET type = 'learning' WHERE id = ? AND type_chosen = 0", (cid,))
-        conn.execute("UPDATE conversation SET title = coalesce(?, title), short_title = NULL, summary = ?, takeaways = '[]', processed_by = ?, "
+        conn.execute("UPDATE conversation SET title = coalesce(?, title), short_title = ?, summary = ?, takeaways = '[]', processed_by = ?, "
                      "status = 'extracted', summary_type = type, updated_at = ? WHERE id = ?",
-                     (data.get("title"), data["summary"], processed_by, t, cid))
+                     (data.get("title"), data.get("short_title"), data["summary"], processed_by, t, cid))
+        if data.get("detailed"):   # 30 min or longer: detailed notes came in the same reply
+            conn.execute("UPDATE conversation SET detailed = ?, detailed_at = ? WHERE id = ?", (data["detailed"], t, cid))
         if conv["area"] is None:
             conn.execute("UPDATE conversation SET area = ?, area_confidence = ?, area_guess = ? WHERE id = ?",
                          (area, data.get("area_confidence"), guess, cid))
@@ -268,10 +326,10 @@ def _write(conn: sqlite3.Connection, conv: sqlite3.Row, data: dict, processed_by
             confidence = item.get("confidence")
             inbox = int(confidence is not None and confidence < INBOX_BELOW)
             tid = conn.execute(
-                "INSERT INTO task (conversation_id, title, owner_person_id, due, area, confidence, inbox, "
-                "source_segment_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (cid, item["title"].strip(), owner, item.get("due"), area, confidence, inbox, seg.get(item.get("line")),
-                 t, t)).lastrowid
+                "INSERT INTO task (conversation_id, title, short_title, owner_person_id, due, area, confidence, inbox, "
+                "source_segment_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cid, item["title"].strip(), prompts._short(item.get("short"), prompts.TASK_SHORT_MAX), owner, prompts.clean_due(item.get("due")),
+                 area, confidence, inbox, seg.get(item.get("line")), t, t)).lastrowid
             if inbox:
                 conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) "
                              "VALUES ('inbox', ?, ?, ?, ?)", (cid, tid, json.dumps({"reason": "low confidence"}), t))

@@ -61,11 +61,11 @@
 {% set late_mine = i_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
 {% set late_theirs = they_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
 <nav class="card group-rows section" aria-label="{{ p.name }} at a glance">
-  <a class="row1" href="#person-open"><span class="r1-t">You owe {{ p.name.split(' ')[0] }}</span><span class="r1-v{{ ' warn-text' if late_mine }}">{{ i_owe|length }}{% if late_mine %} · {{ late_mine }} late{% endif %}</span><span class="go">›</span></a>
-  <a class="row1" href="#person-open"><span class="r1-t">{{ p.name.split(' ')[0] }} owes you</span><span class="r1-v{{ ' warn-text' if late_theirs }}">{{ they_owe|length }}{% if late_theirs %} · {{ late_theirs }} late{% endif %}</span><span class="go">›</span></a>
+  <a class="row1" href="#person-open"><span class="r1-t">You owe {{ p.name|first_name }}</span><span class="r1-v{{ ' warn-text' if late_mine }}">{{ i_owe|length }}{% if late_mine %} · {{ late_mine }} late{% endif %}</span><span class="go">›</span></a>
+  <a class="row1" href="#person-open"><span class="r1-t">{{ p.name|first_name }} owes you</span><span class="r1-v{{ ' warn-text' if late_theirs }}">{{ they_owe|length }}{% if late_theirs %} · {{ late_theirs }} late{% endif %}</span><span class="go">›</span></a>
   <a class="row1" href="#person-facts"><span class="r1-t">Notes</span><span class="r1-v">{{ facts|length }}</span><span class="go">›</span></a>
   <a class="row1" href="#sec-convs"><span class="r1-t">Talks</span><span class="r1-v">{{ n_convs }}</span><span class="go">›</span></a>
-  {% if talk_time %}<div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name.split(' ')[0] }} {{ (talk_time.their_share * 100)|round|int }}% · you {{ (talk_time.my_share * 100)|round|int }}%</small></span><span class="r1-v">{{ talk_time.seconds|hours }}</span></div>{% endif %}
+  {% if talk_time %}<div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name|first_name }} {{ (talk_time.their_share * 100)|round|int }}% · you {{ (talk_time.my_share * 100)|round|int }}%</small></span><span class="r1-v">{{ talk_time.seconds|hours }}</span></div>{% endif %}
 </nav>
 
 <section class="section" id="person-open">
@@ -84,7 +84,7 @@
 <section class="section" id="person-facts">
   {{ m.section("Notes", facts|length) }}
   <div class="card" data-limit="5">{% for f in facts %}{{ m.fact_row(f, people, show_source=True, tgt="person-facts") }}
-    {% else %}{{ m.empty("note", "No notes yet", "Birthdays, family, trips and preferences mentioned in conversations collect here.") }}{% endfor %}</div>
+    {% else %}{{ m.empty("note", "No notes yet", "Birthdays, family, trips and preferences mentioned in your talks collect here.") }}{% endfor %}</div>
 </section>
 
 <section class="section" id="sec-convs">

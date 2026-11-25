@@ -86,6 +86,11 @@ flowchart LR
 | Notifications | Discord webhook (alerts only) |
 | Quality | pytest, GitHub Actions on synthetic data, gitleaks pre-commit hook |
 
+## Try it on the web
+
+The same Demo mode can run on Vercel with made-up meetings only: no keys, no AI calls, and changes reset on their own.
+How it's set up: [`docs/VERCEL.md`](docs/VERCEL.md).
+
 ## Run it yourself (Demo mode)
 
 Demo mode needs no phone, accounts, keys, speech models, or audio. It creates a separate `demo-data/` folder with

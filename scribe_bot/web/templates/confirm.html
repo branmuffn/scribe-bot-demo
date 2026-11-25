@@ -1,6 +1,8 @@
 {% extends layout %}
 {% import "macros.html" as m with context %}
 {% block title %}Confirm · Scribe Bot{% endblock %}
+{# R5-25: as its own page (a swipe or right-click › Summarize) it had no back link, unlike every other page #}
+{% block back %}{% set names = {"/inbox": "Inbox", "/conversations": "Talks", "/review": "Review", "/settings/keys": "Accounts & Keys"} %}<a class="back-link" href="{{ cancel }}">‹ {{ names.get(cancel) or ("Talk" if cancel.startswith("/conversations/") else "Back") }}</a>{% endblock %}
 {% block body %}
 {# Step 2 of anything that costs money: shown inline (htmx) or as its own page (no JS). The money is spent only by the
    Confirm button below, never by the first tap. #}

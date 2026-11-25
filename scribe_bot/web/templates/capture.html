@@ -1,26 +1,38 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
-{% block title %}Capture · Scribe Bot{% endblock %}
+{% block title %}Add recording · Scribe Bot{% endblock %}
+{% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
 {% block body %}
-<div class="page-head"><h1>Capture</h1></div>
+<div class="page-head"><h1>Add recording</h1></div>
 {% if saved %}<div class="notice ok" role="status">{{ m.icon("check-circle") }}<div>{{ {'note': 'Note saved.', 'audio': "Recording received. It shows up in the Inbox in a minute, waiting for your OK, like a synced recording.",
   'older': "You already had this recording on the M14 (it synced earlier but was never processed). It's now in the Inbox, waiting for your OK.",
-  'known': "Scribe Bot already has this recording, so nothing new was added. Find it in Conversations.",
+  'known': "Scribe Bot already has this recording, so nothing new was added. Find it in Talks.",
   'transcript': "Transcript saved. It shows on its recording in the Inbox (the names must match).", 'none': 'Nothing was picked.', 'share': 'Saved to Capture.'}.get(saved, 'Saved.') }}</div></div>{% endif %}
 
-<section class="section">
-  {{ m.section("Record here") }}
-  <div class="card pad stack">
-    <button type="button" id="record" class="btn btn-primary" hidden>{{ m.icon("mic") }} Start recording</button>
-    <form method="post" action="/capture/upload" enctype="multipart/form-data" class="row">
-      <input type="file" name="file" accept="audio/*,.m4a,.txt,text/plain" multiple required aria-label="Audio files and transcripts" class="grow"><button class="btn">Upload</button>
+{# N10 (Brian picked ⭐, 2026-11-25: "looks like a wide version of mobile"): on a computer, two columns. Left: a big
+   drop zone (click it to choose files; picked or dropped files upload at once with the progress card) and Record here.
+   Right: a text note and what was captured lately. Phones: the same pieces, one under the other. #}
+<div class="cap-grid">
+<section class="section cap-main">
+  {{ m.section("Add audio") }}
+  <div class="card pad stack cap-card">
+    <form method="post" action="/capture/upload" enctype="multipart/form-data" class="cap-form">
+      <label class="cap-zone">
+        <span class="cap-ic" aria-hidden="true">{{ m.icon("download") }}</span>
+        <b class="cap-t"><span class="desk-txt">Drop recordings here</span><span class="ph-txt">Choose recordings</span></b>
+        <span class="meta cap-s"><span class="desk-txt">or <u>choose files</u> · </span>m4a, mp3, wav or webm · several at once</span>
+        <input type="file" name="file" accept="audio/*,.m4a,.txt,text/plain" multiple required aria-label="Audio files and transcripts" class="cap-file" onchange="this.form.requestSubmit()">
+      </label>
+      <noscript><button class="btn">Upload</button></noscript>
     </form>
+    <div class="cap-rec"><span class="meta">Or record here, in the browser</span><button type="button" id="record" class="btn btn-primary" hidden>{{ m.icon("mic") }} Start recording</button></div>
     <details class="fx-info"><summary>ⓘ Which files work</summary><div class="meta">m4a, mp3, wav or webm; pick several at once. A .txt with the same name as a recording is its transcript
-      for the Inbox.
-      Apple Voice Memos on a Mac: drag memos from the app onto the desktop, then pick them here.</div></details>
+      for the Inbox. You can also drop files on any Scribe Bot page.
+      Apple Voice Memos on a Mac: drag memos from the app onto this box.</div></details>
   </div>
 </section>
 
+<div class="cap-side">
 <section class="section">
   {{ m.section("Text note") }}
   <div class="card pad">
@@ -40,4 +52,6 @@
     {% else %}{{ m.empty("note", "Nothing captured yet", "Share links, text and screenshots here from any Android app's share menu.") }}{% endfor %}
   </div>
 </section>
+</div>
+</div>
 {% endblock %}

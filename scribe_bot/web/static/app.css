@@ -576,7 +576,7 @@ details.filters form { margin-top: var(--s2) }
 .overall { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); margin-bottom: var(--s3); font-weight: 600 }
 .overall.lv-warn { border-color: var(--warn) } .overall.lv-bad { border-color: var(--bad) }
 .ranges td, .ranges th { padding: var(--s1) var(--s2); text-align: left; vertical-align: top; font-size: var(--fs-sm) }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--s3) }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--s3); align-items: start }   /* F23: a closed chart no longer stretches to an open one beside it */
 .chart-card { padding: 0 var(--s4); position: relative }
 .chart-head { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); padding: var(--s2) 0; cursor: pointer; list-style: none }
 .chart-head::-webkit-details-marker { display: none }
@@ -1302,6 +1302,8 @@ body:has(.pk2:not([hidden])) .fab, body:has(.pk2:not([hidden])) .tabbar { visibi
 .ts-pick { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; min-height: 48px; padding: 4px 2px; cursor: pointer;
   border-bottom: 1px solid var(--line); -webkit-tap-highlight-color: transparent; transition: background .12s }
 .ts-pick:active { background: var(--acc-soft) }
+/* F29: .grow's 10rem minimum pushed a longer value ("Nov 18 ›") onto a second line in the narrow right-hand pane */
+.ts-pick .grow, .ts-row > summary .grow, a.ts-row .grow { min-width: 0 }
 .qp-row { position: relative; cursor: pointer }
 .qp-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; margin: 0; font-size: 16px; pointer-events: none }
 .qp-select { pointer-events: auto; cursor: pointer; appearance: none; -webkit-appearance: none }   /* tap opens the list itself */
@@ -1416,6 +1418,13 @@ html.pop-lock { overflow: hidden; overscroll-behavior: none }
 .item-sub > * { flex: none; min-width: 0 }
 .item-sub > :last-child { flex: 0 1 auto !important; overflow: hidden; text-overflow: ellipsis }
 .task-row .item-sub > a:last-child, .unsure-row .item-sub > span:last-child { flex-basis: auto !important }
+/* F30: a long name ("Dr. Evangeline Montgomery-Whitfield") hard-cut the due date ("due Nov 1", "due yesterd") or hid it.
+   The due date never shrinks; the talk's title gives way first, then the name ends in "…". */
+.item-sub > b:not(:last-child) { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 4em }
+.item-sub > :last-child:not(:first-child):not(.due-v) { flex-shrink: 100 !important }
+.item-sub > .due-v { flex: none }
+/* F31: Decisions read "Nov 25  DEMO: Product kickoff" with no "·" between the date and the talk (a link after a span) */
+.item-sub > :is(span, b):not(.badge) + a::before { content: "·"; margin: 0 6px 0 -2px; color: var(--muted); display: inline-block }
 .prog-preview, .inbox-preview { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset !important }
 .steps li { flex-wrap: nowrap; white-space: nowrap }
 .steps li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis }

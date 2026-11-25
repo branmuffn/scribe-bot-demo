@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BeforeValidator
 
 from scribe_bot.ai import accounts, costs, extract, jobs as ai_jobs, prompts, router as ai_router
-from scribe_bot.backup.trash import TRASH_DAYS
+from scribe_bot.backup.trash import TRASH_DAYS, purge_due as trash_purge_due
 from scribe_bot.core.names import first_name
 from scribe_bot.core import cleanup, cleanup_devices, db, queue, machine, people as people_svc, progress, tags as tags_svc, talk
 from scribe_bot.discord_bot import notify, sender
@@ -160,6 +160,7 @@ def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | Non
     m14 = machine.needs_attention(conn) if conn else []
     if conn:
         notify.tidy(conn)   # done things leave the bell before its count is read
+        trash_purge_due(conn)
     return templates.TemplateResponse(request, name, {"nav": nav, "area": area, "today": date.today().isoformat(),
                                                       "undo": undo.latest(conn) if conn else None,
                                                       "toast": NOTES.get(request.query_params.get("note", "")),
@@ -168,7 +169,7 @@ def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | Non
                                                       "head_alert": bool(m14), "now_iso": db.now(),
                                                       "ring": status_ring(conn, bool(m14)) if conn else None,
                                                       "n_trash": conn.execute("SELECT count(*) FROM conversation WHERE deleted_at "
-                                                                              "IS NOT NULL").fetchone()[0] if conn else 0,
+                                                                              "IS NOT NULL AND purge_at IS NULL").fetchone()[0] if conn else 0,
                                                       "n_older": conn.execute("SELECT count(*) FROM recording WHERE status = "
                                                                               "'backlog'").fetchone()[0] if conn else 0,
                                                       "bell_new": bell_new(conn) if conn else 0,
@@ -802,7 +803,7 @@ def conversations_page(request: Request, person: int | None = None, type: str | 
                        order: str = "newest", conn: sqlite3.Connection = Conn):
     if trash:
         rows = [{**dict(r), "gone_on": gone_on(r["deleted_at"])} for r in conn.execute(
-            "SELECT * FROM conversation WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")]
+            "SELECT * FROM conversation WHERE deleted_at IS NOT NULL AND purge_at IS NULL ORDER BY deleted_at DESC")]
         skipped = [{**dict(r), "gone_on": gone_on(r["resolved_at"])} for r in conn.execute(   # Inbox Skip lands here too
             "SELECT r.id, r.title, r.duration_s, r.received_at, max(i.resolved_at) AS resolved_at FROM recording r "
             "JOIN review_item i ON i.kind = 'approval' AND i.ref_id = r.id AND i.status = 'dismissed' "
@@ -861,15 +862,36 @@ UNSORTED = f"c.area IS NULL AND {FINISHED}"   # finished, not filed as Work or H
 
 @router.post("/recordings/{rid}/unskip")
 def recording_unskip(request: Request, rid: int, conn: sqlite3.Connection = Conn):
-    """Trash › Skipped recordings › Restore: back to the Inbox, as if it had never been skipped."""
+    """Trash › Skipped recordings › Restore: back to the Inbox, as if it had never been skipped. Undo puts it back in
+    Trash (2026-11-25)."""
     with db.transaction(conn):
-        if conn.execute("UPDATE recording SET status = 'awaiting_approval' WHERE id = ? AND status = 'declined' "
-                        "AND audio_deleted_at IS NULL", (rid,)).rowcount:
+        if _unskip_rows(conn, [rid]):
+            undo.add(conn, undo.save(conn, "Restored", []), _unskip_rows(conn, [rid]))
+            _unskip(conn, rid)
+    return back(request, "/conversations?trash=1")
+
+
+def _unskip_rows(conn: sqlite3.Connection, rids: list[int]) -> list[tuple[str, int]]:
+    """What restoring skipped recordings changes (for Undo): each recording and its newest Inbox ask."""
+    rows = []
+    for rid in rids:
+        if conn.execute("SELECT 1 FROM recording WHERE id = ? AND status = 'declined' AND audio_deleted_at IS NULL",
+                        (rid,)).fetchone():
+            rows.append(("recording", rid))
             item = conn.execute("SELECT id FROM review_item WHERE kind = 'approval' AND ref_id = ? ORDER BY id DESC LIMIT 1",
                                 (rid,)).fetchone()
             if item:
-                conn.execute("UPDATE review_item SET status = 'open', resolved_at = NULL WHERE id = ?", (item[0],))
-    return back(request, "/conversations?trash=1")
+                rows.append(("review_item", item[0]))
+    return rows
+
+
+def _unskip(conn: sqlite3.Connection, rid: int) -> None:
+    if conn.execute("UPDATE recording SET status = 'awaiting_approval' WHERE id = ? AND status = 'declined' "
+                    "AND audio_deleted_at IS NULL", (rid,)).rowcount:
+        item = conn.execute("SELECT id FROM review_item WHERE kind = 'approval' AND ref_id = ? ORDER BY id DESC LIMIT 1",
+                            (rid,)).fetchone()
+        if item:
+            conn.execute("UPDATE review_item SET status = 'open', resolved_at = NULL WHERE id = ?", (item[0],))
 
 
 def gone_on(deleted_at: str | None) -> str | None:
@@ -879,7 +901,7 @@ def gone_on(deleted_at: str | None) -> str | None:
 
 def get_conversation(conn: sqlite3.Connection, cid: int) -> sqlite3.Row:
     c = conn.execute("SELECT * FROM conversation WHERE id = ?", (cid,)).fetchone()
-    if c is None:
+    if c is None or c["purge_at"]:   # purge_at: deleted forever, waiting out its Undo time
         raise HTTPException(404, "That talk isn't here any more (deleted for good, or the link is wrong)")
     return c
 
@@ -1322,8 +1344,12 @@ def talks_bulk(request: Request, ids: str = Form(...), what: str = Form(...), co
 
 @router.post("/conversations/{cid}/restore")
 def restore_conversation(request: Request, cid: int, conn: sqlite3.Connection = Conn):
-    get_conversation(conn, cid)
-    conn.execute("UPDATE conversation SET deleted_at = NULL, updated_at = ? WHERE id = ?", (db.now(), cid))
+    """Trash › Restore. Undo puts it back in Trash (2026-11-25)."""
+    c = get_conversation(conn, cid)
+    if c["deleted_at"]:
+        with db.transaction(conn):
+            undo.save(conn, "Restored", [("conversation", cid)])
+            conn.execute("UPDATE conversation SET deleted_at = NULL, updated_at = ? WHERE id = ?", (db.now(), cid))
     return back(request, f"/conversations/{cid}")
 
 
@@ -1413,21 +1439,34 @@ def merge_same_person(conn: sqlite3.Connection, cid: int, sid: int, person_id: i
 
 @router.post("/speakers/{sid}/unassign")
 def unassign_speaker(request: Request, sid: int, conn: sqlite3.Connection = Conn):
-    """"This isn't X": the speaker goes back to unnamed (and back into Review) so Brian can name them again."""
+    """"This isn't X": the speaker goes back to unnamed (and back into Review) so Brian can name them again. Undo (10
+    minutes, 2026-11-25) puts the name back everywhere: the line names, the AI notes, tasks, notes and the voiceprint."""
     sp = conn.execute("SELECT * FROM speaker WHERE id = ?", (sid,)).fetchone()
     if sp is None:
         raise HTTPException(404, "That speaker isn't here any more")
+    cid, pid = sp["conversation_id"], sp["person_id"]
     with db.transaction(conn):
+        uid = undo.save(conn, "Name taken off", [
+            ("speaker", sid), ("conversation", cid),
+            *(("task", r[0]) for r in conn.execute("SELECT id FROM task WHERE conversation_id = ? AND owner_person_id = ?", (cid, pid))),
+            *(("person_fact", r[0]) for r in conn.execute("SELECT id FROM person_fact WHERE conversation_id = ? AND person_id = ?",
+                                                          (cid, pid)))])
+        stand_in = conn.execute("SELECT id FROM person WHERE stands_for_speaker = ?", (sid,)).fetchone()
+        if pid and sp["confirmed"]:
+            undo.voiceprint(conn, uid, pid)
         if sp["person_id"] and sp["confirmed"]:   # take this voice back out of their voiceprint, so it stops matching
             identify.unenroll(conn, sid, sp["person_id"], cfg=request.app.state.cfg)
         conn.execute("UPDATE speaker SET person_id = NULL, confirmed = 0, match_score = NULL, unknown = 0 WHERE id = ?", (sid,))
         if sp["person_id"]:   # their name leaves this talk's summary, tasks and notes too (Brian, 2026-11-23)
             extract.unname_in_text(conn, sid, sp["person_id"])
+        if not stand_in and (made := conn.execute("SELECT id FROM person WHERE stands_for_speaker = ?", (sid,)).fetchone()):
+            undo.created(conn, uid, "person", made[0])   # the "Speaker N" stand-in their tasks moved to
         if not conn.execute("SELECT 1 FROM review_item WHERE kind = 'speaker' AND ref_id = ? AND status = 'open'",
                             (sid,)).fetchone():
-            conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('speaker', ?, ?, ?, ?)",
-                         (sp["conversation_id"], sid, json.dumps({"clip": sp["clip_path"]}), db.now()))
-    return back(request, f"/conversations/{sp['conversation_id']}")
+            undo.created(conn, uid, "review_item", conn.execute(
+                "INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('speaker', ?, ?, ?, ?)",
+                (cid, sid, json.dumps({"clip": sp["clip_path"]}), db.now())).lastrowid)
+    return back(request, f"/conversations/{cid}")
 
 
 def _close_speaker_reviews(conn: sqlite3.Connection, sids: list[int]) -> None:
@@ -1811,7 +1850,11 @@ def person_from_form(conn: sqlite3.Connection, person_id: int | None, new_name: 
 
 @router.post("/undo/{uid}")
 def undo_action(request: Request, uid: int, conn: sqlite3.Connection = Conn):
-    if not undo.undo(conn, uid):
+    try:
+        done = undo.undo(conn, uid, cfg=request.app.state.cfg)
+    except undo.Blocked as e:
+        raise HTTPException(409, str(e))
+    if not done:
         raise HTTPException(410, "Too late to undo that (or it was already undone)")
     return back(request)
 
@@ -2017,21 +2060,34 @@ def tasks_bulk(request: Request, what: str, ids: str = Form(...), conn: sqlite3.
 @router.post("/trash-bulk/{what}")
 def trash_bulk(request: Request, what: str, ids: str = Form(...), conn: sqlite3.Connection = Conn):
     """N4 / A3.3 (Brian, 2026-11-25): Trash › pick several › Restore or Delete forever. Ids look like c12 (a talk) or r5
-    (a recording skipped in the Inbox). Delete forever removes the picked talks now (their audio goes in the nightly
-    clean-up). Skipped recordings leave by themselves after 30 days, so Delete forever leaves them as they are."""
+    (a recording skipped in the Inbox). Skipped recordings leave by themselves after 30 days, so Delete forever leaves
+    them as they are. Both can be undone (Brian, 2026-11-25: "what if I do need to undo it"): Delete forever takes the
+    talks out of Trash at once and deletes them for good once the Undo time is over (trash.purge_due; their audio goes
+    in the nightly clean-up)."""
     picked = [x.strip() for x in ids.split(",")]
     cids = [int(x[1:]) for x in picked if x[:1] == "c" and x[1:].isdigit()]
     rids = [int(x[1:]) for x in picked if x[:1] == "r" and x[1:].isdigit()]
-    cids = [c for c in cids if conn.execute("SELECT 1 FROM conversation WHERE id = ? AND deleted_at IS NOT NULL", (c,)).fetchone()]
+    cids = [c for c in dict.fromkeys(cids) if conn.execute(
+        "SELECT 1 FROM conversation WHERE id = ? AND deleted_at IS NOT NULL AND purge_at IS NULL", (c,)).fetchone()]
     if what == "restore":
-        with db.transaction(conn):
-            for c in cids:
-                conn.execute("UPDATE conversation SET deleted_at = NULL, updated_at = ? WHERE id = ?", (db.now(), c))
-        for r in rids:
-            recording_unskip(request, r, conn)
+        rows = _unskip_rows(conn, list(dict.fromkeys(rids)))
+        n = len(cids) + sum(1 for t, _ in rows if t == "recording")
+        if n:
+            with db.transaction(conn):
+                uid = undo.save(conn, "Restored" if n == 1 else f"{n} items restored", [("conversation", c) for c in cids])
+                undo.add(conn, uid, rows)
+                for c in cids:
+                    conn.execute("UPDATE conversation SET deleted_at = NULL, updated_at = ? WHERE id = ?", (db.now(), c))
+                for t, r in rows:
+                    if t == "recording":
+                        _unskip(conn, r)
     elif what == "forever" and cids:
-        from scribe_bot.backup import trash as trash_svc
-        trash_svc._purge_talks(conn, cids)
+        at = (datetime.fromisoformat(db.now()) + timedelta(seconds=undo.UNDO_WITHIN_S + 60)).isoformat(timespec="seconds")
+        with db.transaction(conn):
+            undo.save(conn, "Deleted forever" if len(cids) == 1 else f"{len(cids)} talks deleted forever",
+                      [("conversation", c) for c in cids])
+            for c in cids:
+                conn.execute("UPDATE conversation SET purge_at = ? WHERE id = ?", (at, c))
     return RedirectResponse("/conversations?trash=1", status_code=303)
 
 
@@ -2257,8 +2313,12 @@ def merge_preview(request: Request, pid: int, into: int, conn: sqlite3.Connectio
 
 @router.post("/people/{pid}/merge")
 def merge_people(pid: int, into: int = Form(...), conn: sqlite3.Connection = Conn):
+    """Merge two people. Undo (10 minutes, 2026-11-25) brings the merged-away person back with everything they had."""
     try:
-        people_svc.merge(conn, pid, into)
+        with db.transaction(conn):
+            uid = undo.save(conn, "People merged", [])
+            _merge_with_undo(conn, uid, pid, into)
+            undo.after(conn, uid, "person", into)
     except LookupError:
         raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     except ValueError as e:
@@ -2278,15 +2338,32 @@ def people_not_same(pid: int, into: int = Form(...), later: int = Form(0), conn:
 
 @router.post("/people/merge-many")
 def merge_many(ids: str = Form(...), into: int = Form(...), conn: sqlite3.Connection = Conn):
-    others = [i for i in _ids(ids) if i != into]
+    """People › Select › Merge: one Undo brings them all back (2026-11-25)."""
+    others = [i for i in _ids(ids) if i != into and conn.execute("SELECT 1 FROM person WHERE id = ?", (i,)).fetchone()]
     if ME in others:
         raise HTTPException(400, "You can't be merged into someone else; keep your own name")
-    for pid in others:   # each merge is its own transaction (people.merge)
-        try:
-            people_svc.merge(conn, pid, into)
-        except LookupError:
-            continue
+    if not conn.execute("SELECT 1 FROM person WHERE id = ?", (into,)).fetchone():
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
+    if others:
+        with db.transaction(conn):
+            uid = undo.save(conn, f"{len(others) + 1} people merged", [])
+            for pid in others:
+                _merge_with_undo(conn, uid, pid, into)
+            undo.after(conn, uid, "person", into)
     return RedirectResponse(f"/people/{into}", status_code=303)
+
+
+def _merge_with_undo(conn: sqlite3.Connection, uid: int, pid: int, into: int) -> None:
+    """Merge person `pid` into `into` inside the caller's transaction, saving what Undo needs first: the rows that move,
+    the person who goes, and both voiceprints (merge combines them into one)."""
+    undo.add(conn, uid, people_svc.merge_undo_rows(conn, pid, into))
+    undo.removed(conn, uid, "person", "id = ?", (pid,))
+    first = not any(d.get("table") == "voiceprint_clear" and d.get("person_id") == into
+                    for d in json.loads(conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()[0]))
+    if first:   # the kept person's voiceprint as it was before the first merge
+        undo.voiceprint(conn, uid, into)
+    undo.voiceprint(conn, uid, pid)
+    people_svc.merge(conn, pid, into, own_transaction=False)
 
 
 @router.post("/people/delete-many")
@@ -2615,6 +2692,9 @@ def inbox_merge(request: Request, ids: str = Form(...), conn: sqlite3.Connection
         new_id = merge_svc.merge(conn, request.app.state.cfg, [int(x) for x in ids.split(",") if x.strip().isdigit()])
     except merge_svc.MergeError as e:
         raise HTTPException(400, str(e))
+    with db.transaction(conn):   # Undo splits it back while it's still waiting (2026-11-25), like Unmerge
+        n = conn.execute("SELECT count(*) FROM recording_part WHERE recording_id = ?", (new_id,)).fetchone()[0]
+        undo.created(conn, undo.save(conn, f"{n} recordings merged", []), "inbox_merge", new_id)
     return RedirectResponse(f"/inbox#rec-{new_id}", status_code=303)
 
 
@@ -3288,7 +3368,7 @@ def known_result(conn: sqlite3.Connection, rec_id: int) -> dict:
     joined = conn.execute("SELECT recording_id FROM recording_part WHERE source_id = ? ORDER BY id DESC LIMIT 1",
                           (row["id"],)).fetchone()
     talk = conn.execute("SELECT id, deleted_at, coalesce(short_title, title) AS title FROM conversation WHERE recording_id = ? "
-                        "ORDER BY deleted_at IS NOT NULL, id DESC LIMIT 1",
+                        "AND purge_at IS NULL ORDER BY deleted_at IS NOT NULL, id DESC LIMIT 1",
                         (joined["recording_id"] if joined else row["id"],)).fetchone()
     if talk and talk["deleted_at"]:
         return {"result": "known", "title": talk["title"], "href": "/conversations?trash=1", "trash": True}

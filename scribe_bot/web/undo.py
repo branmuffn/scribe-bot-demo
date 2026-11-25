@@ -22,7 +22,9 @@ COLUMNS = {
     "task": ("title", "short_title", "owner_person_id", "due", "status", "closed_as", "closed_note", "remind_at", "rated",
              "inbox", "area", "confidence", "archived_at", "stale_at", "updated_at"),
     "decision": ("rated", "text", "people"),
-    "conversation": ("title", "short_title", "summary", "takeaways", "detailed", "deleted_at", "type", "area", "private"),
+    "conversation": ("title", "short_title", "summary", "takeaways", "detailed", "deleted_at", "purge_at", "type", "area",
+                     "private"),   # purge_at: Trash › Delete forever waits out the Undo time (2026-11-25)
+    "person": ("aliases", "notes", "last_spoken_at", "area"),   # the person a merge keeps (2026-11-25)
     "person_fact": ("person_id", "person_name", "confirmed", "value"),
     "segment": ("speaker_id", "text", "idx", "start_s", "end_s"),   # idx/times: split and join (2026-11-20)
     "speaker": ("talk_seconds", "person_id", "confirmed", "match_score", "unknown", "color"),
@@ -43,6 +45,35 @@ def save(conn: sqlite3.Connection, label: str, rows: list[tuple[str, int]]) -> i
                         (label, json.dumps(snap), db.now())).lastrowid
 
 
+def add(conn: sqlite3.Connection, uid: int, rows: list[tuple[str, int]]) -> None:
+    """More rows for action `uid` (several people merged one by one). A row saved already keeps its first "before"."""
+    a = conn.execute("SELECT snapshot FROM undo_action WHERE id = ?", (uid,)).fetchone()
+    snap = json.loads(a["snapshot"])
+    have = {(x["table"], x["id"]) for x in snap}
+    for table, rid in dict.fromkeys(rows):
+        r = conn.execute(f"SELECT {', '.join(COLUMNS[table])} FROM {table} WHERE id = ?", (rid,)).fetchone()
+        if r is not None and (table, rid) not in have:
+            snap.append({"table": table, "id": rid, "before": dict(r)})
+            have.add((table, rid))
+    conn.execute("UPDATE undo_action SET snapshot = ? WHERE id = ?", (json.dumps(snap), uid))
+
+
+def after(conn: sqlite3.Connection, uid: int, table: str, rid: int) -> None:
+    """Call once the action is done, for a row a later edit may change without its own Undo (a person's notes): Undo
+    then puts back only the columns still as this action left them, so that edit stays (like R5-21)."""
+    a = conn.execute("SELECT snapshot FROM undo_action WHERE id = ?", (uid,)).fetchone()
+    snap = json.loads(a["snapshot"])
+    r = conn.execute(f"SELECT {', '.join(COLUMNS[table])} FROM {table} WHERE id = ?", (rid,)).fetchone()
+    for x in snap:
+        if x["table"] == table and x["id"] == rid and r is not None:
+            x["after"] = dict(r)
+    conn.execute("UPDATE undo_action SET snapshot = ? WHERE id = ?", (json.dumps(snap), uid))
+
+
+class Blocked(Exception):
+    """Undo can't run any more for a reason worth saying (the merged recording was processed since)."""
+
+
 # Rows an action deletes outright (a person and their voiceprint): saved whole, put back first on Undo.
 DELETABLE = ("person", "voiceprint", "segment", "tag", "conversation_tag", "glossary_term")   # segment: "Join with line above" (put back after the restore); tag rows: U12 Undo on tag remove (2026-11-25)
 
@@ -55,6 +86,15 @@ def removed(conn: sqlite3.Connection, uid: int, table: str, where: str, args: tu
     a = conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()
     conn.execute("UPDATE undo_action SET removed = ? WHERE id = ?",
                  (json.dumps([*json.loads(a["removed"]), *({"table": table, "row": r} for r in rows)]), uid))
+
+
+def voiceprint(conn: sqlite3.Connection, uid: int, pid: int) -> None:
+    """Call before changing or deleting person `pid`'s voiceprint (merge, "This isn't X"): Undo puts back exactly the
+    one saved here, or none if they had none."""
+    a = conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()
+    conn.execute("UPDATE undo_action SET removed = ? WHERE id = ?",
+                 (json.dumps([*json.loads(a["removed"]), {"table": "voiceprint_clear", "person_id": pid}]), uid))
+    removed(conn, uid, "voiceprint", "person_id = ?", (pid,))
 
 
 def transcript(conn: sqlite3.Connection, uid: int, cid: int) -> None:
@@ -99,12 +139,22 @@ def latest(conn: sqlite3.Connection) -> sqlite3.Row | None:
                         (_since(SHOW_FOR_S),)).fetchone()
 
 
-def undo(conn: sqlite3.Connection, uid: int) -> bool:
-    """Write the saved values back. False if it's too old or already undone."""
+def undo(conn: sqlite3.Connection, uid: int, cfg=None) -> bool:
+    """Write the saved values back. False if it's too old or already undone. Raises Blocked when it can't any more
+    (a merged Inbox recording that has been processed since). cfg: needed to split a merged Inbox recording."""
     a = conn.execute("SELECT * FROM undo_action WHERE id = ? AND undone_at IS NULL AND created_at >= ?",
                      (uid, _since(UNDO_WITHIN_S))).fetchone()
     if a is None:
         return False
+    for c in json.loads(a["created"]):
+        if c["table"] == "inbox_merge":   # Inbox › Merge: split it back (its own transaction; deletes the joined file)
+            from scribe_bot.core import settings
+            from scribe_bot.pipeline import merge as merge_svc
+            try:
+                merge_svc.unmerge(conn, cfg or settings.load(), c["id"])
+            except merge_svc.MergeError as e:
+                if conn.execute("SELECT 1 FROM recording WHERE id = ?", (c["id"],)).fetchone():
+                    raise Blocked(str(e)) from None   # gone already (Unmerge tapped first): nothing left to do
     new_ids: dict[int, int] = {}   # deleted person id -> id it comes back as (ids are reused: a newer person may hold it)
     tag_ids: dict[int, int] = {}   # removed tag id -> the id its name has now (it may have been made again since)
 
@@ -122,6 +172,9 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
                 _restore_transcript(conn, d["cid"], d["rows"])
         later = [d for d in removed_rows if d["table"] == "segment"]   # a joined line returns once the lines below moved back
         for d in [d for d in removed_rows if d["table"] not in ("segment", "transcript")]:   # deleted rows go back first
+            if d["table"] == "voiceprint_clear":   # the voiceprint as merge / "This isn't X" left it goes first
+                conn.execute("DELETE FROM voiceprint WHERE person_id = ?", (person(d["person_id"]),))
+                continue
             row = {k: (base64.b64decode(v["b64"]) if isinstance(v, dict) else v) for k, v in d["row"].items()}
             if d["table"] == "tag":   # by name: the same tag may exist again (added to another talk since)
                 t = conn.execute("SELECT id FROM tag WHERE name = ?", (row["name"],)).fetchone()
@@ -153,7 +206,7 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
             if s["table"] == "decision" and new_ids and before.get("people"):
                 before["people"] = json.dumps([person(p) for p in json.loads(before["people"])])
             cols = [c for c in before if c in COLUMNS[s["table"]]]
-            after = _after(conn, uid, s["table"], s["id"])
+            after = _after(conn, uid, s["table"], s["id"]) or s.get("after")
             if after is not None:
                 # R5-21: a later action changed this row too (often on the other device). Put back only what this
                 # action changed, and leave a column alone if it was changed again since, so the later edit stays.
@@ -172,6 +225,14 @@ def undo(conn: sqlite3.Connection, uid: int) -> bool:
         for c in json.loads(a["created"]):
             if c["table"] == "person_not_same":   # "Don't merge" / ✕ on a merge suggestion
                 conn.execute("DELETE FROM person_not_same WHERE id = ?", (c["id"],))
+            if c["table"] == "review_item":   # "This isn't X" asked about the speaker again
+                conn.execute("DELETE FROM review_item WHERE id = ?", (c["id"],))
+            if c["table"] == "person":   # a "Speaker N" stand-in made for this action, if nothing uses it now
+                if not conn.execute("SELECT 1 FROM task WHERE owner_person_id = ? UNION ALL SELECT 1 FROM person_fact "
+                                    "WHERE person_id = ? UNION ALL SELECT 1 FROM speaker WHERE person_id = ?",
+                                    (c["id"],) * 3).fetchone():
+                    conn.execute("DELETE FROM person WHERE id = ? AND stands_for_speaker IS NOT NULL", (c["id"],))
+                    conn.execute("DELETE FROM search_index WHERE kind = 'person' AND ref_id = ?", (c["id"],))
             if c["table"] == "speaker":   # a speaker added for one line goes away again if no line uses it
                 conn.execute("DELETE FROM speaker WHERE id = ? AND NOT EXISTS (SELECT 1 FROM segment WHERE speaker_id = ?)",
                              (c["id"], c["id"]))
@@ -192,6 +253,9 @@ def _reindex(conn: sqlite3.Connection, table: str, rid: int) -> None:
     """Make search match the restored row (same text the pipeline indexes)."""
     if table == "conversation":
         extract.reindex_ai_text(conn, rid)
+        return
+    if table == "person":
+        people.reindex(conn, rid)
         return
     kind, sql = {   # (search kind, SELECT text, conversation_id, still-visible)
         "task": ("task", "SELECT title, conversation_id, status != 'dropped' FROM task WHERE id = ?"),

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from contextlib import nullcontext
 from array import array
 
 from scribe_bot.core.names import first_name
@@ -81,8 +82,9 @@ def preview(conn: sqlite3.Connection, from_id: int, into_id: int) -> dict:
     }
 
 
-def merge(conn: sqlite3.Connection, from_id: int, into_id: int) -> None:
-    """Fold from_id into into_id and delete from_id. Brian (1) can't be merged away."""
+def merge(conn: sqlite3.Connection, from_id: int, into_id: int, own_transaction: bool = True) -> None:
+    """Fold from_id into into_id and delete from_id. Brian (1) can't be merged away. own_transaction=False: the caller
+    holds the transaction (the web app saves the Undo note in the same one; save merge_undo_rows() first)."""
     if from_id == ME:
         raise ValueError("Brian can't be merged into someone else")
     if from_id == into_id:
@@ -91,7 +93,7 @@ def merge(conn: sqlite3.Connection, from_id: int, into_id: int) -> None:
     dst = conn.execute("SELECT * FROM person WHERE id = ?", (into_id,)).fetchone()
     if src is None or dst is None:
         raise LookupError("No such person")
-    with transaction(conn):
+    with transaction(conn) if own_transaction else nullcontext(conn):
         conn.execute("UPDATE speaker SET person_id = ? WHERE person_id = ?", (into_id, from_id))
         conn.execute("UPDATE task SET owner_person_id = ? WHERE owner_person_id = ?", (into_id, from_id))
         conn.execute("UPDATE person_fact SET person_id = ?, person_name = ? WHERE person_id = ?", (into_id, dst["name"], from_id))
@@ -200,6 +202,14 @@ def undo_rows(conn: sqlite3.Connection, pid: int) -> list[tuple[str, int]]:
     rows += [("task", r[0]) for r in conn.execute("SELECT id FROM task WHERE owner_person_id = ?", (pid,))]
     rows += [("person_fact", r[0]) for r in conn.execute("SELECT id FROM person_fact WHERE person_id = ?", (pid,))]
     rows += [("decision", d) for d, ids in conn.execute("SELECT id, people FROM decision") if pid in json.loads(ids or "[]")]
+    return rows
+
+
+def merge_undo_rows(conn: sqlite3.Connection, from_id: int, into_id: int) -> list[tuple[str, int]]:
+    """The rows merge() changes (besides the deleted person and the voiceprints), for the undo snapshot."""
+    rows = [*undo_rows(conn, from_id), ("person", into_id)]
+    rows += [("review_item", r["id"]) for r in conn.execute("SELECT id, payload FROM review_item WHERE status = 'open'")
+             if json.loads(r["payload"] or "{}").get("person_id") == from_id]
     return rows
 
 

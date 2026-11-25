@@ -13,7 +13,7 @@
     <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-pk-all aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
   <div class="pk-bot">
     <button type="button" data-pk-post="/trash-bulk/restore"><i aria-hidden="true">↺</i><span class="pk-l">Restore</span></button>
-    <button type="button" data-pk-post="/trash-bulk/forever" data-pk-confirm="Delete the picked talks forever? This can't be undone. (Recordings skipped in the Inbox leave by themselves after {{ trash_days }} days.)" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete forever</span></button>
+    <button type="button" data-pk-post="/trash-bulk/forever" data-pk-confirm="Delete the picked talks forever? (Recordings skipped in the Inbox leave by themselves after {{ trash_days }} days.)" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete forever</span></button>
   </div></div>
 <div class="card" id="trash-list" data-picker>
   {% for c in items %}{% if c.from_inbox %}

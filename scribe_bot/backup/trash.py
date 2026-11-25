@@ -26,10 +26,18 @@ def purge(conn: sqlite3.Connection, at: datetime | None = None, days: int = TRAS
     cutoff = (at - timedelta(days=days)).astimezone(timezone.utc).isoformat(timespec="seconds")
     ids = [r[0] for r in conn.execute(
         "SELECT id FROM conversation WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff,))]
-    n = _purge_talks(conn, ids) if ids else 0
+    n = (_purge_talks(conn, ids) if ids else 0) + purge_due(conn)
     if cfg is not None:
         purge_audio(conn, cfg, cutoff)
     return n
+
+
+def purge_due(conn: sqlite3.Connection) -> int:
+    """Talks Brian deleted forever whose Undo time has passed (conversation.purge_at, 2026-11-25). They left Trash when
+    he deleted them; this is the real delete. Runs on page loads and in the nightly purge, so a talk never waits long."""
+    ids = [r[0] for r in conn.execute("SELECT id FROM conversation WHERE purge_at IS NOT NULL AND purge_at <= ?",
+                                      (datetime.now(timezone.utc).isoformat(timespec="seconds"),))]
+    return _purge_talks(conn, ids) if ids else 0
 
 
 def _purge_talks(conn: sqlite3.Connection, ids: list[int]) -> int:

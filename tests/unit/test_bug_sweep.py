@@ -126,6 +126,10 @@ def test_trash_pick_several_restore_and_delete_forever(env):
     assert one(conn, "SELECT count(*) FROM conversation WHERE id = 1") == 1
     conn.execute("UPDATE conversation SET deleted_at = ? WHERE id = 1", (db.now(),))
     client.post("/trash-bulk/forever", data={"ids": "c1,x9,r"}, follow_redirects=False)
+    assert 'data-pick-id="c1"' not in client.get("/conversations?trash=1").text      # gone from Trash at once
+    assert client.get("/conversations/1").status_code == 404
+    conn.execute("UPDATE conversation SET purge_at = '2020-01-01T00:00:00+00:00' WHERE id = 1")   # its Undo time is over
+    client.get("/conversations?trash=1")
     assert one(conn, "SELECT count(*) FROM conversation WHERE id = 1") == 0
     assert one(conn, "SELECT count(*) FROM task WHERE conversation_id = 1") == 0
 

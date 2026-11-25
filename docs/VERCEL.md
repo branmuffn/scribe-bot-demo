@@ -23,6 +23,23 @@ The public demo can run on [Vercel](https://vercel.com) as a read-mostly site wi
 
 Every push to `main` then redeploys by itself, and each pull request gets its own preview address.
 
+## Keeping it fast (2026-11-25)
+
+- **Small install.** Vercel installs only `[project] dependencies` in `pyproject.toml`. The speech and AI libraries
+  (LiteLLM, sherpa-onnx, numpy) sit in the `full` group, so the function bundle went from about 395 MB to about 57 MB
+  and cold starts load much less. This `pyproject.toml` differs from the private repo's on purpose: when syncing code
+  from scribe-bot, don't copy `pyproject.toml` or `uv.lock` over.
+- **Static files from the CDN.** CSS, JS and icons are versioned (`?v=`), and the app marks them
+  `public, max-age=31536000, s-maxage=31536000, immutable`, so Vercel's CDN serves them without starting Python.
+- **Optional, in the Vercel dashboard:** Project › Settings › Functions › Function Region: pick the region nearest to
+  you (for example Washington, D.C., `iad1`, on the US East Coast), then redeploy.
+
+## Stop the Vercel bot's comments on pull requests
+
+Each pull request gets a comment from vercel[bot], which emails the PR's author. To turn the comments off and keep
+the preview builds: **Project › Settings › Git › Connected Git Repository**, switch off **Pull Request Comments**
+(the `github.silent` setting in `vercel.json` is deprecated and no longer does this).
+
 ## Optional: let preview addresses open without a Vercel login
 
 Vercel protects preview deployments with a login by default. Since this repo and its data are public and made up, it
@@ -33,5 +50,5 @@ Vercel Authentication › Disabled › Save**.
 
 ```sh
 uv sync
-SCRIBE_BOT_DATA=./demo-data uv run uvicorn index:app --port 8000
+SCRIBE_BOT_DATA=./demo-data SCRIBE_BOT_PUBLIC_DEMO=1 uv run uvicorn index:app --port 8000
 ```

@@ -707,7 +707,7 @@ document.addEventListener("click", function (e) {
   function clampH(h) { return Math.max(180, Math.min(h, innerHeight - 220)); }
   function on() {
     return wide.matches && (html.dataset.pane === "right" || html.dataset.pane === "below") && !html.classList.contains("in-pane") &&
-      LISTS.test(document.body ? document.body.dataset.nav || "" : "") && !!document.querySelector("#inbox-list, .task-row");
+      LISTS.test(document.body ? document.body.dataset.nav || "" : "") && !!document.querySelector("#inbox-list details, .task-row");   // F4: no pane beside an empty Inbox
   }
   function sizes() {
     var w = parseInt(load("dpW"), 10), h = parseInt(load("dpH"), 10), b = document.body;
@@ -733,7 +733,8 @@ document.addEventListener("click", function (e) {
   var wides = [];
   function listEl() {
     var l = document.querySelector("#task-list, #inbox-list");
-    if (!l) { var t = document.querySelector(".main .task-row"); l = t && t.closest(".card, section, .section"); }
+    // F1: the whole section (its "Due" head and "All tasks" link included) sits left of the pane, not just its card
+    if (!l) { var t = document.querySelector(".main .task-row"); l = t && (t.closest("section, .section") || t.closest(".card")); }
     return l;
   }
   function split() {

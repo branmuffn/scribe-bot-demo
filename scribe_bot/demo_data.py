@@ -8,8 +8,12 @@ It refuses to touch a database that holds any conversation not titled "DEMO: ...
 from __future__ import annotations
 
 import json
+import math
+import random
 import sqlite3
+import struct
 import sys
+import wave
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -24,7 +28,7 @@ class NotADemoDatabase(RuntimeError):
     pass
 
 
-def _seed_meetings(conn: sqlite3.Connection) -> None:
+def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None:
     now = db.now()
     base = datetime.fromisoformat(now)
 
@@ -50,15 +54,15 @@ def _seed_meetings(conn: sqlite3.Connection) -> None:
     alex = person("Alex Rivera (demo)", "personal", "amber")
 
     def convo(title, days, ctype, area, people, lines, summary, takeaways=None, no_ai=0, tasks=(), decisions=(), facts=(),
-              cost=None):
+              cost=None, hours=0, status="done"):
         """people: cluster -> person id (cluster 0 = me). lines: (cluster, text)."""
-        start = ago(days)
+        start = ago(days, hours)
         dur = len(lines) * 9 + 30
         cid = conn.execute(
             "INSERT INTO conversation (title, started_at, duration_s, type, area, area_confidence, summary, takeaways, private, "
-            "processed_by, status, created_at, updated_at, type_chosen) VALUES (?, ?, ?, ?, ?, 0.92, ?, ?, ?, ?, 'done', ?, ?, 1)",
+            "processed_by, status, created_at, updated_at, type_chosen) VALUES (?, ?, ?, ?, ?, 0.92, ?, ?, ?, ?, ?, ?, ?, 1)",
             (title, start, dur * 20, ctype, area, summary, json.dumps(takeaways or []), 0,
-             "local" if no_ai else "demo", start, start)).lastrowid   # Transcript only = no AI step
+             "local" if no_ai else "demo", "transcribed" if no_ai and status == "done" else status, start, start)).lastrowid   # Transcript only = no AI step
         talk = {}
         for c, _ in lines:
             talk[c] = talk.get(c, 0) + 9 * 20
@@ -154,9 +158,146 @@ def _seed_meetings(conn: sqlite3.Connection) -> None:
                  "VALUES ('recorder', 'demo/coffee-with-sam.m4a', 'demo-coffee-with-sam', 1920, ?, 'awaiting_approval', "
                  "'DEMO: Coffee with Sam')", (ago(0, 1),))
     conn.execute("UPDATE person SET last_spoken_at = ? WHERE name LIKE '%(demo)'", (ago(1),))
+    _seed_more(conn, convo, person, ago, due, folder)
 
 
-def seed(conn: sqlite3.Connection) -> int:
+# ---------- More of everything (Brian, 2026-11-25: the demo should look like real use, every screen filled) ----------
+# Dozens of made-up talks over two months, long titles, up to 7 speakers, long transcripts, many tasks and tags, a full
+# Inbox, notifications, Trash and every state. Built from a fixed random seed, so every demo instance is the same.
+
+MORE_PEOPLE = [("Dana Okoro (demo)", "work", "blue"), ("Sam Whitaker (demo)", "work", "teal"),
+               ("Dr. Evangeline Montgomery-Whitfield (demo)", "work", "rose"), ("Chris Tanaka (demo)", "work", None),
+               ("Lena Fischer (demo)", "school", "indigo"), ("Omar Haddad (demo)", "work", "orange"),
+               ("Grace Kim (demo)", "personal", "pink"), ("Theo Brandt (demo)", "other", None),
+               ("Nadia Petrova (demo)", "work", "cyan"), ("Coach Riley (demo)", "personal", None)]
+TOPICS = ["the launch checklist", "hiring for the support team", "the customer survey", "next quarter's roadmap",
+          "the vendor contract", "the website redesign", "onboarding new staff", "the volunteer schedule",
+          "the board update", "the grant report", "the move to the new office", "the training plan"]
+SAY = ["Let's start with {t}. Where are we?", "I think we're mostly on track, but the timeline is tight.",
+       "Can you send me the numbers by Friday?", "Sure, I'll pull them together tomorrow morning.",
+       "What's blocking us right now?", "Mostly waiting on the other team to sign off.",
+       "Okay, um, let's decide that today so it doesn't slip again.", "I'd rather keep it simple for the first version.",
+       "Agreed. We can add the rest after we hear back from people.", "Who owns the follow-up on {t}?",
+       "I can take it. I'll check in with everyone next week.", "Let's put a date on it: the end of the month.",
+       "One more thing, the budget for {t} is still not final.", "I'll ask finance and get back to you.",
+       "Good point. Let's write that down as a decision.", "Does anyone have questions before we wrap up?",
+       "Not from me. This was really helpful, thanks.", "Can we move this meeting to Thursdays from now on?",
+       "That works for me. I'll update the invite.", "Honestly I think we've been overthinking {t}.",
+       "So, like, the main risk is that we run out of time.", "Then let's cut scope instead of moving the date.",
+       "I'll draft a short note for the team about {t} today.", "Remind me, did we already promise this to the client?"]
+TAGS = ["Planning", "Hiring", "Budget", "Clients", "Follow-up", "Ideas", "Family", "Health", "Learning", "Volunteering"]
+LONG = " and what we still need to settle before the end of the month"
+WAITING = [("Recording Nov 24 at 4_05 PM", 1, False), ("Standup notes", 3, False),
+           ("Call with the landlord about the lease renewal and the parking spot", 5, False),
+           ("Voice memo", 8, False), ("Lunch and learn: writing clear emails", 26, False), ("Private: health check-in", 2, True),
+           ("Recording Nov 18 at 9_30 AM", 40, None), ("Recording Nov 12 at 2_15 PM", 12, None)]   # None: older (backlog)
+
+
+def _tone(path: Path, seconds: float, freq: float) -> None:
+    """A soft tone stands in for audio (the demo has no real recordings), so ▶ Play has something to play."""
+    rate = 8000
+    frames = b"".join(struct.pack("<h", int(1500 * math.sin(2 * math.pi * freq * i / rate))) for i in range(int(seconds * rate)))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(rate), w.writeframes(frames)
+
+
+def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
+    from scribe_bot.pipeline import ingest
+    rnd = random.Random(2026)
+    now = db.now()
+    people = [person(n, a, c) for n, a, c in MORE_PEOPLE]
+    old = [r[0] for r in conn.execute(f"SELECT id FROM person WHERE name LIKE '%(demo)' AND id NOT IN ({','.join(map(str, people))})")]
+    everyone = people + old
+    tag_ids = {n: conn.execute("INSERT INTO tag (name, created_at) VALUES (?, ?)", (n, now)).lastrowid for n in TAGS}
+    kinds = [("1:1", "1:1 with {p} about {t}"), ("multi", "Team meeting: {t}"), ("multi", "Planning session for {t}"),
+             ("learning", "Workshop: {t}"), ("personal", "Catch-up with {p}"), ("1:1", "Weekly check-in with {p}")]
+    made = []
+    for n in range(36):
+        days = 7 + n * 1.6 + rnd.random()
+        ctype, pattern = kinds[n % len(kinds)]
+        topic = TOPICS[n % len(TOPICS)]
+        size = {"1:1": 2, "personal": 2, "learning": 2}.get(ctype) or rnd.randint(3, 7)
+        crew = rnd.sample(everyone, size - 1)
+        name = conn.execute("SELECT name FROM person WHERE id = ?", (crew[0],)).fetchone()[0].replace(" (demo)", "")
+        title = "DEMO: " + pattern.format(p=name.split()[0] if not name.startswith("Dr.") else name, t=topic) + (LONG if n % 5 == 2 else "")
+        area = "personal" if ctype == "personal" else ["work", "work", "school", "other"][n % 4]
+        cl = {0: 1, **{i + 1: pid for i, pid in enumerate(crew)}}
+        if n % 6 == 3:
+            cl[len(cl)] = None   # a voice nobody has named yet ("1 to name")
+        lines = [(rnd.choice(list(cl)), rnd.choice(SAY).format(t=topic)) for _ in range(rnd.randint(18, 90 if n % 4 else 140))]
+        no_ai = n % 7 == 4
+        tasks = []
+        if not no_ai:
+            for k in range(rnd.randint(0, 5)):
+                who = rnd.choice([1, 1] + crew)
+                tasks.append((["Send the follow-up notes", "Check the numbers", "Book a time with the team",
+                               "Draft the plan for " + topic, "Ask finance about the budget", "Share the slides"][k] +
+                              (" before the next meeting with everyone who joined" if k == 3 and n % 3 == 0 else ""),
+                              who, rnd.randrange(len(lines)), due(rnd.randint(-10, 14)) if k % 3 else None))
+        cid = convo(title, days, ctype, area, cl, lines,
+                    None if no_ai else f"Talked through {topic}. Agreed on next steps and who owns them; a few questions "
+                                        f"are still open and come back next time.",
+                    None if no_ai else [f"Next steps for {topic} are agreed", "Open questions come back next week"],
+                    no_ai=int(no_ai), tasks=tasks,
+                    decisions=[] if no_ai else [(f"Keep {topic} simple for the first version", rnd.randrange(len(lines)), [1])] * (n % 2),
+                    facts=[(crew[0], name + " (demo)", "preference", "Prefers short meetings", 1)] if n % 8 == 1 else (),
+                    cost=None if no_ai else (rnd.randint(3000, 30000), rnd.randint(500, 2500)), hours=rnd.randint(0, 9))
+        made.append(cid)
+        for tg in rnd.sample(TAGS, n % 4):
+            conn.execute("INSERT INTO conversation_tag (conversation_id, tag_id, by_ai, created_at) VALUES (?, ?, ?, ?)",
+                         (cid, tag_ids[tg], n % 2, now))
+        if n > 3:   # older talks were read already (no "New" badge)
+            conn.execute("UPDATE conversation SET opened_at = ? WHERE id = ?", (now, cid))
+    # Tasks in every tab: some done, some no longer needed, some overdue (the due dates above), some others owe you
+    for i, (tid,) in enumerate(conn.execute(f"SELECT id FROM task WHERE conversation_id IN ({','.join(map(str, made))})").fetchall()):
+        if i % 4 == 0:
+            conn.execute("UPDATE task SET status = 'done', updated_at = ? WHERE id = ?", (now, tid))
+        elif i % 9 == 1:
+            conn.execute("UPDATE task SET status = 'dropped', closed_as = 'not_needed', updated_at = ? WHERE id = ?", (now, tid))
+    conn.execute("INSERT INTO task (conversation_id, title, owner_person_id, due, area, confidence, created_at, updated_at) "
+                 "VALUES (NULL, 'Renew the parking permit', 1, ?, 'personal', 1, ?, ?)", (due(4), now, now))
+    # States: one private talk, two in Trash, one still being transcribed, one that failed
+    conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[9],))
+    for cid in made[-2:]:
+        conn.execute("UPDATE conversation SET deleted_at = ? WHERE id = ?", (ago(3), cid))
+    for title, status, err in (("DEMO: Recording Nov 25 at 8_10 AM", "running", None),
+                               ("DEMO: Recording Nov 21 at 6_45 PM", "failed", "The audio file was empty (made-up error)")):
+        rid = conn.execute("INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title) "
+                           "VALUES ('recorder', ?, ?, 1260, ?, 'processing', ?)",
+                           (f"demo/{title}.m4a", f"demo-{title}", ago(0, 2), title)).lastrowid
+        conn.execute("INSERT INTO job (kind, recording_id, status, created_at, updated_at, error) VALUES ('process', ?, ?, ?, ?, ?)",
+                     (rid, status, ago(0, 2), ago(0, 1), err))
+    # The Inbox: recordings waiting for an OK (and two older ones), each with a short tone as its "audio"
+    audio = (folder / "demo-audio") if folder else None
+    if audio:
+        audio.mkdir(parents=True, exist_ok=True)
+    conn.execute("UPDATE recording SET status = 'awaiting_approval' WHERE title = 'DEMO: Coffee with Sam'")
+    for row in conn.execute("SELECT id, title, duration_s FROM recording WHERE title = 'DEMO: Coffee with Sam'").fetchall():
+        ingest.request_approval(conn, row[0], row[1], row[2], False)
+    for i, (title, minutes, private) in enumerate(WAITING):
+        path = audio / f"demo-{i}.wav" if audio else None
+        if path:
+            _tone(path, 1.5, 220 + 40 * i)
+        rid = conn.execute("INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title, "
+                           "vault_path, private) VALUES ('recorder', ?, ?, ?, ?, ?, ?, ?, ?)",
+                           (str(path) if path else f"demo/{i}.wav", f"demo-waiting-{i}", minutes * 60, ago(i % 4, i + 1),
+                            "backlog" if private is None else "awaiting_approval", "DEMO: " + title,
+                            str(path) if path else None, int(bool(private)))).lastrowid
+        if private is not None:
+            ingest.request_approval(conn, rid, "DEMO: " + title, minutes * 60, private)
+    # The bell: a few recent notifications (titles and links only, like the real ones)
+    for i, (title, link) in enumerate([("Ready: DEMO: 1:1 with Priya, Q3 budget review", "/conversations/2"),
+                                       ("3 tasks due today", "/tasks"), ("Overnight: 4 recordings transcribed", "/"),
+                                       ("A voice to name in DEMO: Team weekly sync", "/conversations/3"),
+                                       ("AI spending reached 50% of this month's cap", "/costs"),
+                                       ("Backup finished (made up)", "/status")]):
+        conn.execute("INSERT INTO notification (channel, title, link, status, created_at, sent_at, dismissed_at) "
+                     "VALUES (?, ?, ?, 'sent', ?, ?, ?)", ("alerts" if i == 4 else "bot", title, link, ago(0, i * 3),
+                                                           ago(0, i * 3), ago(0, 1) if i == 5 else None))
+    conn.execute("UPDATE person SET last_spoken_at = ? WHERE last_spoken_at IS NULL AND name LIKE '%(demo)'", (ago(9),))
+
+
+def seed(conn: sqlite3.Connection, folder: Path | None = None) -> int:
     """Load every demo meeting into an empty or demo-only database. Safe to run twice. Returns the conversation count."""
     real = conn.execute("SELECT count(*) FROM conversation WHERE title NOT LIKE 'DEMO:%'").fetchone()[0]
     if real:
@@ -164,7 +305,7 @@ def seed(conn: sqlite3.Connection) -> int:
     demo.load(conn)   # the built-in one-conversation demo (Help page: Load / Remove)
     if not conn.execute("SELECT 1 FROM conversation WHERE title = ?", (MARKER,)).fetchone():
         with db.transaction(conn):
-            _seed_meetings(conn)
+            _seed_meetings(conn, folder)
     return conn.execute("SELECT count(*) FROM conversation").fetchone()[0]
 
 
@@ -179,7 +320,7 @@ def main(argv: list[str]) -> int:
     conn = db.connect(folder / "scribe-bot.db")
     try:
         db.migrate(conn)
-        n = seed(conn)
+        n = seed(conn, folder)
     except NotADemoDatabase as e:
         print(f"refusing: {e}", file=sys.stderr)
         return 1

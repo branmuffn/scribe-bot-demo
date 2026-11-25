@@ -88,10 +88,18 @@ flowchart LR
 
 ## Try it on the web
 
-The same Demo mode can run on Vercel with made-up meetings only: no keys, no AI calls, and changes reset on their own.
-How it's set up: [`docs/VERCEL.md`](docs/VERCEL.md).
+**[scribe-bot.vercel.app](https://scribe-bot.vercel.app)** is a clickable prototype with made-up meetings. Click around
+on a phone or a computer to see how it looks and works: talks, people, tasks, search, the Inbox, swipes and Undo.
 
-## Run it yourself (Demo mode)
+Summarize, transcribe and uploads are for show there. Each one ends in a short "Demo: ..." note, and nothing is
+recorded, sent to an AI or charged. Changes reset on their own. How it's set up: [`docs/VERCEL.md`](docs/VERCEL.md).
+
+## Run it yourself
+
+To transcribe and summarize for real, you run Scribe Bot on your own computer, with your own AI account. Your audio
+stays on that computer; only transcript text goes to the AI, through your own key.
+
+### Demo mode on your computer
 
 Demo mode needs no phone, accounts, keys, speech models, or audio. It creates a separate `demo-data/` folder with
 made-up meetings (invented people and text) and serves the web app on your machine.
@@ -111,9 +119,21 @@ uv run python -m scribe_bot.demo_data ./demo-data
 SCRIBE_BOT_DATA=./demo-data uv run python -m scribe_bot.web
 ```
 
-In Demo mode you can browse the sample meetings, open people and tasks, search, edit lines, swipe rows for quick actions,
-and see the Data Ledger and Costs pages. Processing new audio needs the speech models and the worker, which are set up
-by the `scripts/setup/` helpers on a real server. To start over, delete `demo-data/`.
+To start over, delete `demo-data/`.
+
+### Real use
+
+It's built for a Mac that stays on (keys live in the macOS Keychain):
+
+1. Install everything, including the speech and AI libraries: `uv sync --group full`.
+2. Download the speech models: `bash scripts/setup/m14_speech.sh`.
+3. Store your Anthropic API key in the Keychain (a hidden prompt; it's never typed into the app):
+   `bash scripts/setup/set_api_key.sh anthropic`.
+4. Start the worker and the web app as background services: `bash scripts/setup/m14_services.sh`.
+5. Optional: sync your phone's recordings with `scripts/setup/m14_syncthing.sh`, and set backups with
+   `scripts/setup/m14_backup.sh`.
+
+The scripts are written for my own server (a 2014 MacBook Pro), so read each one before you run it.
 
 ## Tests
 

@@ -6,6 +6,7 @@ Every value read is registered with the log redactor, so it is scrubbed if it ev
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable
 
@@ -24,6 +25,8 @@ class KeychainStore:
         self._run = run
 
     def get(self, provider: str, account: str = DEFAULT_ACCOUNT) -> str:
+        if _public_demo():   # D-11: the public demo never reads a key, so no AI, Discord or backup call can start there
+            raise SecretMissing(f"the public demo has no keys (scribe-bot.{provider})")
         try:
             p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}", "-w"],
                           capture_output=True, text=True)
@@ -37,12 +40,18 @@ class KeychainStore:
         return value
 
     def exists(self, provider: str, account: str = DEFAULT_ACCOUNT) -> bool:
+        if _public_demo():
+            return False
         try:
             p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}"],
                           capture_output=True, text=True)
         except FileNotFoundError:   # no macOS Keychain on this machine: nothing is stored
             return False
         return p.returncode == 0
+
+
+def _public_demo() -> bool:
+    return os.environ.get("SCRIBE_BOT_PUBLIC_DEMO") == "1"
 
 
 def mask(value: str) -> str:

@@ -26,7 +26,7 @@ from scribe_bot.core import cleanup, cleanup_devices, db, queue, machine, people
 from scribe_bot.discord_bot import notify, sender
 from scribe_bot.pipeline import control, identify, ingest, merge as merge_svc, pace, peek, voicememo
 from scribe_bot.web import export, inbox as inbox_svc, undo
-from scribe_bot.web.app import area_of, local_date, local_datetime, templates, worker_status
+from scribe_bot.web.app import area_of, local_date, local_datetime, public_demo, templates, worker_status
 
 
 def _id_or_none(v):
@@ -173,6 +173,7 @@ def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | Non
                                                       "n_older": conn.execute("SELECT count(*) FROM recording WHERE status = "
                                                                               "'backlog'").fetchone()[0] if conn else 0,
                                                       "bell_new": bell_new(conn) if conn else 0,
+                                                      "demo_tour": tour_conversation(conn) if conn and public_demo() else None,
                                                       "inbox_count": inbox_count(conn) if conn else 0,
                                                       "gone_mark": gone_mark(conn) if conn else 0, **ctx})
 
@@ -310,9 +311,11 @@ def notification_restore(request: Request, nid: int, conn: sqlite3.Connection = 
 
 
 @router.post("/notifications/test")
-def notifications_test(conn: sqlite3.Connection = Conn):
+def notifications_test(request: Request, conn: sqlite3.Connection = Conn):
     """Brian's check that pushes reach his phone: one harmless line to each Discord channel (the worker sends within
     ~5 s; quiet hours hold the #scribe-bot one until 7 AM). No content, like every notification."""
+    if stop := demo_stop(request, "send", "/notifications"):
+        return stop
     with db.transaction(conn):
         for channel, name in (("bot", "#scribe-bot"), ("alerts", "#scribe-alerts")):
             notify.enqueue(conn, channel, f"🔔 Test notification from Scribe Bot ({name})", "/notifications")
@@ -334,7 +337,21 @@ NOTES = {
     # U1 (Brian, 2026-11-25): the Summarize note ran off the phone screen. Notes stay short (PREFERENCES §3) and wrap.
     "transcribing": "Transcribing. It shows under Talks › Processing.",
     "summarizing": "Summarizing. The talk shows Summarizing until its notes are ready.",
+    # D-11: the public demo (scribe-bot-demo on Vercel) runs none of these; the button ends in one of these notes
+    "demo-ai": "Demo: the AI doesn't run here. Nothing was sent or charged.",
+    "demo-run": "Demo: nothing is transcribed or summarized here. Nothing was sent.",
+    "demo-audio": "Demo: audio isn't processed here, so merging is off.",
+    "demo-upload": "Demo: recordings can't be added here. Nothing was uploaded.",
+    "demo-keys": "Demo: accounts and keys can't be added or tested here.",
+    "demo-send": "Demo: nothing is sent from here.",
 }
+
+
+def demo_stop(request: Request, what: str, default: str = "/") -> RedirectResponse | None:
+    """D-11: on the public demo, an action that would transcribe, call an AI, take a recording, use a key or send a
+    message does nothing and goes back with a short note (no job is queued, so nothing sits "waiting" forever).
+    Returns None everywhere else, so the real app is unchanged."""
+    return back(request, default, note=f"demo-{what}") if public_demo() else None
 
 
 def with_note(url: str, note: str) -> str:
@@ -1119,12 +1136,15 @@ def rerun_confirm(request: Request, cid: int, conn: sqlite3.Connection = Conn):
 
 
 @router.post("/conversations/{cid}/rerun")
-def rerun_ai(cid: int, confirm: str = Form(""), end_private: str = Form(""), conn: sqlite3.Connection = Conn):
+def rerun_ai(request: Request, cid: int, confirm: str = Form(""), end_private: str = Form(""),
+             conn: sqlite3.Connection = Conn):
     """Re-run AI, only from the confirm step (Brian saw the cost), so the run counts as approved. A Private conversation
     runs only from its own confirm step, which ends Private first (the AI never runs on a Private one)."""
     c = get_conversation(conn, cid)
     if not confirmed(confirm):
         return RedirectResponse(f"/conversations/{cid}/rerun/confirm", status_code=303)
+    if stop := demo_stop(request, "ai", f"/conversations/{cid}"):
+        return stop
     if c["private"]:
         if end_private != "1":
             raise HTTPException(400, "Private conversations go to the AI only after you end Private on the confirm step")
@@ -1151,10 +1171,12 @@ def detail_confirm(request: Request, cid: int, conn: sqlite3.Connection = Conn):
 
 
 @router.post("/conversations/{cid}/detail")
-def detail_make(cid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
+def detail_make(request: Request, cid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
     if not confirmed(confirm):
         return RedirectResponse(f"/conversations/{cid}/detail/confirm", status_code=303)
+    if stop := demo_stop(request, "ai", f"/conversations/{cid}"):
+        return stop
     if c["private"]:
         raise HTTPException(400, "Private conversations stay on the M14")
     ai_jobs.queue_detail(conn, cid)
@@ -1176,10 +1198,12 @@ def compare_confirm(request: Request, cid: int, conn: sqlite3.Connection = Conn)
 
 
 @router.post("/conversations/{cid}/compare")
-def compare_ai(cid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
+def compare_ai(request: Request, cid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
     if not confirmed(confirm):
         return RedirectResponse(f"/conversations/{cid}/compare/confirm", status_code=303)
+    if stop := demo_stop(request, "ai", f"/conversations/{cid}"):
+        return stop
     if c["private"]:
         raise HTTPException(400, "Private conversations never go to the AI")
     ai_jobs.queue_compare(conn, cid)
@@ -1328,6 +1352,8 @@ def talks_bulk(request: Request, ids: str = Form(...), what: str = Form(...), co
                 conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ?", (db.now(), db.now(), cid))
         return RedirectResponse("/conversations", status_code=303)
     if what == "merge":
+        if stop := demo_stop(request, "audio", "/conversations"):
+            return stop
         try:
             new = merge_svc.merge_talks(conn, request.app.state.cfg, cids)
         except merge_svc.MergeError as e:
@@ -1336,6 +1362,8 @@ def talks_bulk(request: Request, ids: str = Form(...), what: str = Form(...), co
     if what == "ai":
         if not confirmed(confirm):
             return RedirectResponse(f"/talks-bulk/ai?ids={','.join(map(str, cids))}", status_code=303)
+        if stop := demo_stop(request, "ai", "/conversations"):
+            return stop
         for cid in cids:
             ai_jobs.queue_rerun(conn, cid, approved=True)
         return RedirectResponse("/conversations?note=summarizing", status_code=303)
@@ -2688,6 +2716,8 @@ def inbox_page(request: Request, sort: str = "newest", show: str = "all", has: s
 @router.post("/inbox/merge")
 def inbox_merge(request: Request, ids: str = Form(...), conn: sqlite3.Connection = Conn):
     """Merge before processing (Brian, 2026-11-21): the picked recordings become one, waiting in the Inbox."""
+    if stop := demo_stop(request, "audio", "/inbox"):
+        return stop
     try:
         new_id = merge_svc.merge(conn, request.app.state.cfg, [int(x) for x in ids.split(",") if x.strip().isdigit()])
     except merge_svc.MergeError as e:
@@ -2834,6 +2864,8 @@ def review_process_at(request: Request, rid: int, when: str = Form("tonight"), a
     r = review_or_404(conn, rid)
     if r["kind"] != "approval" or r["conversation_id"] or not r["ref_id"]:
         raise HTTPException(400, "Only a waiting recording can be processed later")
+    if stop := demo_stop(request, "run", "/inbox"):
+        return stop
     at_utc = (control.tonight().astimezone(timezone.utc).isoformat(timespec="seconds") if when == "tonight"
               else snooze_until("pick", at))
     control.schedule(conn, rid, at_utc, ai == "1", meeting_type if meeting_type in prompts.MEETING_TYPES else None)
@@ -2915,6 +2947,8 @@ def inbox_bulk(request: Request, ids: str = Form(...), what: str = Form(...), me
         raise HTTPException(400, "Pick AI notes, Transcript only or Delete")
     if what == "ai" and not confirmed(confirm):
         return RedirectResponse(f"/inbox-bulk/ai?ids={','.join(x.strip() for x in ids.split(',') if x.strip().isdigit())}", status_code=303)
+    if what != "skip" and (stop := demo_stop(request, "run", "/inbox")):
+        return stop
     for rec_id in [int(x) for x in ids.split(",") if x.strip().isdigit()]:
         ingest.backlog_to_review(conn, rec_id, request.app.state.cfg)   # does nothing unless it's an older recording
         r = conn.execute("SELECT id FROM review_item WHERE kind = 'approval' AND status = 'open' AND ref_id = ? "
@@ -3038,6 +3072,8 @@ def review_approve(request: Request, rid: int, ai: str = Form("1"), confirm: str
     r = review_or_404(conn, rid)
     if spends_money(r, ai) and not confirmed(confirm):
         return RedirectResponse(f"/review/{rid}/confirm", status_code=303)
+    if r["kind"] == "approval" and (stop := demo_stop(request, "ai" if r["conversation_id"] else "run", "/review")):
+        return stop
     with db.transaction(conn):
         if r["kind"] == "approval" and not r["conversation_id"] and r["ref_id"]:
             control.approve_recording(conn, r, ai != "0", meeting_type if meeting_type in prompts.MEETING_TYPES else None)
@@ -3282,6 +3318,10 @@ def capture_upload(request: Request, file: list[UploadFile] = File(...), ai: str
     recording is its transcript for the Inbox (replaces one with the same name).
     The app's uploader sends one file at a time and asks for JSON (Brian, 2026-11-23: 23 memos showed a stuck screen and
     no result), so it can show "3 of 23", then what happened to each file, duplicates included."""
+    if public_demo():   # D-11: nothing is saved; the uploader shows "Not added (demo)" on each file
+        if "application/json" in request.headers.get("accept", ""):
+            return JSONResponse({"results": [{"name": f.filename, "result": "demo"} for f in file if f.filename]})
+        return demo_stop(request, "upload", "/capture")
     up, results = request.app.state.cfg.data_dir / "uploads", []
     for f in file:
         if not f.filename:
@@ -3311,6 +3351,9 @@ def capture_share(request: Request, title: str = Form(""), text: str = Form(""),
     """PWA share target (Android share sheet). Audio (Recorder → Share → Scribe Bot) goes to uploads/, the folder the
     pipeline watches, so it's processed like a synced recording (waits in Review; an identical file is skipped).
     Links, text and screenshots go to the Capture inbox (processed in Phase 3)."""
+    if any(f.filename and Path(f.filename).suffix.lower() in UPLOAD_TYPES for f in files) and (
+            stop := demo_stop(request, "upload", "/capture")):
+        return stop
     audio: list[Path] = []
     body = "\n".join(x for x in (title.strip(), text.strip()) if x)
     with db.transaction(conn):
@@ -3574,9 +3617,11 @@ def costs_match_console(spent: str = Form(...), credits: str = Form(""), conn: s
 
 
 @router.post("/settings/accounts")
-def add_account(provider: str = Form(...), nickname: str = Form(...), owner: str = Form("Brian"), type: str = Form("paid"),
+def add_account(request: Request, provider: str = Form(...), nickname: str = Form(...), owner: str = Form("Brian"), type: str = Form("paid"),
                 monthly_cap_usd: str = Form(""), conn: sqlite3.Connection = Conn):
     """Add an account row. The key is never entered here; Brian stores it with set_api_key.sh on the M14."""
+    if stop := demo_stop(request, "keys", "/settings/keys"):
+        return stop
     try:
         cap = float(monthly_cap_usd) if monthly_cap_usd.strip() else None
         name = nickname.strip() or provider
@@ -3601,12 +3646,14 @@ def test_account_confirm(request: Request, aid: int, conn: sqlite3.Connection = 
 
 
 @router.post("/settings/accounts/{aid}/test")
-def test_account(aid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
+def test_account(request: Request, aid: int, confirm: str = Form(""), conn: sqlite3.Connection = Conn):
     """Test button: a tiny call (fractions of a cent, logged in the Data Ledger). The key itself never reaches the page."""
     if not conn.execute("SELECT 1 FROM account WHERE id = ?", (aid,)).fetchone():
         raise HTTPException(404, "No such account")
     if not confirmed(confirm):
         return RedirectResponse(f"/settings/accounts/{aid}/test/confirm", status_code=303)
+    if stop := demo_stop(request, "keys", "/settings/keys"):
+        return stop
     r = accounts.test_key(conn, aid)
     ok = bool(r.get("ok"))
     msg = f"Key works (test cost ${r.get('cost_usd', 0):.5f})." if ok else f"Key test failed: {r.get('error') or 'unexpected reply'}"
@@ -3660,6 +3707,8 @@ def processing_speed(request: Request, mode: str = Form("auto"), conn: sqlite3.C
 @router.post("/processing/{job_id}/retry")
 def processing_retry(request: Request, job_id: int, conn: sqlite3.Connection = Conn):
     """Try again from the failed step; finished steps (like the transcript) are kept."""
+    if stop := demo_stop(request, "run", "/processing"):
+        return stop
     if not queue.retry(conn, job_id):
         raise HTTPException(409, "Only a failed recording can be tried again.")
     return back(request, "/processing")

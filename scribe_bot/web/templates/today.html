@@ -58,9 +58,9 @@
   <ol>
     <li><b>Record</b> in Google Recorder as usual. It syncs to the M14 in seconds.</li>
     <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>Summarize</i> for a summary and tasks, or <i>Transcript only</i> (free, stays on the M14).</li>
-    <li><b>Read</b> it in <a href="/conversations">Conversations</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
+    <li><b>Read</b> it in <a href="/conversations">Talks</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
     <li><b>Fix</b> anything wrong right there: tap <i>Done</i>, or <i>⋯</i> for <i>Change person</i>, <i>Edit</i> and <i>Remove</i>. Tap a speaker's name to rename them. Every change can be undone.</li>
-    <li><b>Find</b> it later in <a href="/conversations">Talks</a> (conversations and people), <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
+    <li><b>Find</b> it later in <a href="/conversations">Talks</a>, <a href="/people">People</a>, <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
   </ol>
   <p class="meta">Named voices are recognised next time.</p>
 </section>
@@ -123,7 +123,7 @@
   <div class="section-head"><h2>Your week</h2></div>
   {% set sp = week.speaking %}{% set lv = speaking_levels(sp) if sp else {} %}
   <div class="tiles">
-    {{ m.stat_tile("Conversations", week.conversations, sub="since " ~ week.since|local_date, href="/conversations?start=" ~ week.since) }}
+    {{ m.stat_tile("Talks", week.conversations, sub="since " ~ week.since|local_date, href="/conversations?start=" ~ week.since) }}
     {{ m.stat_tile("Tasks you finished", week.done, sub="see Done", href="/tasks?show=done") }}
     {{ m.stat_tile("Your speaking", (sp.wpm|round|int ~ " words/min") if sp else "No numbers yet", lv.pace if sp else None,
                    sub=(sp.conversations ~ " conversation" ~ ('s' if sp.conversations != 1 else '') ~ " · pace, fillers, questions") if sp else "after your next conversation",
@@ -134,7 +134,7 @@
 {% if not (needs_count or due or overdue_theirs or n_inbox or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
 <section class="section">
   <div class="card">{{ m.empty("check-circle", "All clear", "Nothing needs you right now. New recordings, due tasks and late promises show up here.") }}</div>
-  <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Conversations</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>
+  <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Talks</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>
     · <a href="/review?tab=done">History (done and dismissed)</a></p>
 </section>
 {% endif %}

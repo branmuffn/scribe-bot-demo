@@ -322,6 +322,16 @@
     if (e.key === "Escape" && card && !card.hidden && tourState()) { setTour(null); showTour(); }
   });
   document.addEventListener("DOMContentLoaded", showTour);
+  // D-12: the public demo's welcome card, once per browser; any of its buttons (or Escape) closes it for good
+  (function () {
+    var w = document.getElementById("demo-welcome");
+    if (!w) return;
+    var seen = function () { try { return localStorage.getItem("demo-welcome") === "1"; } catch (_) { return true; } };
+    var close = function () { w.hidden = true; try { localStorage.setItem("demo-welcome", "1"); } catch (_) {} };
+    if (!seen() && !tourState() && !document.documentElement.classList.contains("in-pane")) w.hidden = false;
+    w.addEventListener("click", function (e) { if (e.target.closest("[data-demo-welcome]")) close(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !w.hidden) close(); });
+  })();
 
   // Today's Processing card is replaced every 15 s: an opened "Each step" list stays open.
   var openSteps = [];
@@ -544,6 +554,7 @@
     var mr = null, chunks = [];
     rec.hidden = false;
     rec.addEventListener("click", function () {
+      if (document.documentElement.hasAttribute("data-demo")) { window.sbNote("Demo: voice notes aren't recorded here. Nothing was uploaded."); return; }   // D-11
       if (rec.dataset.retry && rec._retry) { delete rec.dataset.retry; rec._retry(); return; }
       if (mr && mr.state === "recording") { mr.stop(); return; }
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
@@ -588,6 +599,8 @@
   window.sbNote = netNote;   // R5-12: the app's own note for every block (no browser alert boxes)
   // R5-11: never an error code on screen; a plain sentence that says what to do
   window.sbFail = function (status) {
+    if (document.documentElement.hasAttribute("data-demo"))   // the public demo has no M14 or Tailscale to point to
+      return status === 0 ? "Can't reach the demo. Check your connection and try again." : "That didn't work in the demo. Reload the page and try again.";
     return status >= 500 ? "Something went wrong on the M14. Try again; if it keeps happening, open Status."
       : status === 0 ? "Can't reach the M14. Check Tailscale is on, then try again."
       : status === 413 ? "That file is too big to send."
@@ -1065,7 +1078,8 @@ window.ScribeUpload = (function () {
   document.addEventListener("pointerdown", function (e) { if (card && busy !== true && !card.contains(e.target)) close(); }, true);
   window.addEventListener("beforeunload", function (e) { if (busy === true) { e.preventDefault(); e.returnValue = ""; } });
   var LABEL = { audio: ["ok", "Added"], older: ["ok", "Added (you had it, never processed)"], transcript: ["ok", "Transcript saved"],
-    known: ["dup", "Already in Scribe Bot, skipped"], pending: ["dup", "Already uploaded, skipped"], failed: ["bad", "Didn't upload"] };
+    known: ["dup", "Already in Scribe Bot, skipped"], pending: ["dup", "Already uploaded, skipped"], failed: ["bad", "Didn't upload"],
+    demo: ["dup", "Not added: the demo doesn't take recordings"] };
   function row(f) {
     var li = document.createElement("li"); li.className = "up-row up-wait";
     li.innerHTML = '<span class="up-ic"></span><span class="up-name">' + esc(f.name) + '</span><span class="up-st meta">Waiting</span>';
@@ -1081,6 +1095,8 @@ window.ScribeUpload = (function () {
   var withAi = false;   // G2: the choice made on the card before uploading
   function send(f, onProg) {
     return new Promise(function (ok) {
+      // D-11: the public demo takes no recordings, so the file isn't even sent (the server says the same if it is)
+      if (document.documentElement.hasAttribute("data-demo")) { onProg(-1); return ok({ result: "demo" }); }
       var fd = new FormData(); fd.append("file", f, f.name); if (withAi) fd.append("ai", "1");
       xhr = new XMLHttpRequest();
       xhr.open("POST", "/capture/upload"); xhr.setRequestHeader("Accept", "application/json");
@@ -1187,15 +1203,18 @@ window.ScribeUpload = (function () {
       busy = false; xhr = null;
       rows.slice(out.length).forEach(function (li) { li.querySelector(".up-st").textContent = "Not sent (stopped)"; });
       var n = function (k) { return out.filter(function (o) { return k.indexOf(o.res.result) >= 0; }).length; };
-      var added = n(["audio", "older"]), dup = n(["known", "pending"]), bad = n(["failed"]), tx = n(["transcript"]);
+      var added = n(["audio", "older"]), dup = n(["known", "pending"]), bad = n(["failed"]), tx = n(["transcript"]), demo = n(["demo"]);
       var parts = [];
+      if (demo) parts.push(demo + " not added (demo)");
       if (added) parts.push(added + " added");
       if (tx) parts.push(tx + " transcript" + (tx > 1 ? "s" : ""));
       if (dup) parts.push(dup + " already in Scribe Bot");
       if (bad) parts.push(bad + " didn't upload");
-      title.textContent = (bad ? "Done, with problems: " : "✓ Done: ") + (parts.join(" · ") || "nothing sent");
+      title.textContent = demo && !added && !bad ? "Demo: nothing was uploaded" :
+        (bad ? "Done, with problems: " : "✓ Done: ") + (parts.join(" · ") || "nothing sent");
       now.textContent = added ? (withAi ? "New recordings show in Talks within a minute; AI notes follow a few minutes after each transcript." : "New recordings show in Talks within a minute, transcript only. Summarize any of them when you like.") :
-        dup && !bad ? "Nothing new: Scribe Bot already had these." : "";
+        dup && !bad ? "Nothing new: Scribe Bot already had these." :
+        demo ? "This demo is for looking around. To add recordings, run Scribe Bot on your own computer." : "";
       c.classList.add("up-done");
       acts.innerHTML = (bad ? '<button type="button" class="btn up-retry">Try again (' + bad + ")</button>" : "") +
         (added ? '<a class="btn btn-primary" href="/inbox">Open Inbox</a>' : "") + '<button type="button" class="btn up-close">Close</button>';

@@ -56,7 +56,7 @@
 {% endif %}
 
 {{ m.jump_bar(([] if p.id == 1 else [("person-open", "Open items")]) + ([("my-speaking", "Your speaking")] if speaking else [])
-               + [("person-facts", "Notes"), ("sec-convs", "Conversations")]) }}
+               + [("person-facts", "Notes"), ("sec-convs", "Talks")]) }}
 {% if p.id != 1 %}
 {% set late_mine = i_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
 {% set late_theirs = they_owe|selectattr("due")|selectattr("due", "lt", today)|list|length %}
@@ -88,7 +88,7 @@
 </section>
 
 <section class="section" id="sec-convs">
-  {{ m.section("Conversations", n_convs) }}
+  {{ m.section("Talks", n_convs) }}
   <div class="card" id="person-convs">{% for c in convs %}{{ m.conv_row(c) }}{% else %}{{ m.empty("chat", "No conversations yet") }}{% endfor %}
     {{ m.more("person-convs", convs|length, n_convs) }}</div>
 </section>

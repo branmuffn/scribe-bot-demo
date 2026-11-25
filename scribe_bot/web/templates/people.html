@@ -42,7 +42,7 @@
     <div class="item unnamed-item"><div class="item-main"><div class="item-title">Speaker {{ u.num }} · <a href="/conversations/{{ u.cid }}#speakers">{{ u.conv_title or 'Conversation' }}</a></div>
       <div class="item-sub"><span>{{ u.at|local_date }}</span>{% if u.talk_seconds %}<span>{{ u.talk_seconds|duration }} talking</span>{% endif %}{% if u.n_tasks %}<span>{{ u.n_tasks }} task{{ 's' if u.n_tasks != 1 }}</span>{% endif %}{% if u.n_facts %}<span>{{ u.n_facts }} note{{ 's' if u.n_facts != 1 }}</span>{% endif %}</div>
       <form method="post" action="/speakers/{{ u.sid }}/name" class="row sp-pick" style="margin-top:6px">
-        <select name="person_id" aria-label="Who this is" class="grow" data-autosave><option value="">Who is it?</option>{% for p in everyone %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>{% if u.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ u.sid) }}{% endif %}
+        <select name="person_id" aria-label="Who this is" class="grow" data-autosave><option value="">Who is it?</option>{% for p in everyone %}<option value="{{ p.id }}">{{ (p.name|me_label) if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>{% if u.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ u.sid) }}{% endif %}
         <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits></form></div></div>
     {% endfor %}
   </div></div>

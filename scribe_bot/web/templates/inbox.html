@@ -142,7 +142,7 @@
   {% else %}{{ m.empty("check-circle", "Inbox is empty", "New recordings from the phone or this page show up here, waiting for your OK.") }}{% endif %}
 {% endfor %}
 </div>
-{% if recordings_total and not chosen %}<p class="meta in-total">All {{ n_ready }}: with AI ~{{ recordings_total.ai_s|duration }} · ~${{ '%.2f'|format(recordings_total.cost) }} · transcript only ~{{ recordings_total.local_s|duration }}</p>{% endif %}
+{% if recordings_total and not chosen %}{# F32: "All 7: with AI ~80 min" sat under "9 waiting" and read as a miscount; say which ones and what the times are #}<p class="meta in-total">To do {{ 'the new one' if n_ready == 1 else 'all ' ~ n_ready ~ ' new ones' }}: ~{{ recordings_total.ai_s|duration }} with AI notes (~${{ '%.2f'|format(recordings_total.cost) }}), or ~{{ recordings_total.local_s|duration }} for transcripts only</p>{% endif %}
 {# Long-press a row (or Select) to pick several: Transcript only or Delete for all of them at once. Merge comes next. #}
 {# Q2-A (Brian, 2026-11-21; like Google Photos / Files): the count and Select all on top, the actions with a word under
    each at the bottom (in place of the tab bar). ✕, Esc or a tap outside stops selecting. #}

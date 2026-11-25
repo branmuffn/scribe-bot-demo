@@ -69,6 +69,14 @@ def local_datetime(ts: str | None) -> str:
 templates.env.filters["local_datetime"] = local_datetime
 
 
+def me_label(name: str | None) -> str:
+    """F38: "Me (Brian)" in pickers came from a fixed string; it now follows person 1's own name ("Me" when that is "Me")."""
+    return "Me" if not name or name == "Me" else f"Me ({name})"
+
+
+templates.env.filters["me_label"] = me_label
+
+
 def short_date(ts: str | None) -> str:
     """'11/17/26' in local time (Brian, 2026-11-22: the day a talk was processed, in small letters)."""
     if not ts:

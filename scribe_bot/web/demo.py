@@ -62,7 +62,10 @@ def remove(conn: sqlite3.Connection) -> int:
             conn.execute("DELETE FROM review_item WHERE conversation_id = ?", (cid,))
             conn.execute("DELETE FROM conversation WHERE id = ?", (cid,))
         for (pid,) in conn.execute("SELECT id FROM person WHERE name = ?", (DEMO_PERSON,)).fetchall():
-            conn.execute("DELETE FROM task WHERE owner_person_id = ?", (pid,))
+            # F39: if the demo person was picked in a real talk, removing them failed ("changed on another device") and
+            # took real tasks with them. Real talks keep their lines (speaker goes back to unnamed) and tasks (back to me).
+            conn.execute("UPDATE speaker SET person_id = NULL, confirmed = 0 WHERE person_id = ?", (pid,))
+            conn.execute("UPDATE task SET owner_person_id = 1 WHERE owner_person_id = ?", (pid,))
             conn.execute("DELETE FROM search_index WHERE kind = 'person' AND ref_id = ?", (pid,))
             conn.execute("DELETE FROM person WHERE id = ?", (pid,))
     return len(ids)

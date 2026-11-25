@@ -35,6 +35,16 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
     def ago(days, hours=0):
         return (base - timedelta(days=days, hours=hours)).isoformat(timespec="seconds")
 
+    def at(hhmm, days=0, weekday=None):
+        """F35: the last time the clock read hhmm here (the pages show local time), `days` further back; weekday 6 = Sunday."""
+        loc = base.astimezone()
+        t = loc.replace(hour=int(hhmm[:2]), minute=int(hhmm[3:]), second=0, microsecond=0)
+        if t > loc:
+            t -= timedelta(days=1)
+        while weekday is not None and t.weekday() != weekday:
+            t -= timedelta(days=1)
+        return (t - timedelta(days=days)).astimezone(timezone.utc).isoformat(timespec="seconds")
+
     def due(days):
         return (base + timedelta(days=days)).date().isoformat()
 
@@ -42,6 +52,8 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
         return conn.execute("INSERT INTO person (name, area, notes, created_at, color) VALUES (?, ?, 'Demo person (made up).', ?, ?)",
                             (name, area, now, color)).lastrowid
 
+    # F38 (live pass): the first install names person 1 after the owner; on the public demo they are just "Me"
+    conn.execute("UPDATE person SET name = 'Me' WHERE id = 1")
     # F16 (live pass): the first install already has one Claude account; the demo renames it instead of adding a second
     first = conn.execute("SELECT id FROM account WHERE provider = 'anthropic' ORDER BY id LIMIT 1").fetchone()
     if first:
@@ -166,7 +178,7 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
                  "VALUES ('recorder', 'demo/coffee-with-sam.m4a', 'demo-coffee-with-sam', 1920, ?, 'awaiting_approval', "
                  "'DEMO: Coffee with Sam')", (ago(0, 1),))
     conn.execute("UPDATE person SET last_spoken_at = ? WHERE name LIKE '%(demo)'", (ago(1),))
-    _seed_more(conn, convo, person, ago, due, folder)
+    _seed_more(conn, convo, person, ago, due, folder, at)
 
 
 # ---------- More of everything (Brian, 2026-11-25: the demo should look like real use, every screen filled) ----------
@@ -220,7 +232,7 @@ def _tone(path: Path, seconds: float, freq: float) -> None:
         w.setnchannels(1), w.setsampwidth(2), w.setframerate(rate), w.writeframes(frames)
 
 
-def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
+def _seed_more(conn, convo, person, ago, due, folder: Path | None, at) -> None:
     from scribe_bot.pipeline import ingest
     rnd = random.Random(2026)
     now = db.now()
@@ -284,17 +296,20 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
                          "VALUES ('inbox', ?, ?, ?, ?)", (cid, row[0], json.dumps({"reason": "low confidence"}), now))
     # F19 (live pass): Backups & schedules were empty. A week of made-up nightly backups to two drives, one restore test,
     # and each schedule's last run (one failed, so the "failed" look can be seen too)
-    for d in range(7):
+    for d in range(6, -1, -1):   # F33: oldest first, as real runs are saved, so "last backup" is today's and not a week old
         for dest, size in (("Drive A (demo)", 41_000_000 + d * 900_000), ("Drive B (demo)", 41_000_000 + d * 900_000)):
             conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES (?, 'backup', ?, ?, ?, 'ok')",
-                         (dest, ago(d, 6), ago(d, 5.95), size))
+                         (dest, at("02:00", d), at("02:03", d), size))
+    # F35: each job's last run matches its own time ("daily 2:00 AM · last ran … 2:00 am", not "… 11:05 pm")
     conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES "
-                 "('Drive A (demo)', 'restore_test', ?, ?, 41000000, 'ok')", (ago(12, 6), ago(12, 5.8)))
-    for job, days in (("export", 0), ("trash-purge", 0), ("backup", 0), ("reconcile", 0), ("original_cleanup", 0),
-                      ("restore-test", 12), ("briefing", 0), ("task-cleanup", 3), ("weekly-review", 3)):
+                 "('Drive A (demo)', 'restore_test', ?, ?, 41000000, 'ok')", (at("03:00", 12), at("03:12", 12)))
+    for job, hhmm, days, weekday in (("export", "01:30", 0, None), ("trash-purge", "01:45", 0, None), ("backup", "02:00", 0, None),
+                                     ("reconcile", "02:30", 0, None), ("original_cleanup", "03:00", 0, None),
+                                     ("restore-test", "03:00", 12, None), ("briefing", "07:00", 0, None),
+                                     ("task-cleanup", "17:30", 0, 6), ("weekly-review", "18:00", 0, 6)):
         conn.execute("INSERT OR REPLACE INTO schedule_run (job_name, last_success_at, last_attempt_at, status) VALUES (?, ?, ?, ?)",
-                     (job, ago(days + (1 if job == "reconcile" else 0)), ago(days), "failed: the phone folder was offline (made up)"
-                      if job == "reconcile" else "ok"))
+                     (job, at(hhmm, days + (1 if job == "reconcile" else 0), weekday), at(hhmm, days, weekday),
+                      "failed: the phone folder was offline (made up)" if job == "reconcile" else "ok"))
     # F18 (live pass): the Glossary was empty. Three made-up terms, plus one suggestion waiting in Review
     for term, variants, ok in (("Northwind", ["north wind", "nor wind"], 1), ("OKR", ["okay are", "oh kay are"], 1),
                                ("Priya", ["pria", "pre ya"], 1), ("Kubernetes", ["cooper netties"], 0)):

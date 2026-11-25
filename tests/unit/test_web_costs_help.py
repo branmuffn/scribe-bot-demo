@@ -78,3 +78,22 @@ def test_page_code_links_carry_a_version(env):
     assert env[0].get(f"/static/app.js?v={v.group(1)}").status_code == 200
     # Every link is a full page load since 2026-11-22 (no hx-boost), so a new deploy's ?v= reaches every page by itself.
     # The old "newer page code" header and its swap check went with boost (R5-20).
+
+
+def test_remove_demo_after_its_person_was_used_in_a_real_talk(env):
+    """F39 (edge case): the demo person picked as a speaker in a real talk, and given a real task. "Remove demo data" used
+    to fail ("changed on another device", the speaker still pointed at them) and would have deleted the real task."""
+    client, conn, _ = env
+    client.post("/demo/load")
+    pid = one(conn, "SELECT id FROM person WHERE name = 'Jordan Sample (demo)'")
+    real = one(conn, "SELECT id FROM conversation WHERE title NOT LIKE 'DEMO:%' ORDER BY id LIMIT 1")
+    conn.execute("UPDATE speaker SET person_id = ?, confirmed = 1 WHERE id = (SELECT id FROM speaker WHERE conversation_id = ? LIMIT 1)",
+                 (pid, real))
+    conn.execute("INSERT INTO task (conversation_id, title, owner_person_id, created_at, updated_at) "
+                 "VALUES (?, 'Real task', ?, '2026-11-25T10:00:00+00:00', '2026-11-25T10:00:00+00:00')", (real, pid))
+    conn.commit()
+    r = client.post("/demo/remove", follow_redirects=False)
+    assert r.status_code == 303
+    assert one(conn, "SELECT count(*) FROM person WHERE name LIKE '%(demo)'") == 0
+    assert one(conn, "SELECT owner_person_id FROM task WHERE title = 'Real task'") == 1
+    assert one(conn, "SELECT count(*) FROM speaker WHERE conversation_id = ? AND person_id IS NULL", real) >= 1

@@ -92,7 +92,7 @@
         <form {{ m.hx("/speakers/" ~ s.id ~ "/name", "conv") }} class="picker-form sp-pick">
           <label class="sr-only" for="sp-{{ s.id }}">Person</label>
           <select id="sp-{{ s.id }}" name="person_id" data-autosave><option value="">Who is it?</option>
-            {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if p.id == s.person_id }}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option>
+            {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if p.id == s.person_id }}>{{ (p.name|me_label) if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option>
             {% if s.person_id %}<option value="__not">✕ Not {{ s.name }}</option>{% elif not s.unknown %}<option value="__idk">Don't know (stop asking)</option>{% if n_open >= 2 %}<option value="__idk_rest">Don't know this one or the other {{ n_open - 1 }}</option>{% endif %}{% endif %}</select>{% if s.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ s.id) }}{% endif %}
           <input type="hidden" name="special" value="">
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits>

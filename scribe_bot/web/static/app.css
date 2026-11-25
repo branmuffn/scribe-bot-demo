@@ -2428,6 +2428,9 @@ html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
 /* B29 (Brian, 2026-11-25): a setting's description is the explanation, so it wraps in full instead of ending in "…"
    (the one-line "…" rule is for list rows only) */
 .settings-pane .item-sub, .settings-pane .item-sub:not(:has(*)) { white-space: normal; overflow: visible; text-overflow: clip; display: block }
+/* F16 (live pass): in this block layout the row's "·" (made for flex rows, pulled left 2 px) sat on the word before it
+   ("Owner Me· cap"); here the space between the words already comes first, so the dot gets the same space after it. */
+.settings-pane .item-sub > :is(span, b):not(.badge) + :is(span, b):not(.badge)::before { margin: 0 4px 0 0 }
 /* B33 (Brian, 2026-11-25): a placeholder never runs past its box: boxes are sized for their hint, and a hint that still
    doesn't fit ends in "…" */
 input::placeholder, textarea::placeholder { text-overflow: ellipsis }
@@ -2664,3 +2667,22 @@ html.in-pane :is(.copy-note, .tour) { left: 50% !important }
 .demo-welcome .row { flex-wrap: nowrap; gap: var(--s2) }
 .demo-welcome .row .btn { white-space: nowrap }
 @media (max-width: 520px) { .demo-welcome .row { flex-wrap: wrap } .demo-welcome .row .grow { display: none } }
+/* F14 (live pass, 2026-11-25): at 1024 wide the Right pane's default width (46vw / 42vw) ignored the sidebar, so the list
+   beside it shrank to ~230 px (titles one word per line, "Se…" search). Default widths now leave the list at least
+   ~460 px; a width you dragged yourself still wins (ui.js clamps it). Same widths as before on wide screens. */
+@media (min-width: 960px) {
+  :root { --pane-w: clamp(300px, 46vw, calc(100vw - var(--side) - 460px)) }
+  body.dp-on { --dpw: var(--dp-w, clamp(300px, 42vw, min(460px, calc(100vw - var(--side) - 460px)))) }
+}
+/* F17 (live pass, 2026-11-25): at 960-1279 px with the full sidebar, Settings had three columns and its content got ~400 px
+   (each Data Ledger row ran 8 lines). The settings menu is an icon column there (name on hover and for screen readers). */
+@media (min-width: 960px) and (max-width: 1279px) {
+  html:not(.side-rail) .settings-grid:not(.at-home) { grid-template-columns: 52px minmax(0, 1fr); gap: var(--s4) }
+  html:not(.side-rail) .settings-grid:not(.at-home) .settings-nav-title { display: none }
+  html:not(.side-rail) .settings-grid:not(.at-home) .settings-nav a { justify-content: center; padding: 10px 0 }
+  html:not(.side-rail) .settings-grid:not(.at-home) .settings-nav .sn-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap }
+}
+/* F21 (live pass, 2026-11-25): a second line's last item is clipped (for its "…"), and its "·" sits 2 px outside it, so
+   that dot was cut in half on every list (Costs, Talks' meta, people). The item starts 2 px sooner with 2 px of padding:
+   same positions, whole dot. (Talk rows draw their dots another way.) */
+.item:not(.conv-row) .item-sub > :is(span, b):not(.badge):not(:first-child):last-child { padding-left: 2px; margin-left: -2px }

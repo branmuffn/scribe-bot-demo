@@ -2326,7 +2326,7 @@ def person_page(request: Request, pid: int, n: int = PAGE, conn: sqlite3.Connect
         "SELECT DISTINCT c.* FROM conversation c JOIN speaker s ON s.conversation_id = c.id WHERE s.person_id = ? "
         f"AND c.deleted_at IS NULL{ca} ORDER BY coalesce(c.started_at, c.created_at) DESC", (pid, *cargs), n)
     voice = conn.execute("SELECT sum(sample_count) FROM voiceprint WHERE person_id = ?", (pid,)).fetchone()[0]
-    return render(request, "person.html", "people", conn, p=p, facts=facts, they_owe=they_owe, i_owe=i_owe, convs=convs, n_convs=n_convs,
+    return render(request, "person.html", "people", conn, ai_busy=ai_jobs.pending_ids(conn), p=p, facts=facts, they_owe=they_owe, i_owe=i_owe, convs=convs, n_convs=n_convs,
                   talk_time=talk.with_person(conn, pid) if pid != ME else None,
                   speaking={d: talk.speaking_trend(conn, d) for d in (7, 30)} if pid == ME else None,
                   aliases=", ".join(json.loads(p["aliases"] or "[]")), voice=voice, people=people(conn))
@@ -3542,7 +3542,7 @@ def settings_page(request: Request, group: str = "home", tested: int | None = No
                   quick_titles=setting(conn, "quick_titles", "1") != "0",
                   added={"ok": bool(ok), "message": msg} if added else None,
                   tested={"ok": bool(ok), "message": msg or ("Key works." if ok else "Key test failed.")} if tested else None,
-                  cap=cap, month=month, ledger=ledger, left_today=left_today,
+                  cap=cap, month=month, all_time=ctx["all_time"], ledger=ledger, left_today=left_today,   # F15: was never passed, so it read $0.00
                   offline=ai_router.offline(conn),
                   backups=conn.execute("SELECT * FROM backup_run ORDER BY started_at DESC LIMIT 20").fetchall(),
                   schedules=sorted(conn.execute("SELECT * FROM schedule_run").fetchall(),

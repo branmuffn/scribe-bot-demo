@@ -9,7 +9,7 @@
    On a phone: the list, then one group per page with "‹ Settings". #}
 <div class="settings-grid{{ ' at-home' if group == 'home' }}">
 <nav class="settings-nav" aria-label="Settings"><div class="settings-nav-title">Settings</div>
-  {% for g in settings_groups %}<a href="{{ g.href }}" class="{{ 'on' if g.href == '/settings/' ~ group }}" {{ 'aria-current=page' if g.href == '/settings/' ~ group }}>{{ m.icon(g.icon) }} <span class="sn-t">{{ g.title }}</span></a>{% endfor %}
+  {% for g in settings_groups %}<a href="{{ g.href }}" title="{{ g.title }}" class="{{ 'on' if g.href == '/settings/' ~ group }}" {{ 'aria-current=page' if g.href == '/settings/' ~ group }}>{{ m.icon(g.icon) }} <span class="sn-t">{{ g.title }}</span></a>{% endfor %}
 </nav>
 <div class="settings-pane">
 {% if group == 'home' %}
@@ -115,9 +115,9 @@
         <form method="post" action="/settings/quick-titles"><input type="hidden" name="on" value="{{ 0 if quick_titles else 1 }}">
           <button class="btn">{{ 'Turn off' if quick_titles else 'Turn on' }}</button></form></div></div>
     {% set pct = (month / cap * 100) if cap else 0 %}
-    <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} this month of the ${{ '%.0f'|format(cap) }} cap · ${{ '%.2f'|format(all_time or 0) }} all time</a>
+    <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} of ${{ '%.0f'|format(cap) }} this month</a>
       <div class="meter {{ 'bad' if pct >= 100 else 'warn' if pct >= 50 }}"><span style="width:{{ [pct, 100]|min }}%"></span></div>
-      <div class="item-sub">Alerts at 50%, 80% and 100%. Runs stop at the cap. Tap for every call and its cost.</div></div></div>
+      <div class="item-sub">${{ '%.2f'|format(all_time or 0) }} all time. Alerts at 50%, 80% and 100%; runs stop at the cap. Tap for every call and its cost.</div></div></div>
   </div>
 </section>
 {% endif %}

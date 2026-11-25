@@ -38,9 +38,9 @@
   </div>
 </section>
 
-<details class="section transcript" id="console"{{ ' open' if matched }}>
-  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Update from the Anthropic console</h2>
-    <span class="count meta">{% if check %}last {{ check.time|local_datetime }}{% else %}never{% endif %}</span></summary>
+<details class="fold-sec" id="console"{{ ' open' if matched }}>
+  <summary class="section-head"><span class="chev">{{ m.icon("chev") }}</span><h2>Update from the Anthropic console</h2>
+    <span class="count">{% if check %}last {{ check.time|local_datetime }}{% else %}never{% endif %}</span></summary>
   <div class="card">
     {% if matched == 'bad' %}<div class="notice" role="status">{{ m.icon("alert") }}<div>Type the dollar amounts as numbers, e.g. 0.21</div></div>
     {% elif matched %}<div class="notice ok" role="status">{{ m.icon("check-circle") }}<div>Matched. This month now includes {{ matched }} of spend outside Scribe Bot.</div></div>{% endif %}
@@ -68,8 +68,8 @@
   </div>
 </section>
 
-<details class="section transcript">
-  <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Every call</h2><span class="count meta">{{ rows|length }}</span></summary>
+<details class="fold-sec">
+  <summary class="section-head"><span class="chev">{{ m.icon("chev") }}</span><h2>Every call</h2><span class="count">{{ rows|length }}</span></summary>
   <div class="card"><div class="table-wrap"><table>
     <thead><tr><th>When</th><th>Task</th><th>Model</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th></tr></thead>
     <tbody>{% for r in rows %}

@@ -282,7 +282,23 @@ def when_back(ts: str | None) -> str:
 templates.env.filters["when_back"] = when_back
 
 
+def demo_keep_alive(cfg: settings.Settings) -> None:
+    """Public demo only (F22): no worker or M14 there, so made-up healthy readings stand in for them."""
+    if not public_demo():
+        return
+    from scribe_bot import demo_data
+    try:
+        conn = db.connect(cfg.db_path)
+        try:
+            demo_data.keep_alive(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+
+
 def worker_status(cfg: settings.Settings) -> dict:
+    demo_keep_alive(cfg)
     try:
         conn = db.connect(cfg.db_path)
         try:
@@ -322,6 +338,7 @@ def pipeline_paused(cfg: settings.Settings) -> bool:
 
 def machine_stored(cfg: settings.Settings) -> dict:
     """Latest M14 sample, 24-hour history, reasons needing attention, last recording time. DB reads only (fast)."""
+    demo_keep_alive(cfg)
     try:
         conn = db.connect(cfg.db_path)
         try:
@@ -441,6 +458,10 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
     def status() -> dict:
         h = health.check(cfg, run) if run else health.check(cfg)
         h["worker"] = worker_status(cfg)
+        if public_demo():   # F22: Vercel's own disk and power say nothing about the M14; show made-up healthy ones
+            h["disk"] = {"used_pct": 38.4, "free_gb": 296.0, "ok": True}
+            h["power"] = {"source": "ac", "battery_pct": 100, "state": "charged"}
+            h["ok"] = h["db"]["ok"]
         return h
 
     @app.get("/ping")
@@ -504,7 +525,11 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
     @app.get("/status/machine", response_class=HTMLResponse)
     def status_machine(request: Request):
         """Live M14 readings for the Status page card, fetched once when the page opens (no polling). Wi-Fi is cached."""
-        live = machine.fast(run or subprocess.run)
+        if public_demo():   # F22: made-up live readings (there is no M14 behind the demo)
+            from scribe_bot import demo_data
+            live = demo_data.live_reading()
+        else:
+            live = machine.fast(run or subprocess.run)
         return templates.TemplateResponse(request, "_machine.html", machine_context(machine_stored(cfg), live))
 
     # PWA files served from the root so the service worker controls the whole app.

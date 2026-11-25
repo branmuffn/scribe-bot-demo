@@ -187,7 +187,7 @@ method="post" action="{{ action }}"{% if tgt %} hx-post="{{ action }}" hx-target
 {%- endmacro %}
 
 {% macro due(t) -%}
-  {%- if t.due and t.due|short_due %}<span class="{{ 'bad' if t.status == 'open' and t.due < today else '' }}" title="{{ t.due }}">{{ 'Overdue · ' if t.status == 'open' and t.due < today }}{{ t.due|short_due }}</span>{% endif -%}
+  {%- if t.due and t.due|short_due %}<span class="due-v{{ ' bad' if t.status == 'open' and t.due < today }}" title="{{ t.due }}">{{ 'Overdue · ' if t.status == 'open' and t.due < today }}{{ t.due|short_due }}</span>{% endif -%}
 {%- endmacro %}
 
 {# Edit in place: ✎ next to the text, or double-tap the text itself; it becomes an edit box right there (app.js).

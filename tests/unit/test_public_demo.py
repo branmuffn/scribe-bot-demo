@@ -247,3 +247,64 @@ def test_status_page_reads_healthy_on_the_demo(demo):
     assert "not running" not in card and "Verified" in card
     h = demo.get("/health").json()
     assert h["ok"] and h["worker"]["alive"] and h["disk"]["ok"]
+
+
+def test_closed_charts_keep_their_own_height():
+    """F23 (live pass): opening one Status chart stretched the closed one beside it into an empty box."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    rule = next(line for line in css.splitlines() if line.startswith(".charts {"))
+    assert "align-items: start" in rule
+
+
+def test_demo_private_talk_has_no_ai_and_captures_show(demo):
+    """F25: the demo's Private talk had AI notes and an AI task in Review (private talks never reach the AI).
+    F24: Add recording › Recent said "Nothing captured yet" on the demo."""
+    conn = demo.db()
+    try:
+        cid, summary = conn.execute("SELECT id, summary FROM conversation WHERE private = 1").fetchone()
+        assert summary is None
+        assert conn.execute("SELECT count(*) FROM task WHERE conversation_id = ?", (cid,)).fetchone()[0] == 0
+    finally:
+        conn.close()
+    assert "Nothing captured yet" not in demo.get("/capture").text
+
+
+def test_demo_search_finds_tasks_decisions_and_people(demo):
+    """F27 (live pass): Search on the demo found only transcript lines (tasks, decisions, notes and people weren't indexed)."""
+    assert "about the budget" in demo.get("/search?q=finance&type=task").text     # the matched word is in <mark>
+    assert "for the first version" in demo.get("/search?q=simple&type=decision").text
+    assert "Tasks 0" not in demo.get("/search?q=finance").text
+
+
+def test_talk_menu_does_not_say_local_and_show_ai_cost(demo):
+    """F28: the ⋯ menu said "Processed only on the M14 · AI cost $0.029" on a demo talk."""
+    html = demo.get("/conversations/2").text
+    assert "Processed only on the M14 ·" not in html
+    assert "Made-up talk" in html
+
+
+def test_task_pane_values_stay_on_the_row():
+    """F29: in the narrow right-hand task pane, "Due ... Nov 18 ›" wrapped onto two lines (.grow's 10rem minimum)."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    assert ".ts-pick .grow, .ts-row > summary .grow, a.ts-row .grow { min-width: 0 }" in css
+
+
+def test_long_owner_name_does_not_cut_the_due_date(demo):
+    """F30: on Waiting, "Dr. Evangeline Montgomery-Whitfield (demo)" pushed "Overdue · due Nov 21" off the row."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    assert ".item-sub > b:not(:last-child) { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 4em }" in css
+    assert ".item-sub > :last-child:not(:first-child):not(.due-v) { flex-shrink: 100 !important }" in css
+    assert 'class="due-v bad"' in demo.get("/tasks?tab=waiting").text   # the date is marked so it never shrinks
+
+
+def test_decisions_put_a_dot_between_date_and_talk(demo):
+    """F31: Decisions read "Nov 25  DEMO: Product kickoff" with no "·" between the date and the talk."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    assert '.item-sub > :is(span, b):not(.badge) + a::before { content: "·"' in css
+    html = demo.get("/tasks?tab=decisions").text
+    import re
+    assert re.search(r'<span>[^<]+</span><a href="/conversations/', html)   # the date span, then the talk link

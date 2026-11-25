@@ -303,12 +303,25 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
         if not ok:
             conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('glossary', ?, ?, ?, ?)",
                          (made[2], gid, json.dumps({"term": term}), now))
+    # F24 (live pass): Add recording › Recent said "Nothing captured yet"; a few made-up shares and notes
+    for kind, text, when in (("text", "Ask Priya (demo) whether the Q3 numbers include the contractor costs", ago(0, 2)),
+                              ("link", "https://example.com/articles/better-one-on-ones (made up)", ago(1, 5)),
+                              ("text", "Gift idea for Sam (demo): a cast-iron pan", ago(3, 1)),
+                              ("link", "https://example.com/recipes/weeknight-chili (made up)", ago(6, 4))):
+        conn.execute("INSERT INTO capture (kind, text, created_at, processed) VALUES (?, ?, ?, 1)", (kind, text, when))
+
+    # F27 (live pass): Search found only transcript lines on the demo; the made-up summaries, tasks, decisions, notes,
+    # people and captures are now indexed the way the app indexes its own (extract.reindex_ai_text, people, capture)
+    _index_everything(conn)
+
     # F22 (live pass): the Status page said "Needs attention", "No readings yet" and "Worker not running" (there is no
     # worker or M14 here). Thirty days of made-up healthy M14 readings, every 15 minutes, so the charts have a shape.
     _machine_rows(conn, datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc), timedelta(minutes=15))
 
     # States: one private talk, two in Trash, one still being transcribed, one that failed
-    conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[9],))
+    # F25 (live pass): the private talk had AI notes and an AI task in Review; private talks never go to the AI, so it is
+    # now one of the transcript-only talks
+    conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[11],))
     for cid in made[-2:]:
         conn.execute("UPDATE conversation SET deleted_at = ? WHERE id = ?", (ago(3), cid))
     for title, status, err in (("DEMO: Recording Nov 25 at 8_10 AM", "running", None),
@@ -346,6 +359,22 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
                      "VALUES (?, ?, ?, 'sent', ?, ?, ?)", ("alerts" if i == 4 else "bot", title, link, ago(0, i * 3),
                                                            ago(0, i * 3), ago(0, 1) if i == 5 else None))
     conn.execute("UPDATE person SET last_spoken_at = ? WHERE last_spoken_at IS NULL AND name LIKE '%(demo)'", (ago(9),))
+
+
+def _index_everything(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM search_index WHERE kind != 'segment'")
+    rows = []
+    for c in conn.execute("SELECT id, title, summary FROM conversation"):
+        if c[2]:
+            rows += [("summary", c[0], c[0], c[2]), ("summary", c[0], c[0], c[1])]
+    rows += [("task", r[0], r[1], r[2]) for r in conn.execute("SELECT id, conversation_id, title FROM task WHERE status != 'dropped'")]
+    rows += [("decision", r[0], r[1], r[2]) for r in conn.execute("SELECT id, conversation_id, text FROM decision")]
+    rows += [("fact", r[0], r[1], f"{r[2]}: {r[3]}") for r in conn.execute(
+        "SELECT id, conversation_id, coalesce(person_name, ''), value FROM person_fact")]
+    rows += [("person", r[0], None, " ".join(x for x in (r[1], r[2]) if x)) for r in conn.execute("SELECT id, name, notes FROM person")]
+    rows += [("capture", r[0], None, r[1]) for r in conn.execute("SELECT id, text FROM capture WHERE text IS NOT NULL")]
+    conn.executemany("INSERT INTO search_index (kind, ref_id, conversation_id, text) VALUES (?, ?, ?, ?)",
+                     [r for r in rows if r[3]])
 
 
 MACHINE_COLS = ("ts", "cpu_pct", "load1", "mem_used_pct", "mem_free_pct", "swap_mb", "temp_c", "fan_rpm", "speed_limit",

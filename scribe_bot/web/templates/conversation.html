@@ -21,7 +21,10 @@
       <button class="icon-btn" aria-label="Move to Trash" title="Move to Trash">{{ m.icon("trash") }}</button></form>{% endif %}
     {% call m.menu("this conversation") %}
       <div class="menu-label menu-info">{{ (c.started_at or c.created_at)|local_datetime }}{% if recording_title and recording_title != c.title %} · from “{{ recording_title|recorder_title }}”{% endif %}<br>
-        {{ 'Processed only on the M14' if not c.processed_by or c.processed_by in ('local', 'demo') else 'Speech on the M14 · AI: ' ~ (c.processed_by|ai_label) }} · <a href="/costs">AI cost ${{ '%.3f'|format(ai_cost) }}</a> {{ m.privacy_badge(c) }}</div>
+        {# F28: "Processed only on the M14 · AI cost $0.029" contradicted itself on the demo; a local talk with no AI spend shows no cost #}
+        {%- if c.processed_by == 'demo' %}Made-up talk · <a href="/costs">example AI cost ${{ '%.3f'|format(ai_cost) }}</a>
+        {%- elif not c.processed_by or c.processed_by == 'local' %}Processed only on the M14{% if ai_cost %} · <a href="/costs">AI cost ${{ '%.3f'|format(ai_cost) }}</a>{% endif %}
+        {%- else %}Speech on the M14 · AI: {{ c.processed_by|ai_label }} · <a href="/costs">AI cost ${{ '%.3f'|format(ai_cost) }}</a>{% endif %} {{ m.privacy_badge(c) }}</div>
       {% if c.summary and not c.private %}<button type="button" class="menu-item" data-edit-kp>{{ m.icon("pencil") }} Edit key points</button>{% endif %}
       {% if c.summary %}<button type="button" class="menu-item" data-copy="#recap" title="Summary, tasks and decisions as plain text (or press and hold the summary)">{{ m.icon("copy") }} Copy summary</button>{% endif %}
       {{ m.download("/conversations/" ~ c.id ~ "/export.md", "Export as text file (.md)", "Notes and the transcript as one text file (good for pasting into a chatbot)", "menu-item") }}

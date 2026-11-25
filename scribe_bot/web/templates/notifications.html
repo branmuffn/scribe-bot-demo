@@ -5,10 +5,8 @@
 {% block body %}
 <div class="page-head"><h1>Notifications</h1>
   <form method="post" action="/notifications/test"><button class="btn" title="Sends one harmless line to each Discord channel">{{ m.icon("bell") }} Send a test</button></form></div>
-<p class="section-help">Alerts (the M14, backups, AI spend) also go to your Discord #scribe-alerts, and "New recording waiting
-  for your OK" and "Ready" to #scribe-bot; the Discord app on your phone shows them as push notifications. Processing
-  started, the morning briefing and the weekly review stay here in the app.
-  This list is the record. Titles and links only, never meeting content.</p>
+<p class="section-help">Some also reach your phone through Discord: the M14, backups and AI spend in #scribe-alerts;
+  "waiting for your OK" and "Ready" in #scribe-bot. The rest stays here. Titles and links only, never meeting content.</p>
 {% if sent %}<div class="notice ok" role="status" style="margin-bottom:var(--s3)">{{ m.icon("check-circle") }}<span><b>Test sent to the queue.</b>
   It reaches Discord within about 5 seconds{% if quiet %}; the #scribe-bot one waits until 7 AM (quiet hours){% endif %}.
   Nothing on your phone? See the tips below.</span></div>{% endif %}

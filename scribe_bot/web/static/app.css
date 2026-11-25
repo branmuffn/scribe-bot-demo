@@ -2218,7 +2218,8 @@ html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
 /* Settings: each group's icon in its own column, level with its name */
 .settings-pane .tap-row .item-link { display: inline-flex; align-items: center; gap: 12px }
 .settings-pane .tap-row .item-link .icon { flex: none; width: 20px; height: 20px }
-.settings-pane .tap-row .item-sub { padding-left: 32px }
+/* F36: only a row with an icon indents its line under the name; AI spend has none, so its line sat 32 px in */
+.settings-pane .tap-row:has(.item-link > .icon) .item-sub { padding-left: 32px }
 
 /* People on computers: checkboxes like Talks and Inbox (the toolbar above the list, no Select button) */
 @media (hover: hover) and (pointer: fine) and (min-width: 960px) {
@@ -2695,3 +2696,5 @@ html.in-pane :is(.copy-note, .tour) { left: 50% !important }
    that dot was cut in half on every list (Costs, Talks' meta, people). The item starts 2 px sooner with 2 px of padding:
    same positions, whole dot. (Talk rows draw their dots another way.) */
 .item:not(.conv-row) .item-sub > :is(span, b):not(.badge):not(:first-child):last-child { padding-left: 2px; margin-left: -2px }
+/* F37 (live pass): a note under a card touched it ("If it fails" › "Saves as soon as you tap…"); every such note gets a gap */
+.card + p.meta { margin-top: var(--s2) }

@@ -32,7 +32,7 @@
         <div class="sh-head"><b>Who is this?</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
         <div class="meta"><a href="/conversations/{{ x.r.conversation_id }}">{{ x.r.conv_title or 'Conversation' }}</a> · {{ (x.s.talk_seconds / 60)|round(1) }} min{% if x.payload.guess_id %} · voice match {{ (x.payload.score * 100)|round|int }}%, not sure{% endif %}</div>
         <form class="stack" method="post" action="/speakers/{{ x.s.id }}/name">
-          <div class="sp-pick"><select name="person_id" aria-label="Who is it?" data-autosave><option value="">Who is it?</option>{% for p in people %}<option value="{{ p.id }}"{% if p.id == x.payload.guess_id %} selected{% endif %}>{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>{% if x.s.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ x.s.id) }}{% endif %}</div>
+          <div class="sp-pick"><select name="person_id" aria-label="Who is it?" data-autosave><option value="">Who is it?</option>{% for p in people %}<option value="{{ p.id }}"{% if p.id == x.payload.guess_id %} selected{% endif %}>{{ (p.name|me_label) if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>{% if x.s.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ x.s.id) }}{% endif %}</div>
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits>
           {% if x.payload.guess_id %}<button class="btn btn-primary">Yes, that's right</button>{% endif %}
         </form>

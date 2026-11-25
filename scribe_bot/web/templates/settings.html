@@ -152,7 +152,7 @@
   <form class="quick-add" method="post" action="/settings/accounts" aria-label="Add an account">
     <label class="field"><span>Provider</span><select name="provider">{% for p in providers %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></label>
     <label class="field"><span>Nickname</span><input name="nickname" required placeholder="e.g. Personal" size="18"></label>
-    <label class="field"><span>Owner</span><input name="owner" value="Brian" size="8"></label>
+    {# F38: the public demo's accounts say "Owner Me", and its form filled in a real first name #}<label class="field"><span>Owner</span><input name="owner" value="{{ 'Me' if public_demo else 'Brian' }}" size="8"></label>
     <label class="field"><span>Type</span><select name="type">{% for t in account_types %}<option value="{{ t }}" {{ 'selected' if t == 'paid' }}>{{ t|capitalize }}</option>{% endfor %}</select></label>
     <label class="field"><span>Monthly cap ($)</span><input name="monthly_cap_usd" inputmode="decimal" placeholder="Optional" size="9"></label>
     <button class="btn btn-primary" style="align-self:end">{{ m.icon("plus") }} Add account</button>
@@ -204,7 +204,7 @@
   <div class="card">
     {% for g in glossary %}
     <div class="item"><div class="item-main"><b>{{ g.term }}</b>
-        <div class="item-sub">{% if g.variant_list %}<span>heard as {{ g.variant_list|join(', ') }}</span>{% endif %}{% if not g.approved %}<span class="badge badge-warn">Suggested</span>{% endif %}</div></div>
+        <div class="item-sub">{% if g.variant_list %}<span>heard as {{ g.variant_list|join(', ') }}</span>{% endif %} {% if not g.approved %}<span class="badge badge-warn">Suggested</span>{% endif %}</div></div>
       <div class="item-actions"><form method="post" action="/settings/glossary/{{ g.id }}/delete" hx-confirm="Delete the glossary term “{{ g.term }}”? Future AI runs stop fixing its mis-hearings.">
         <button class="btn btn-icon btn-no" aria-label="Delete {{ g.term }}" title="Delete {{ g.term }}">{{ m.icon("trash") }}</button></form></div></div>
     {% else %}{{ m.empty("book", "No terms yet", "Names and jargon the speech engine mishears, fixed automatically.") }}{% endfor %}
@@ -232,7 +232,7 @@
   <div class="card" id="backup-rows">
     {% if backups|length > 5 %}<label class="lb-q rows-q">{{ m.icon("search") }}<input type="search" placeholder="Filter backups (e.g. failed)" aria-label="Filter backups" data-rows="#backup-rows .item" autocomplete="off"></label>{% endif %}
     {% for b in backups %}<div class="item"><div class="item-main"><div class="item-title">{{ b.destination }}</div>
-      <div class="item-sub"><span>{{ b.kind|replace('_', ' ')|capitalize }}</span><span>{{ b.started_at|local_datetime }}</span>{% if b.bytes %}<span>{{ (b.bytes / 1e9)|round(2) }} GB</span>{% endif %}</div></div>
+      <div class="item-sub"><span>{{ b.kind|replace('_', ' ')|capitalize }}</span> <span>{{ b.started_at|local_datetime }}</span>{% if b.bytes %} <span>{{ (b.bytes / 1e9)|round(2) }} GB</span>{% endif %}</div></div>
       <span class="badge {{ 'badge-ok' if b.status == 'ok' else 'badge-outline' if b.status == 'running' else 'badge-bad' }}">{{ b.status }}</span></div>
     {% else %}{{ m.empty("archive", "No backups yet", "Nightly encrypted backups to your Google Drive accounts.") }}{% endfor %}
     <p class="meta rows-none" hidden>Nothing matches.</p>

@@ -89,7 +89,9 @@
   <div class="card pad stack">
     <p>A made-up <b>DEMO</b> talk (fake names) to click around. Nothing is sent anywhere.</p>
     <div class="row">
-      {% if demo_id %}<a class="btn btn-primary" href="/conversations/{{ demo_id }}">Open the demo</a>
+      {# F39: on the public demo everything is made up, and "Remove demo data" failed (409) on its many linked rows #}
+      {% if demo_id and public_demo %}<a class="btn btn-primary" href="/conversations/{{ demo_id }}">Open the demo</a>
+      {% elif demo_id %}<a class="btn btn-primary" href="/conversations/{{ demo_id }}">Open the demo</a>
         <form method="post" action="/demo/remove"><button class="btn btn-ghost">Remove demo data</button></form>
       {% else %}<form method="post" action="/demo/load"><button class="btn btn-primary">Load demo data</button></form>{% endif %}
     </div>

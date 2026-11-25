@@ -42,7 +42,7 @@
   <form method="get" action="/people/{{ p.id }}/merge" class="picker-form">
     <label class="sr-only" for="merge-into">Merge into</label>
     <select id="merge-into" name="into" required><option value="">Same person as…</option>
-      {% for o in people if o.id != p.id %}<option value="{{ o.id }}">{{ 'Me (Brian)' if o.id == 1 else o.name }}</option>{% endfor %}</select>
+      {% for o in people if o.id != p.id %}<option value="{{ o.id }}">{{ (o.name|me_label) if o.id == 1 else o.name }}</option>{% endfor %}</select>
     <button class="btn">Preview merge</button>
   </form>
 </div>

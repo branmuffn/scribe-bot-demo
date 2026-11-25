@@ -308,3 +308,73 @@ def test_decisions_put_a_dot_between_date_and_talk(demo):
     html = demo.get("/tasks?tab=decisions").text
     import re
     assert re.search(r'<span>[^<]+</span><a href="/conversations/', html)   # the date span, then the talk link
+
+
+def test_inbox_total_says_which_recordings(demo):
+    """F32: "All 7: with AI ~80 min" under "9 waiting" read as a miscount and didn't say what the times were."""
+    html = demo.get("/inbox").text
+    assert 'in-total">All ' not in html
+    import re
+    assert re.search(r'class="meta in-total">To do all \d+ new ones: ~[^<]+ with AI notes \(~\$[\d.]+\), or ~[^<]+ for transcripts only</p>', html)
+
+
+def test_last_backup_is_todays(demo):
+    """F33: Settings said "Last backup OK · Thu Nov 19" on Nov 25: the made-up week was saved newest first."""
+    import re
+    conn = demo.db()
+    newest = conn.execute("SELECT max(finished_at) FROM backup_run WHERE kind = 'backup'").fetchone()[0]
+    last_by_id = conn.execute("SELECT finished_at FROM backup_run WHERE kind = 'backup' ORDER BY id DESC LIMIT 1").fetchone()[0]
+    assert last_by_id == newest
+    assert re.search(r"Last backup OK · ", demo.get("/settings").text)
+
+
+def test_settings_rows_space_the_dot_evenly(demo):
+    """F34: Backups read "Backup· Wed Nov 25· 0.04 GB": settings rows are plain text (they wrap in full), so the "·"
+    only gets its space before it when the parts have a space between them. Every settings page, every row."""
+    import re
+    from scribe_bot.web.routes import SETTINGS_GROUPS
+    for group in SETTINGS_GROUPS:
+        html = demo.get(f"/settings/{group}").text
+        for sub in re.findall(r'<div class="item-sub">(.*?)</div>', html, re.S):
+            assert not re.search(r"</(span|b)><(span|b)\b", sub), (group, sub[:120])
+
+
+def test_schedules_last_ran_at_their_own_time(demo):
+    """F35: "Encrypted backup · daily 2:00 AM · last ran Wed Nov 25, 11:05 pm": each made-up run now sits at its job's time."""
+    import re
+    html = demo.get("/settings/backups").text
+    rows = re.findall(r"<span>(?:daily|monthly,|Sundays) (\d+:\d\d [AP]M)</span>\s*<span>last ran [^<]*?, (\d+:\d\d [ap]m)</span>", html)
+    assert len(rows) == 9
+    assert all(when.lower() == ran for when, ran in rows), rows
+    backups = re.findall(r"<span>Backup</span> <span>[^<]*?, (\d+:\d\d [ap]m)</span>", html)
+    assert backups and set(backups) == {"2:00 am"}
+
+
+def test_ai_spend_line_lines_up_with_its_name(demo):
+    """F36: AI & processing › AI spend: "$2.34 all time…" sat 32 px right of "AI spend…" (an indent meant for icon rows)."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    assert ".settings-pane .tap-row .item-sub { padding-left: 32px }" not in css
+    assert ".settings-pane .tap-row:has(.item-link > .icon) .item-sub { padding-left: 32px }" in css
+    assert 'id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend' in demo.get("/settings/ai").text
+
+
+def test_note_under_a_card_has_a_gap(demo):
+    """F37: AI & processing: "Saves as soon as you tap…" touched the "If it fails" card above it."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    assert ".card + p.meta { margin-top: var(--s2) }" in css
+    import re
+    assert re.search(r'</div>\s*</div>\s*<p class="meta">Saves as soon as you tap', demo.get("/settings/ai").text)
+
+
+def test_add_account_form_says_me_on_the_demo(demo):
+    """F38: Accounts & keys › Add an account filled Owner with a real first name on the public demo."""
+    html = demo.get("/settings/keys").text
+    assert 'name="owner" value="Me"' in html and 'value="Brian"' not in html
+
+
+def test_public_demo_has_no_remove_demo_data_button(demo):
+    """F39: Help › Try it safely offered "Remove demo data" on the public demo, where everything is made up (and it failed)."""
+    html = demo.get("/help").text
+    assert "Remove demo data" not in html and "Open the demo" in html

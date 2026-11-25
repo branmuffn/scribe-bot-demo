@@ -26,7 +26,7 @@ from scribe_bot.core import cleanup, cleanup_devices, db, queue, machine, people
 from scribe_bot.discord_bot import notify, sender
 from scribe_bot.pipeline import control, identify, ingest, merge as merge_svc, pace, peek, voicememo
 from scribe_bot.web import export, inbox as inbox_svc, undo
-from scribe_bot.web.app import area_of, local_date, local_datetime, public_demo, templates, worker_status
+from scribe_bot.web.app import area_of, local_date, local_datetime, me_label, public_demo, templates, worker_status
 
 
 def _id_or_none(v):
@@ -426,7 +426,7 @@ def people_pick(request: Request, sid: int = 0, cid: int = 0, conn: sqlite3.Conn
         "WHERE p.stands_for_speaker IS NULL GROUP BY p.id ORDER BY p.name COLLATE NOCASE").fetchall()
     def sub(r):
         return (f"In {r['n']} talk{'s' if r['n'] != 1 else ''}" + (f" · last {local_date(r['last'])}" if r["last"] else "")) if r["n"] else "Not in a talk yet"
-    everyone = [{"id": r["id"], "name": "Me (Brian)" if r["id"] == ME else r["name"], "sub": sub(r)} for r in rows]
+    everyone = [{"id": r["id"], "name": me_label(r["name"]) if r["id"] == ME else r["name"], "sub": sub(r)} for r in rows]
     by_id = {p["id"]: p for p in everyone}
     sug: list[dict] = []
     def add(pid, why):

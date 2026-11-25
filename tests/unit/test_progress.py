@@ -153,7 +153,7 @@ def test_review_estimate_from_model(tmp_path):
     rec2 = add_recording(conn, 30 * 60, status="awaiting_approval")
     conn.execute("INSERT INTO review_item (kind, ref_id, payload, created_at) VALUES ('approval', ?, ?, ?)",
                  (rec2, f'{{"recording_id": {rec2}, "title": "Synthetic 2", "minutes": 30, "ai_cost": 0.03}}', iso(NOW)))
-    assert 'All 2: with AI' in client.get("/inbox").text   # and the total when several wait
+    assert 'To do all 2 new ones: ~' in client.get("/inbox").text   # and the total when several wait (F32 wording)
     assert progress.duration_label(250 * 60) == "4 h 10 min" and progress.duration_label(120 * 60) == "2 h"
 
 

@@ -98,7 +98,7 @@
 </div>
 {% endif %}
 
-{% if people %}<template id="people-options">{% for p in people %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</template>{% endif %}
+{% if people %}<template id="people-options">{% for p in people %}<option value="{{ p.id }}">{{ (p.name|me_label) if p.id == 1 else p.name }}</option>{% endfor %}</template>{% endif %}
 
 <main class="main{% block main_class %}{% endblock %}" id="content">
 {% if public_demo %}<p class="demo-note" role="note">Clickable demo with made-up meetings. Summarize, transcribe and uploads are for show; changes reset on their own. <a href="https://github.com/branmuffn/scribe-bot-demo#run-it-yourself">Run it yourself</a></p>{% endif %}

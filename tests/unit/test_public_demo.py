@@ -126,3 +126,10 @@ def test_avatar_initials_skip_brackets():
 def test_demo_footer_says_made_up(demo):
     page = demo.get("/").text
     assert "Demo · made-up data" in page and "Runs on the M14" not in page
+
+
+def test_confirm_goes_back_to_the_talk(demo):
+    """F12 (live pass): Confirm posts from the confirm page, so "back" stayed on the confirm box with the note."""
+    r = demo.post("/conversations/2/rerun", data={"confirm": "1"},
+                  headers={"referer": "http://testserver/conversations/2/rerun/confirm"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/conversations/2?") and "note=demo-ai" in r.headers["location"]

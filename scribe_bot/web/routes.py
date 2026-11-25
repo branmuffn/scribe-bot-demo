@@ -351,7 +351,12 @@ def demo_stop(request: Request, what: str, default: str = "/") -> RedirectRespon
     """D-11: on the public demo, an action that would transcribe, call an AI, take a recording, use a key or send a
     message does nothing and goes back with a short note (no job is queued, so nothing sits "waiting" forever).
     Returns None everywhere else, so the real app is unchanged."""
-    return back(request, default, note=f"demo-{what}") if public_demo() else None
+    if not public_demo():
+        return None
+    ref = request.headers.get("referer") or ""
+    if urlsplit(ref).path.endswith("/confirm"):   # F12: Confirm left you on the confirm box; go where the real app goes
+        return RedirectResponse(with_note(default, f"demo-{what}"), status_code=303)
+    return back(request, default, note=f"demo-{what}")
 
 
 def with_note(url: str, note: str) -> str:

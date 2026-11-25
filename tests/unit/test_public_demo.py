@@ -378,3 +378,55 @@ def test_public_demo_has_no_remove_demo_data_button(demo):
     """F39: Help › Try it safely offered "Remove demo data" on the public demo, where everything is made up (and it failed)."""
     html = demo.get("/help").text
     assert "Remove demo data" not in html and "Open the demo" in html
+
+
+def _static(name):
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / name).read_text()
+
+
+def test_reading_pane_follows_the_list_after_the_page_settles():
+    """F40: Tasks at 1024 px with Reading pane = Right: the pane sat ~14 px above the list (touching the Sort and Person
+    pickers) until the first scroll, because it was measured once before the page above the list finished growing."""
+    js = _static("ui.js")
+    assert "new ResizeObserver(later)" in js and "document.fonts.ready.then(later)" in js
+    assert 'addEventListener("load", later)' in js
+
+
+def test_late_promise_dates_never_shrink(demo):
+    """F41: Today › Late promises to you, reading pane open: "Overdue · due No…". The date is the row's last item there."""
+    import re
+    assert ".item-sub > .due-v { flex: none !important }" in _static("app.css")
+    html = demo.get("/").text
+    sec = html.split("Late promises to you", 1)[1].split("</section>", 1)[0]
+    assert re.search(r'<div class="item-sub"><b>[^<]+</b><span class="due-v', sec)
+
+
+def test_open_and_open_in_new_tab_have_different_icons():
+    """F42: right-click a talk: "Open" and "Open in new tab" showed the same arrow-out-of-a-box icon."""
+    import re
+    js = _static("ui.js")
+    for m in re.finditer(r'(?:item\("(\w+)", "([^"]+)"|\{ i: "(\w+)", t: "([^"]+)")', js):
+        icon, label = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+        if label.startswith("Open"):
+            assert (icon == "open") == ("new tab" in label), (icon, label)
+
+
+def test_me_label_never_doubles_up():
+    """People showed "Me (me)" when person 1 was named "me"."""
+    from scribe_bot.web.app import me_label
+    assert [me_label(n) for n in (None, "", "Me", "me", " ME ", "Myself", "Sam")] == ["Me"] * 6 + ["Me (Sam)"]
+
+
+def test_quick_settings_names_the_pane_choice_like_the_preview(demo):
+    """F44: Talks/People › Quick settings › Reading pane read "None"; the preview's own switch says "Full page"."""
+    for path in ("/conversations", "/people"):
+        html = demo.get(path).text
+        assert 'qs-t-none"' in html and "</i>Full page</button>" in html and "</i>None</button>" not in html
+    assert "</i>Pop up</button>" in demo.get("/tasks").text
+
+
+def test_demo_note_not_repeated_inside_the_preview(demo):
+    """F46: People › pick a person with Reading pane = Below: the preview repeated "Clickable demo with made-up meetings"."""
+    assert "Clickable demo with made-up" in demo.get("/people/5").text
+    assert "Clickable demo with made-up" not in demo.get("/people/5", headers={"sec-fetch-dest": "iframe"}).text

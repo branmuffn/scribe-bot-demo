@@ -6,7 +6,7 @@
 {# Redesign (Brian picked sheet 3 + the #10 ideas, 2026-11-21): initials, name and one line of facts; actions in ⋯;
    the numbers as short grouped rows (like iPhone Settings) that jump to each part. #}
 <div class="page-head person-head">{{ m.avatar(p.name, "av-lg") }}<div class="grow">
-  <h1>{{ p.name }}{{ ' (me)' if p.id == 1 }}</h1>
+  <h1>{{ (p.name|me_label) if p.id == 1 else p.name }}</h1>
   <div class="conv-meta">
     <span class="badges">{% if p.area == 'both' %}<span class="badge badge-outline">Work + home</span>{% else %}{{ m.area_badge(p.area) }}{% endif %}
       {% if voice %}<span class="badge badge-ok">{{ m.icon("mic") }}Voice known · {{ voice }} sample{{ 's' if voice != 1 }}</span>

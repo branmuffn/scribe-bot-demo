@@ -71,7 +71,7 @@ templates.env.filters["local_datetime"] = local_datetime
 
 def me_label(name: str | None) -> str:
     """F38: "Me (Brian)" in pickers came from a fixed string; it now follows person 1's own name ("Me" when that is "Me")."""
-    return "Me" if not name or name == "Me" else f"Me ({name})"
+    return "Me" if not name or name.strip().lower() in ("me", "myself") else f"Me ({name.strip()})"   # never "Me (me)"
 
 
 templates.env.filters["me_label"] = me_label

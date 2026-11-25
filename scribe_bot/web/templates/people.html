@@ -89,7 +89,7 @@
   {% set gs = namespace(g="") %}
   {% for p in rows %}
   {% if p.id != 1 and not q %}{% if sort == 'name' %}{{ m.list_head((p.name or "?")[:1]|upper, gs) }}{% elif sort == 'recent' %}{{ m.list_head(p.last_spoken_at|date_group if p.last_spoken_at else "Never recorded", gs) }}{% endif %}{% endif %}
-  <div class="item tap-row person-row"{% if p.id != 1 %} data-pick-id="{{ p.id }}"{% endif %}>{% if p.id != 1 %}<span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span>{% else %}<span class="row-cb pk-cb pk-cb-none" aria-hidden="true"></span>{% endif %}{{ m.avatar(p.name) }}<div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
+  <div class="item tap-row person-row"{% if p.id != 1 %} data-pick-id="{{ p.id }}"{% endif %}>{% if p.id != 1 %}<span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span>{% else %}<span class="row-cb pk-cb pk-cb-none" aria-hidden="true"></span>{% endif %}{{ m.avatar(p.name) }}<div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ (p.name|me_label) if p.id == 1 else p.name }}</a>
       <div class="item-sub">{% if sort == 'talked' and p.talked %}<span>talked {{ p.talked|hours }}</span>{% endif %}
         {% if p.last_spoken_at %}<span>{{ p.last_spoken_at|local_date }}</span>{% endif %}{% if p.n_facts %}<span>{{ p.n_facts }} note{{ 's' if p.n_facts != 1 }}</span>{% endif %}
         {% if p.id == 1 %}{% if p.n_owed %}<span>{{ p.n_owed }} open task{{ 's' if p.n_owed != 1 }}</span>{% endif %}

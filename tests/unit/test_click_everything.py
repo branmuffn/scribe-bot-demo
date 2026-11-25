@@ -72,6 +72,10 @@ def test_every_page_link_and_button_answers(demo):  # noqa: F811
             continue
         p = Page()
         p.feed(r.text)
+        # F43: Inbox and Today showed a bare "Scribe Bot" in the browser tab and history; every page names itself
+        t = re.search(r"<title>([^<]*)</title>", r.text)
+        if t and t.group(1).strip() == "Scribe Bot":
+            problems.append(f"GET {url}: the tab title doesn't say which page this is")
         for h in p.links:
             u = urljoin(url, h)
             if u.startswith("http") or u.startswith("#") or SKIP.search(u) or u in seen:

@@ -112,3 +112,17 @@ def test_the_real_app_is_unchanged(tmp_path, monkeypatch):
     r = client.post("/conversations/2/rerun", data={"confirm": "1"}, follow_redirects=False)
     assert "rerun=queued" in r.headers["location"]
 
+
+
+def test_avatar_initials_skip_brackets():
+    """F6 (demo pass, 2026-11-25): "Lena Fischer (demo)" showed "L(" in its circle on Today's Late promises."""
+    from scribe_bot.web import app as web
+    m = web.templates.env.get_template("macros.html").module
+    assert ">LF<" in str(m.avatar("Lena Fischer (demo)"))
+    assert ">J<" in str(m.avatar("Jordan (demo)"))
+    assert ">?<" in str(m.avatar(None))
+
+
+def test_demo_footer_says_made_up(demo):
+    page = demo.get("/").text
+    assert "Demo · made-up data" in page and "Runs on the M14" not in page

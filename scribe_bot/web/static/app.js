@@ -2386,7 +2386,7 @@ document.addEventListener("click", function (e) {
   var COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#db2777", "#ea580c", "#16a34a", "#ca8a04", "#4f46e5", "#0891b2", "#be123c"];
   function isPicker(s) { return s && s.tagName === "SELECT" && (s.hasAttribute("data-people") || !!s.querySelector('option[value="__new"]')); }
   var TITLE = /^(?:(?:dr|doctor|mr|mrs|ms|mx|miss|prof|professor|rev|reverend|pastor|rabbi|fr|sir|dame|hon|judge|coach|capt|captain|sgt|lt|col|gen|officer|nurse|dean)\.?\s+)+(?=\S+\s+\S)/i;   // B8: titles in general
-  function initials(n) { return n.replace(/^Me \(Brian\)$/, "Brian").replace(TITLE, "").split(/\s+/).map(function (w) { return w[0] || ""; }).join("").slice(0, 2).toUpperCase(); }
+  function initials(n) { return n.replace(/^Me \(Brian\)$/, "Brian").replace(TITLE, "").split(/\s+/).filter(function (w) { return /^\p{L}/u.test(w); }).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase(); }
   function color(n) { var h = 0; for (var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0; return COLORS[h % COLORS.length]; }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }   // R5-06: quotes too (used in attributes)
   var sheet = null, sel = null, data = null, cache = {};

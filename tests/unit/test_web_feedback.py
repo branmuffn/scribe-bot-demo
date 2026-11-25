@@ -295,6 +295,9 @@ def test_waiting_recordings_sort_by_when_recorded():
     b = recorded_at("Oct 23 at 11_59", "2026-10-24T20:18:01+00:00")
     assert (a.month, a.day, a.hour, a.minute) == (10, 23, 9, 7) and b > a
     assert recorded_at("Dec 30 at 10_00", "2027-01-02T10:00:00+00:00").year == 2026          # last year's file
+    assert recorded_at("Nov 12 at 2_15 PM", "2026-11-25T10:00:00+00:00").strftime("%H:%M") == "14:15"   # F10: 12-hour clock
+    assert recorded_at("Nov 12 at 12_05 AM", "2026-11-25T10:00:00+00:00").strftime("%H:%M") == "00:05"
+    assert recorded_at("Nov 12 at 12_05 pm", "2026-11-25T10:00:00+00:00").strftime("%H:%M") == "12:05"
     assert recorded_at("Team sync", "2026-10-24T20:18:01+00:00").isoformat().startswith("2026-10-24T20:18:01")
 
 

@@ -58,14 +58,15 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
         """people: cluster -> person id (cluster 0 = me). lines: (cluster, text)."""
         start = ago(days, hours)
         dur = len(lines) * 9 + 30
+        x = min(20, 75 * 60 / dur)   # F11: a made-up talk runs 75 minutes at most (long ones read as "427 min")
         cid = conn.execute(
             "INSERT INTO conversation (title, started_at, duration_s, type, area, area_confidence, summary, takeaways, private, "
             "processed_by, status, created_at, updated_at, type_chosen) VALUES (?, ?, ?, ?, ?, 0.92, ?, ?, ?, ?, ?, ?, ?, 1)",
-            (title, start, dur * 20, ctype, area, summary, json.dumps(takeaways or []), 0,
+            (title, start, round(dur * x), ctype, area, summary, json.dumps(takeaways or []), 0,
              "local" if no_ai else "demo", "transcribed" if no_ai and status == "done" else status, start, start)).lastrowid   # Transcript only = no AI step
         talk = {}
         for c, _ in lines:
-            talk[c] = talk.get(c, 0) + 9 * 20
+            talk[c] = talk.get(c, 0) + round(9 * x)
         spk = {c: conn.execute("INSERT INTO speaker (conversation_id, cluster, person_id, confirmed, talk_seconds) "
                                "VALUES (?, ?, ?, 1, ?)", (cid, c, pid, talk.get(c, 0))).lastrowid for c, pid in people.items()}
         seg, t = [], 0.0
@@ -185,6 +186,17 @@ SAY = ["Let's start with {t}. Where are we?", "I think we're mostly on track, bu
        "That works for me. I'll update the invite.", "Honestly I think we've been overthinking {t}.",
        "So, like, the main risk is that we run out of time.", "Then let's cut scope instead of moving the date.",
        "I'll draft a short note for the team about {t} today.", "Remind me, did we already promise this to the client?"]
+# Varied made-up tasks (F9: the same six titles repeated down Today's lists)
+TASKS = ["Send the follow-up notes on {t}", "Check the numbers for {t}", "Book a room for the next session",
+         "Draft the plan for {t}", "Ask finance about the budget", "Share the slides with the group",
+         "Write up the decision on {t}", "Call the vendor about the quote", "Update the shared calendar",
+         "Get feedback from two customers", "Review the draft before Friday", "Order the supplies",
+         "Set up the sign-up form", "Collect the receipts", "Send the thank-you notes", "Fix the typo in the handout",
+         "Find a date for the offsite", "Ask legal about the contract terms", "Post the summary in the team chat",
+         "Print the agenda", "Check in with the new hire", "Renew the software licence", "Reply to the parents' email",
+         "Pick up the signed forms", "Move the deadline in the tracker", "Prepare three questions for {t}",
+         "Compare the two quotes", "Book the photographer", "Test the new checklist", "Archive last year's files",
+         "Confirm the catering order"]
 TAGS = ["Planning", "Hiring", "Budget", "Clients", "Follow-up", "Ideas", "Family", "Health", "Learning", "Volunteering"]
 LONG = " and what we still need to settle before the end of the month"
 WAITING = [("Recording Nov 24 at 4_05 PM", 1, False), ("Standup notes", 3, False),
@@ -230,8 +242,7 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
         if not no_ai:
             for k in range(rnd.randint(0, 5)):
                 who = rnd.choice([1, 1] + crew)
-                tasks.append((["Send the follow-up notes", "Check the numbers", "Book a time with the team",
-                               "Draft the plan for " + topic, "Ask finance about the budget", "Share the slides"][k] +
+                tasks.append((TASKS[(n * 5 + k * 7) % len(TASKS)].format(t=topic) +
                               (" before the next meeting with everyone who joined" if k == 3 and n % 3 == 0 else ""),
                               who, rnd.randrange(len(lines)), due(rnd.randint(-10, 14)) if k % 3 else None))
         cid = convo(title, days, ctype, area, cl, lines,
@@ -256,6 +267,10 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
             conn.execute("UPDATE task SET status = 'dropped', closed_as = 'not_needed', updated_at = ? WHERE id = ?", (now, tid))
     conn.execute("INSERT INTO task (conversation_id, title, owner_person_id, due, area, confidence, created_at, updated_at) "
                  "VALUES (NULL, 'Renew the parking permit', 1, ?, 'personal', 1, ?, ?)", (due(4), now, now))
+    # The Unsure tab: tasks the AI wasn't sure about (who owns it, or whether it's a task at all)
+    for i, cid in enumerate(made[1:12:4]):
+        conn.execute("UPDATE task SET inbox = 1, confidence = 0.4 WHERE id = "
+                     "(SELECT id FROM task WHERE conversation_id = ? AND status = 'open' ORDER BY id LIMIT 1)", (cid,))
     # States: one private talk, two in Trash, one still being transcribed, one that failed
     conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[9],))
     for cid in made[-2:]:

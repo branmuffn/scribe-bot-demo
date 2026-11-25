@@ -5,7 +5,7 @@
 <section class="section">
   {{ m.section("Processing", jobs|length) }}
   <div class="card">
-    {% for j in jobs %}{{ m.progress_item(j) }}{% endfor %}
+    {{ m.progress_list(jobs) }}
   </div>
 </section>
 {% endif %}

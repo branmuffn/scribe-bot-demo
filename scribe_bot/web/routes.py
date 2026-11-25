@@ -12,18 +12,35 @@ import sqlite3
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from typing import Annotated
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from pydantic import BeforeValidator
 
 from scribe_bot.ai import accounts, costs, extract, jobs as ai_jobs, prompts, router as ai_router
 from scribe_bot.backup.trash import TRASH_DAYS
-from scribe_bot.core import cleanup, cleanup_devices, db, machine, people as people_svc, progress, tags as tags_svc, talk
+from scribe_bot.core.names import first_name
+from scribe_bot.core import cleanup, cleanup_devices, db, queue, machine, people as people_svc, progress, tags as tags_svc, talk
 from scribe_bot.discord_bot import notify, sender
 from scribe_bot.pipeline import control, identify, ingest, merge as merge_svc, pace, peek, voicememo
 from scribe_bot.web import export, inbox as inbox_svc, undo
-from scribe_bot.web.app import area_of, local_datetime, templates, worker_status
+from scribe_bot.web.app import area_of, local_date, local_datetime, templates, worker_status
+
+
+def _id_or_none(v):
+    """A picker's "＋ Someone new…" / "Who is it?" choice isn't a number: treat it as no pick, so a typed name decides
+    (Brian, 2026-11-22: naming someone new gave "error 422")."""
+    if v is None or isinstance(v, int):
+        return v
+    try:
+        return int(str(v).strip())
+    except ValueError:
+        return None
+
+
+OptId = Annotated[int | None, Form(), BeforeValidator(_id_or_none)]   # a form field; validator inside Annotated so it runs
 
 router = APIRouter()
 ME = 1
@@ -145,6 +162,7 @@ def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | Non
         notify.tidy(conn)   # done things leave the bell before its count is read
     return templates.TemplateResponse(request, name, {"nav": nav, "area": area, "today": date.today().isoformat(),
                                                       "undo": undo.latest(conn) if conn else None,
+                                                      "toast": NOTES.get(request.query_params.get("note", "")),
                                                       "today_label": date.today().strftime("%A, %B %-d"),
                                                       "needs_count": needs_total(conn, area, m14) if conn else 0,
                                                       "head_alert": bool(m14), "now_iso": db.now(),
@@ -154,7 +172,23 @@ def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | Non
                                                       "n_older": conn.execute("SELECT count(*) FROM recording WHERE status = "
                                                                               "'backlog'").fetchone()[0] if conn else 0,
                                                       "bell_new": bell_new(conn) if conn else 0,
-                                                      "inbox_count": inbox_count(conn) if conn else 0, **ctx})
+                                                      "inbox_count": inbox_count(conn) if conn else 0,
+                                                      "gone_mark": gone_mark(conn) if conn else 0, **ctx})
+
+
+def gone_mark(conn: sqlite3.Connection) -> int:
+    """B7: the newest removal this page already reflects (base.html hands it to app.js, which asks /gone for newer ones)."""
+    return conn.execute("SELECT coalesce(max(id), 0) FROM removal").fetchone()[0]
+
+
+@router.get("/gone")
+def gone(since: int = 0, conn: sqlite3.Connection = Conn) -> JSONResponse:
+    """B7 (Brian, 2026-11-25): what was removed since this page was drawn, on any device: kinds and ids only, no
+    content. app.js asks every 25 s (it's also the keep-alive) and takes those rows off the screen."""
+    rows = conn.execute("SELECT id, kind, ref_id FROM removal WHERE id > ? ORDER BY id LIMIT 200", (since,)).fetchall()
+    last = rows[-1][0] if rows else gone_mark(conn)
+    return JSONResponse({"last": last, "gone": [{"k": r[1], "id": r[2]} for r in rows]},
+                        headers={"Cache-Control": "no-store"})
 
 
 def status_ring(conn: sqlite3.Connection, alert: bool) -> dict:
@@ -253,7 +287,8 @@ def notification_open(nid: int, conn: sqlite3.Connection = Conn):
     """Tapping a notification opens its link and moves it to Dismissed (it's been seen)."""
     n = conn.execute("SELECT link FROM notification WHERE id = ?", (nid,)).fetchone()
     conn.execute("UPDATE notification SET dismissed_at = ? WHERE id = ? AND dismissed_at IS NULL", (db.now(), nid))
-    return RedirectResponse(n["link"] if n and n["link"] and n["link"].startswith("/") else "/notifications", status_code=303)
+    ok = n and n["link"] and n["link"].startswith("/") and not n["link"].startswith(("//", "/\\"))   # R5-14: never off-site
+    return RedirectResponse(n["link"] if ok else "/notifications", status_code=303)
 
 
 @router.post("/notifications/dismiss-all")
@@ -287,8 +322,24 @@ def as_dict(row) -> dict:
     return dict(row) if not isinstance(row, dict) else row
 
 
-def back(request: Request, default: str = "/") -> RedirectResponse:
-    return RedirectResponse(request.headers.get("referer") or default, status_code=303)
+def back(request: Request, default: str = "/", note: str | None = None) -> RedirectResponse:
+    url = request.headers.get("referer") or default
+    return RedirectResponse(with_note(url, note) if note else url, status_code=303)
+
+
+# Short notes shown in the bar at the bottom after an action that runs in the background (Brian's bug list: an action
+# with no visible progress). The page gets only a key (?note=...); the words come from here, never from the address.
+NOTES = {
+    # U1 (Brian, 2026-11-25): the Summarize note ran off the phone screen. Notes stay short (PREFERENCES §3) and wrap.
+    "transcribing": "Transcribing. It shows under Talks › Processing.",
+    "summarizing": "Summarizing. The talk shows Summarizing until its notes are ready.",
+}
+
+
+def with_note(url: str, note: str) -> str:
+    u = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(u.query, keep_blank_values=True) if k != "note"] + [("note", note)]
+    return urlunsplit((u.scheme, u.netloc, u.path, urlencode(q), u.fragment))
 
 
 def area_clause(area: str, col: str) -> tuple[str, list]:
@@ -342,6 +393,51 @@ def people(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT id, name FROM person WHERE stands_for_speaker IS NULL ORDER BY id = 1 DESC, name").fetchall()
 
 
+@router.get("/people/pick")
+def people_pick(request: Request, sid: int = 0, cid: int = 0, conn: sqlite3.Connection = Conn) -> JSONResponse:
+    """The person picker (Brian picked A, 2026-11-22 night): everyone A-Z with how often they appear, plus up to 5
+    suggestions: a voice match for this speaker, people from talks the same week, then the people named most often."""
+    rows = conn.execute(
+        "SELECT p.id, p.name, count(DISTINCT s.conversation_id) AS n, max(coalesce(c.started_at, c.created_at)) AS last "
+        "FROM person p LEFT JOIN speaker s ON s.person_id = p.id LEFT JOIN conversation c ON c.id = s.conversation_id AND c.deleted_at IS NULL "
+        "WHERE p.stands_for_speaker IS NULL GROUP BY p.id ORDER BY p.name COLLATE NOCASE").fetchall()
+    def sub(r):
+        return (f"In {r['n']} talk{'s' if r['n'] != 1 else ''}" + (f" · last {local_date(r['last'])}" if r["last"] else "")) if r["n"] else "Not in a talk yet"
+    everyone = [{"id": r["id"], "name": "Me (Brian)" if r["id"] == ME else r["name"], "sub": sub(r)} for r in rows]
+    by_id = {p["id"]: p for p in everyone}
+    sug: list[dict] = []
+    def add(pid, why):
+        if pid in by_id and pid not in [x["id"] for x in sug] and len(sug) < 5:
+            sug.append({**by_id[pid], "sub": why})
+    if sid:   # voice match: this speaker's voice against everyone's voiceprint
+        try:
+            emb = identify.speaker_embedding(conn, sid, request.app.state.cfg)
+            if emb:
+                scores = sorted(((identify.cosine(emb, v), pid) for pid, v in identify.known_prints(conn).items()), reverse=True)
+                for sc, pid in scores[:2]:
+                    if sc >= 0.45:
+                        add(pid, f"Voice match {round(sc * 100)}%")
+        except Exception:   # no embeddings for this talk: just skip the voice suggestion
+            pass
+    if cid:   # people from talks within a week of this one
+        for r in conn.execute(
+                "SELECT s.person_id, count(*) AS k, max(coalesce(nullif(c.short_title, ''), c.title)) AS t FROM speaker s JOIN conversation c ON c.id = s.conversation_id "
+                "JOIN conversation me ON me.id = ? WHERE c.id != me.id AND c.deleted_at IS NULL AND s.person_id IS NOT NULL AND s.person_id != 1 "
+                "AND abs(julianday(coalesce(c.started_at, c.created_at)) - julianday(coalesce(me.started_at, me.created_at))) <= 7 "
+                "GROUP BY s.person_id ORDER BY k DESC LIMIT 3", (cid,)):
+            add(r["person_id"], f"Same week: {r['t']}")
+    for r in sorted((x for x in rows if x["id"] != ME), key=lambda x: -x["n"])[:5]:
+        add(r["id"], sub(r))
+    return JSONResponse({"suggested": sug, "all": everyone})
+
+
+# "N to name", the same everywhere (B10/B12, 2026-11-25): the Talks list counted speakers by a stored talk time of 20 s
+# or more, the talk page counted every speaker who still has lines, so a talk could say "3 to name" in the list and
+# "2 to name" on its page. Both now count unnamed speakers (not marked "Don't know") who still have lines.
+N_UNNAMED_SQL = ("SELECT count(*) FROM speaker s WHERE s.conversation_id = c.id AND s.person_id IS NULL AND s.unknown = 0 "
+                 "AND EXISTS (SELECT 1 FROM segment g WHERE g.speaker_id = s.id)")
+
+
 def speakers_of(conn: sqlite3.Connection, conversation_id: int) -> list[dict]:
     """Speakers in order of first appearance, named by person or 'Speaker N'."""
     rows = conn.execute(
@@ -369,7 +465,7 @@ def speakers_of(conn: sqlite3.Connection, conversation_id: int) -> list[dict]:
 
 def nudge(t) -> str:
     """A ready-to-paste reminder for a late promise: a plain local template (no AI). Brian copies it; nothing is sent."""
-    first = (t["owner_name"] or "").split()[0] if t["owner_name"] else "there"
+    first = first_name(t["owner_name"]) if t["owner_name"] else "there"
     try:
         when = "by " + date.fromisoformat(str(t["due"])[:10]).strftime("%A, %B %-d")
     except ValueError:
@@ -393,6 +489,58 @@ def week(request: Request, conn: sqlite3.Connection) -> dict:
 def speaking_page(request: Request, conn: sqlite3.Connection = Conn):
     """Your speaking: pace, longest stretch, questions and fillers over the last 7 and 30 days (no AI)."""
     return render(request, "speaking.html", "more", conn, speaking={d: talk.speaking_trend(conn, d) for d in (7, 30)})
+
+
+def night_window_utc(now: datetime | None = None) -> tuple[str, str]:
+    """Last night, 9 PM to 7 AM (local), as UTC ISO strings. Talks count for the night they FINISHED in, not when they
+    were queued (2026-11-23: 19 memos queued at 12:04 AM and done by 5:13 AM showed as "nothing" with a 1-7 AM queue
+    window)."""
+    now = (now or datetime.now()).astimezone()
+    day = now.date() if now.hour >= 1 else now.date() - timedelta(days=1)
+    start = datetime.combine(day - timedelta(days=1), time(21)).astimezone()
+    end = datetime.combine(day, time(7)).astimezone()
+    return tuple(x.astimezone(timezone.utc).isoformat(timespec="seconds") for x in (start, end))
+
+
+# a recording job that finished (done or failed) inside a night window; args: start, end
+NIGHT_JOB = "j.kind = 'recording' AND j.status IN ('done', 'failed') AND j.updated_at >= ? AND j.updated_at < ?"
+
+
+def overnight_card(conn: sqlite3.Connection, now: datetime | None = None) -> dict | None:
+    """S1 (Brian picked A, 2026-11-22): what ran last night (1-7 AM local), shown on Today until he dismisses it."""
+    now = (now or datetime.now()).astimezone()
+    start = now.replace(hour=1, minute=0, second=0, microsecond=0)
+    if now < start:
+        return None
+    s_utc, e_utc = night_window_utc(now)
+    if setting(conn, "overnight_seen", "") == now.date().isoformat():
+        return None
+    r = conn.execute("SELECT count(*) AS n, sum(j.status = 'done' AND EXISTS (SELECT 1 FROM conversation c WHERE c.recording_id = j.recording_id "
+                     "AND c.deleted_at IS NULL)) AS ok, sum(j.status = 'failed') AS bad, max(j.updated_at) AS last, "
+                     "coalesce(sum(r.duration_s), 0) AS secs FROM job j LEFT JOIN recording r ON r.id = j.recording_id "
+                     f"WHERE {NIGHT_JOB}", (s_utc, e_utc)).fetchone()   # ok = talks still in Talks, so it matches the list
+    if not r["n"]:
+        return None
+    return {"n": r["n"], "ok": r["ok"] or 0, "bad": r["bad"] or 0, "hours": round(r["secs"] / 3600, 1),
+            "last": local_datetime(r["last"]).split(", ")[-1] if r["last"] else ""}
+
+
+def overnight_seen(conn: sqlite3.Connection) -> None:
+    """The card leaves Today, and a copy goes to Notifications › Dismissed so it can be opened again later
+    (Brian, 2026-11-22). App only, never Discord; once per morning."""
+    card = overnight_card(conn)
+    set_setting(conn, "overnight_seen", date.today().isoformat())
+    if card:
+        nid = notify.enqueue(conn, "bot", f"Overnight: {card['ok']} recording{'s' if card['ok'] != 1 else ''} transcribed "
+                             f"({card['hours']} h of audio)" + (f", {card['bad']} failed" if card["bad"] else ""),
+                             f"/conversations?night={date.today().isoformat()}", discord=False)
+        conn.execute("UPDATE notification SET dismissed_at = ? WHERE id = ?", (db.now(), nid))
+
+
+@router.post("/overnight/dismiss")
+def overnight_dismiss(request: Request, conn: sqlite3.Connection = Conn):
+    overnight_seen(conn)
+    return back(request, "/")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -423,11 +571,11 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
     recent = conn.execute(   # redesign (Brian, 2026-11-21): the last few talks, one line each
         "SELECT c.id, c.title, c.started_at, c.created_at, c.duration_s, c.area, c.type, "
         "(SELECT count(*) FROM task t WHERE t.conversation_id = c.id AND t.status != 'dropped') AS n_tasks "
-        f"FROM conversation c WHERE c.deleted_at IS NULL AND c.status IN ('done', 'extracted'){ca} "
+        f"FROM conversation c WHERE c.deleted_at IS NULL AND (c.status = 'extracted' OR {FINISHED}){ca} "
         "ORDER BY coalesce(c.started_at, c.created_at) DESC LIMIT 3", cargs).fetchall()
     n_waiting = conn.execute(f"SELECT count(*) FROM task t WHERE t.status = 'open' AND t.inbox = 0 AND t.owner_person_id != 1{a} "
                              f"AND {LIVE_TASK}", args).fetchone()[0]
-    return render(request, "today.html", "today", conn, due=due, overdue_theirs=overdue_theirs, **needs, week=week(request, conn),
+    return render(request, "today.html", "today", conn, overnight=overnight_card(conn), due=due, overdue_theirs=overdue_theirs, **needs, week=week(request, conn),
                   recent=recent, n_waiting=n_waiting,
                   next_up=next_up(due, needs, n_inbox, today, inbox_hours), n_inbox=n_inbox, inbox_hours=inbox_hours,
                   on_today=True, people=people(conn), cleanup=cleanup_devices.counts(conn),
@@ -502,7 +650,7 @@ def task_remind(request: Request, tid: int, until: str = Form("tomorrow"), at: s
     when = snooze_until(until, at)
     with db.transaction(conn):
         if not conn.execute("UPDATE task SET remind_at = ? WHERE id = ? AND status = 'open'", (when, tid)).rowcount:
-            raise HTTPException(404, "No such open task")
+            raise HTTPException(404, "That task isn't open any more")
     return back(request, "/tasks")
 
 
@@ -525,7 +673,25 @@ def dismiss_help(request: Request, conn: sqlite3.Connection = Conn):
 @router.get("/help", response_class=HTMLResponse)
 def help_page(request: Request, conn: sqlite3.Connection = Conn):
     demo = conn.execute("SELECT id FROM conversation WHERE title LIKE 'DEMO:%' AND deleted_at IS NULL").fetchone()
-    return render(request, "help.html", "help", conn, demo_id=demo[0] if demo else None, tour_conv=tour_conversation(conn))
+    from scribe_bot.web import test_inbox
+    return render(request, "help.html", "help", conn, demo_id=demo[0] if demo else None, tour_conv=tour_conversation(conn),
+                  test_recs=len(test_inbox.ours(conn, request.app.state.cfg)))
+
+
+@router.post("/test-inbox/add")
+def test_inbox_add(request: Request, more: str = Form(""), conn: sqlite3.Connection = Conn):
+    """M7 (Brian, 2026-11-25): three labelled, made-up recordings in the Inbox to try its buttons on; R4-24: more=1
+    adds 30 short ones so the Inbox has enough to scroll."""
+    from scribe_bot.web import test_inbox
+    test_inbox.add(conn, request.app.state.cfg, more=bool(more))
+    return RedirectResponse("/inbox", status_code=303)
+
+
+@router.post("/test-inbox/remove")
+def test_inbox_remove(request: Request, conn: sqlite3.Connection = Conn):
+    from scribe_bot.web import test_inbox
+    test_inbox.remove(conn, request.app.state.cfg)
+    return RedirectResponse("/help#test-recordings", status_code=303)
 
 
 def tour_conversation(conn: sqlite3.Connection) -> int | None:
@@ -571,13 +737,14 @@ def processing_history(request: Request, conn: sqlite3.Connection = Conn):
     every recording job, newest first: what it was (quick title + first words), when you sent it, when it finished, how
     long it took, AI notes or transcript only."""
     rows = []
+    active = {p["job_id"]: p for p in progress.active_jobs(conn)}   # B39: queue-aware times
     for j in conn.execute("SELECT j.id, j.status, j.payload, j.created_at, j.updated_at, j.recording_id, r.title AS rec_title, "
                           "r.duration_s, c.id AS cid, c.title, c.private, c.deleted_at, c.summary FROM job j "
                           "LEFT JOIN recording r ON r.id = j.recording_id LEFT JOIN conversation c ON c.recording_id = j.recording_id "
                           "WHERE j.kind = 'recording' ORDER BY j.id DESC LIMIT 60"):
         pay = json.loads(j["payload"] or "{}")
         first = conn.execute("SELECT min(started_at) FROM stage_run WHERE job_id = ?", (j["id"],)).fetchone()[0]
-        p = progress.job_progress(conn, j["id"]) if j["status"] in ("running", "pending") else None
+        p = active.get(j["id"]) if j["status"] in ("running", "pending") else None
         rows.append({"id": j["id"], "status": j["status"], "cid": j["cid"] if not j["deleted_at"] else None,
                      "title": j["title"] or progress._quick(conn, j["recording_id"]) or j["rec_title"] or "Recording",
                      "preview": progress._preview(conn, j["recording_id"]), "minutes": round((j["duration_s"] or 0) / 60),
@@ -596,6 +763,12 @@ def more_page(request: Request, conn: sqlite3.Connection = Conn):
 
 # ---------- Conversations ----------
 
+def like_q(raw: str | None) -> str:
+    """A list's search box (N9, Brian picked ⭐ 2026-11-25): the words as a LIKE pattern, % and _ taken literally."""
+    q = (raw or "").strip()[:100]
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" if q else ""
+
+
 def conv_where(request: Request, person, type, start, end, unsorted) -> tuple[list[str], list]:
     """The Conversations filters as SQL (the list and its export use the same ones)."""
     area = area_of(request)
@@ -603,7 +776,7 @@ def conv_where(request: Request, person, type, start, end, unsorted) -> tuple[li
     if unsorted:   # finished but not filed as Work or Home yet: their own list, one tap to file each
         where.append(UNSORTED)
     elif area != "all":   # still being processed: under both until it's filed
-        where.append("(c.area = ? OR (c.area IS NULL AND c.status != 'done'))"); args.append(area)
+        where.append(f"(c.area = ? OR (c.area IS NULL AND NOT {FINISHED}))"); args.append(area)
     if person:
         where.append("EXISTS (SELECT 1 FROM speaker s WHERE s.conversation_id = c.id AND s.person_id = ?)"); args.append(person)
     if type:
@@ -615,6 +788,11 @@ def conv_where(request: Request, person, type, start, end, unsorted) -> tuple[li
         where.append("substr(coalesce(c.started_at, c.created_at), 1, 10) >= ?"); args.append(start)
     if end:
         where.append("substr(coalesce(c.started_at, c.created_at), 1, 10) <= ?"); args.append(end)
+    q = like_q(request.query_params.get("q"))
+    if q:   # N9: the search box above the list (title, summary or a tag)
+        where.append("(c.title LIKE ? ESCAPE '\\' OR coalesce(c.short_title, '') LIKE ? ESCAPE '\\' OR coalesce(c.summary, '') LIKE ? ESCAPE '\\' "
+                     "OR EXISTS (SELECT 1 FROM conversation_tag ct JOIN tag tg ON tg.id = ct.tag_id WHERE ct.conversation_id = c.id AND tg.name LIKE ? ESCAPE '\\'))")
+        args += [q, q, q, q]
     return where, args
 
 
@@ -629,26 +807,41 @@ def conversations_page(request: Request, person: int | None = None, type: str | 
             "SELECT r.id, r.title, r.duration_s, r.received_at, max(i.resolved_at) AS resolved_at FROM recording r "
             "JOIN review_item i ON i.kind = 'approval' AND i.ref_id = r.id AND i.status = 'dismissed' "
             "WHERE r.status = 'declined' AND r.audio_deleted_at IS NULL GROUP BY r.id ORDER BY resolved_at DESC")]
-        return render(request, "conversations.html", "conversations", conn, rows=rows, skipped=skipped, trash=True,
+        # one list, newest first (2026-11-23: an Inbox delete sat in a 2nd group under the deleted talks, off screen on
+        # the phone, so Brian thought it wasn't in Trash)
+        items = sorted([{**r, "from_inbox": False, "when": r["deleted_at"]} for r in rows] +
+                       [{**r, "from_inbox": True, "when": r["resolved_at"]} for r in skipped], key=lambda r: r["when"] or "", reverse=True)
+        return render(request, "conversations.html", "conversations", conn, rows=rows, skipped=skipped, items=items, trash=True,
                       trash_days=TRASH_DAYS, f={})
     where, args = conv_where(request, person, type, start, end, unsorted)
-    now_jobs = [] if unsorted else progress.active_jobs(conn)
+    night_q = request.query_params.get("night", "")
+    night = night_q == "1" or bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", night_q))
+    if night:   # the overnight card (S1): just last night's talks; opening this list dismisses the card
+        day = date.fromisoformat(night_q) if night_q != "1" else date.today()   # a date = that morning (from Notifications)
+        s_utc, e_utc = night_window_utc(datetime.combine(day, time(12)))
+        if day == date.today() and setting(conn, "overnight_seen", "") != day.isoformat():
+            overnight_seen(conn)
+        where.append(f"EXISTS (SELECT 1 FROM job j WHERE j.recording_id = c.recording_id AND {NIGHT_JOB})")
+        args = [*args, s_utc, e_utc] if isinstance(args, list) else (*args, s_utc, e_utc)
+    now_jobs = [] if unsorted or night else progress.active_jobs(conn)
     if now_jobs:   # Brian (2026-11-21): still processing = only in "Processing now" at the top, not in the dated list too
         where.append("NOT EXISTS (SELECT 1 FROM job j WHERE j.kind = 'recording' AND j.recording_id = c.recording_id "
                      "AND j.status IN ('running', 'pending'))")
     rows, total = paged(conn,
-        "SELECT c.*, (SELECT group_concat(p.name, ', ') FROM speaker s JOIN person p ON p.id = s.person_id "
-        "             WHERE s.conversation_id = c.id AND p.id != 1) AS people, "
-        "(SELECT count(*) FROM speaker s WHERE s.conversation_id = c.id AND s.person_id IS NULL AND s.talk_seconds >= 20) AS n_unnamed, "
+        "SELECT c.*, (SELECT group_concat(name, ', ') FROM (SELECT DISTINCT p.name FROM speaker s JOIN person p ON p.id = s.person_id "
+        "             WHERE s.conversation_id = c.id AND p.id != 1)) AS people, "   # DISTINCT: two voices can be one person (Brian, 2026-11-22)
+        f"({N_UNNAMED_SQL}) AS n_unnamed, "
         "(SELECT group_concat(t.name, '|') FROM conversation_tag ct JOIN tag t ON t.id = ct.tag_id WHERE ct.conversation_id = c.id) AS tags, "
         "(SELECT min(t.name COLLATE NOCASE) FROM conversation_tag ct JOIN tag t ON t.id = ct.tag_id WHERE ct.conversation_id = c.id) AS first_tag "
         f"FROM conversation c WHERE {' AND '.join(where)} ORDER BY {CONV_ORDERS.get(order, CONV_ORDERS['newest'])[1]}", args, n)
     n_unsorted = 0 if unsorted else conn.execute(f"SELECT count(*) FROM conversation c WHERE c.deleted_at IS NULL AND {UNSORTED}").fetchone()[0]
     tag = request.query_params.get("tag", "")
     return render(request, "conversations.html", "conversations", conn, rows=rows, total=total, people=people(conn),
-                  unsorted=unsorted, n_unsorted=n_unsorted, all_tags=tags_svc.counts(conn), jobs=now_jobs,
+                  unsorted=unsorted, n_unsorted=n_unsorted, all_tags=tags_svc.counts(conn), jobs=now_jobs, night=night,
+                  ai_busy=ai_jobs.pending_ids(conn), night_label=("last night" if not night or night_q == "1" or night_q == date.today().isoformat() else "the night before " + date.fromisoformat(night_q).strftime("%b %-d")),
                   orders=CONV_ORDERS, f={"person": person, "type": type or "", "start": start or "", "end": end or "",
-                                         "order": order if order in CONV_ORDERS else "newest", "tag": tag if tag.isdigit() else ""})
+                                         "order": order if order in CONV_ORDERS else "newest", "tag": tag if tag.isdigit() else "",
+                                         "q": (request.query_params.get("q") or "").strip()[:100]})
 
 
 CONV_ORDERS = {   # Conversations › Sort: key -> (label, ORDER BY); SQL comes from here only, never from the request
@@ -658,7 +851,12 @@ CONV_ORDERS = {   # Conversations › Sort: key -> (label, ORDER BY); SQL comes 
     "title": ("A–Z", "c.title COLLATE NOCASE, coalesce(c.started_at, c.created_at) DESC"),
     "tag": ("Group by tag", "first_tag IS NULL, first_tag COLLATE NOCASE, coalesce(c.started_at, c.created_at) DESC"),   # M4
 }
-UNSORTED = "c.area IS NULL AND c.status = 'done'"   # finished, not filed as Work or Home yet ("Not sorted")
+# Finished talks: 'done' (AI notes) or 'transcribed' once its processing is over (Transcript only stays 'transcribed' for
+# good; it only checked 'done', so transcript-only talks were never "Not sorted", never on Today's recent list and showed
+# under every area filter). 'transcribed' while the AI step still runs is not finished yet.
+FINISHED = ("(c.status = 'done' OR (c.status = 'transcribed' AND EXISTS (SELECT 1 FROM recording fr "
+            "WHERE fr.id = c.recording_id AND fr.status = 'done')))")
+UNSORTED = f"c.area IS NULL AND {FINISHED}"   # finished, not filed as Work or Home yet ("Not sorted")
 
 
 @router.post("/recordings/{rid}/unskip")
@@ -682,7 +880,7 @@ def gone_on(deleted_at: str | None) -> str | None:
 def get_conversation(conn: sqlite3.Connection, cid: int) -> sqlite3.Row:
     c = conn.execute("SELECT * FROM conversation WHERE id = ?", (cid,)).fetchone()
     if c is None:
-        raise HTTPException(404, "No such conversation")
+        raise HTTPException(404, "That talk isn't here any more (deleted for good, or the link is wrong)")
     return c
 
 
@@ -712,7 +910,13 @@ def conversation_tag_add(request: Request, cid: int, name: str = Form(...), conn
 
 @router.post("/conversations/{cid}/tags/{tid}/remove")
 def conversation_tag_remove(request: Request, cid: int, tid: int, conn: sqlite3.Connection = Conn):
-    tags_svc.remove(conn, cid, tid)
+    t = conn.execute("SELECT name FROM tag WHERE id = ?", (tid,)).fetchone()
+    with db.transaction(conn):
+        if t is not None:   # U12 (Brian, 2026-11-25): Undo on every delete, tags included
+            uid = undo.save(conn, "Tag removed", [])
+            undo.removed(conn, uid, "tag", "id = ?", (tid,))
+            undo.removed(conn, uid, "conversation_tag", "conversation_id = ? AND tag_id = ?", (cid, tid))
+        tags_svc.remove(conn, cid, tid)
     return back(request, f"/conversations/{cid}")
 
 
@@ -748,17 +952,31 @@ def conversation_export(cid: int, fmt: str, transcript: int = 1, conn: sqlite3.C
 def person_export(pid: int, fmt: str, conn: sqlite3.Connection = Conn):
     p = conn.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()
     if p is None:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     return _md(export.person_md(conn, pid), p["name"], _fmt(fmt))
+
+
+@router.post("/conversations/{cid}/opened")
+def conversation_opened(cid: int, conn: sqlite3.Connection = Conn):
+    """A prefetched talk page was actually shown: now it counts as opened."""
+    with db.transaction(conn):
+        conn.execute("UPDATE conversation SET opened_at = ? WHERE id = ? AND status IN ('done', 'transcribed')", (db.now(), cid))
+    return Response(status_code=204)
 
 
 @router.get("/conversations/{cid}", response_class=HTMLResponse)
 def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
-    if c["status"] == "done" and (c["opened_at"] is None or c["opened_at"] < c["updated_at"]):
-        # its "New" badge goes and its Ready ping tidies itself (notify.tidy); no write on ordinary re-visits
-        with db.transaction(conn):
-            conn.execute("UPDATE conversation SET opened_at = ? WHERE id = ?", (db.now(), cid))
+    unopened = False
+    if c["status"] in ("done", "transcribed") and (c["opened_at"] is None or c["opened_at"] < c["updated_at"]):
+        # its "New" badge goes and its Ready ping tidies itself (notify.tidy); no write on ordinary re-visits.
+        # A prefetch (the phone loading it the moment a finger touches the row, 2026-11-22) isn't an open: the page
+        # itself reports the open if it's actually shown (POST /conversations/{id}/opened).
+        if "prefetch" in request.headers.get("sec-purpose", ""):
+            unopened = True
+        else:
+            with db.transaction(conn):
+                conn.execute("UPDATE conversation SET opened_at = ? WHERE id = ?", (db.now(), cid))
     speakers = speakers_of(conn, cid)
     name_of = {s["id"]: s["name"] for s in speakers}
     segments = [{**dict(r), "name": name_of.get(r["speaker_id"], "Unknown")} for r in conn.execute(
@@ -777,18 +995,18 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
     grouped: dict[str, list] = {}
     for f in facts:
         grouped.setdefault(f["who"], []).append(f)
-    rec = conn.execute("SELECT coalesce(archive_path, vault_path), title FROM recording WHERE id = ?", (c["recording_id"],)).fetchone()
-    has_audio = bool(rec and rec[0])
+    rec = conn.execute("SELECT title FROM recording WHERE id = ?", (c["recording_id"],)).fetchone()
+    has_audio = playable_audio(conn, cid) is not None
     mine = [t for t in tasks if t["owner_person_id"] == ME]
     theirs = [t for t in tasks if t["owner_person_id"] != ME]
     check = {"mine": len(mine), "theirs": len(theirs), "notes": len(facts),
              "unsure": sum(1 for t in tasks if t["status"] == "open"
                            and (t["inbox"] or (t["confidence"] is not None and t["confidence"] < 0.6))),
-             "unnamed": sum(1 for s in speakers if s["person_id"] is None)}
+             "unnamed": sum(1 for s in speakers if s["person_id"] is None and not s["unknown"])}
     preview = None if not segments else extract.estimate_cost(conn, cid, ending_private=bool(c["private"]))
     processing = progress.latest_for_recording(conn, c["recording_id"])
     ai_calls = conn.execute(
-        "SELECT model, count(*) AS calls, coalesce(sum(cost_usd), 0) AS cost FROM ledger_entry "
+        "SELECT model, count(*) AS calls, coalesce(sum(cost_usd), 0) AS cost, max(time) AS last FROM ledger_entry "
         "WHERE conversation_id = ? AND status = 'ok' GROUP BY model", (cid,)).fetchall()
     pace = talk.pace_by_speaker(conn, cid)
     parts = merge_svc.parts_of(conn, c["recording_id"])   # a merged talk: where each recording starts
@@ -797,8 +1015,10 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
     bare = (not c["summary"] and not mine and not theirs and not decisions and not facts and bool(segments)
             and c["status"] != "transcribing")
     topics = inbox_svc.quick_title(" ".join(x["text"] for x in segments), n=6) if bare else ""
-    opening = inbox_svc.preview([{"speaker": "", "text": " ".join(x["text"] for x in segments[:12])}], chars=260) if bare else ""
-    return render(request, "conversation.html", "conversations", conn, c=c, parts=parts, bare=bare, topics=topics, opening=opening,
+    opening = inbox_svc.preview([{"speaker": "", "text": " ".join(x["text"] for x in segments[:60])}], chars=1400) if bare else ""
+    part = request.query_params.get("part")
+    return render(request, "_tx_part.html" if part == "lines" else "conversation.html", "conversations", conn, c=c, unopened=unopened, parts=parts, bare=bare, topics=topics, opening=opening,
+                  tx_inline=request.query_params.get("tx") == "1",
                   tags=tags_svc.of(conn, cid), tag_names=tags_svc.names(conn), detail_pending=ai_jobs.detail_pending(conn, cid),
                   notes_view="detailed" if request.query_params.get("notes") == "detailed" else "short", short_speaker_s=SHORT_SPEAKER_SECONDS, person_colors=PERSON_COLORS, gone_on=gone_on(c["deleted_at"]),
                   speakers=speakers, segments=segments,
@@ -849,7 +1069,7 @@ templates.env.globals["chart_keys"] = {c[0] for c in machine.CHARTS}   # M14 til
 
 
 def fragment_request(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true"
+    return request.headers.get("HX-Request") == "true"
 
 
 def confirm_page(request: Request, conn: sqlite3.Connection, nav: str, *, heading: str, cost: float, model: str | None,
@@ -857,7 +1077,7 @@ def confirm_page(request: Request, conn: sqlite3.Connection, nav: str, *, headin
                  blocked: str | None = None, type_pick: str | None = None) -> HTMLResponse:
     frag = fragment_request(request)
     return render(request, "confirm.html", nav, conn, layout="_bare.html" if frag else "base.html", fragment=frag,
-                  heading=heading, cost=cost or 0.0, model=model_label(model), tokens=f"{tokens:,}" if tokens else None,
+                  heading=heading, cost=cost or 0.0, model=model_label(model), tokens=f"{round(tokens):,}" if tokens else None,
                   detail=detail, action=action, cancel=cancel, fields=fields or {}, blocked=blocked,
                   type_pick=type_pick, meeting_types=prompts.MEETING_TYPES)
 
@@ -870,7 +1090,7 @@ def confirmed(confirm: str) -> bool:
 def rerun_confirm(request: Request, cid: int, conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
     est = extract.estimate_cost(conn, cid, ending_private=bool(c["private"]))
-    return confirm_page(request, conn, "conversations", heading="Re-run the AI on this conversation?" if c["summary"] else "Make AI notes?", cost=est["cost_usd_est"],
+    return confirm_page(request, conn, "conversations", heading="Re-run the AI on this conversation?" if c["summary"] else "Summarize this talk?", cost=est["cost_usd_est"],
                         model=est["model"], tokens=est["tokens_in_est"], blocked=est["blocked"],
                         detail="Sends the transcript text (never the audio). Edits you already made are kept.",
                         action=f"/conversations/{cid}/rerun", cancel=f"/conversations/{cid}")
@@ -1040,9 +1260,64 @@ def trash_conversation(cid: int, conn: sqlite3.Connection = Conn):
     removed for good after TRASH_DAYS. Undo works like any other change."""
     c = get_conversation(conn, cid)
     with db.transaction(conn):
-        undo.save(conn, f"Moved “{c['title']}” to Trash", [("conversation", cid)])
+        undo.save(conn, "Moved to Trash", [("conversation", cid)])   # Brian, 2026-11-22: the title made it "Moved…"
         conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ?", (db.now(), db.now(), cid))
     return RedirectResponse("/conversations", status_code=303)
+
+
+def _talk_ids(ids: str) -> list[int]:
+    return [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+
+
+@router.get("/talks-bulk/ai", response_class=HTMLResponse)
+def talks_bulk_ai_confirm(request: Request, ids: str = "", conn: sqlite3.Connection = Conn):
+    """Talks › Select › AI notes (Brian, 2026-11-22): one confirm with the total cost. Talks that already have AI notes
+    are left out (no paying twice)."""
+    todo, have = [], 0
+    for cid in _talk_ids(ids):
+        c = conn.execute("SELECT summary FROM conversation WHERE id = ? AND deleted_at IS NULL", (cid,)).fetchone()
+        if c is None:
+            continue
+        if c["summary"]:
+            have += 1
+        else:
+            todo.append(cid)
+    ests = [extract.estimate_cost(conn, cid) for cid in todo]
+    n = len(todo)
+    return confirm_page(request, conn, "conversations", heading=f"Summarize {n} talk{'s' if n != 1 else ''}?",
+                        cost=sum(e["cost_usd_est"] or 0 for e in ests), model=ests[0]["model"] if ests else None,
+                        tokens=sum(e["tokens_in_est"] or 0 for e in ests) or None,
+                        blocked=None if n else "all of these already have AI notes",
+                        detail="Sends each transcript's text (never the audio)."
+                               + (f" {have} already ha{'ve' if have != 1 else 's'} AI notes and {'are' if have != 1 else 'is'} left out." if have else ""),
+                        action="/talks-bulk", cancel="/conversations", fields={"ids": ",".join(map(str, todo)), "what": "ai"})
+
+
+@router.post("/talks-bulk")
+def talks_bulk(request: Request, ids: str = Form(...), what: str = Form(...), confirm: str = Form(""),
+               conn: sqlite3.Connection = Conn):
+    """Talks › Select › Delete or AI notes for several at once. Delete is one Undo; AI notes only from the confirm step."""
+    cids = [cid for cid in _talk_ids(ids)
+            if conn.execute("SELECT 1 FROM conversation WHERE id = ? AND deleted_at IS NULL", (cid,)).fetchone()]
+    if what == "trash":
+        with db.transaction(conn):
+            undo.save(conn, f"Moved {len(cids)} talk{'s' if len(cids) != 1 else ''} to Trash", [("conversation", c) for c in cids])
+            for cid in cids:
+                conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ?", (db.now(), db.now(), cid))
+        return RedirectResponse("/conversations", status_code=303)
+    if what == "merge":
+        try:
+            new = merge_svc.merge_talks(conn, request.app.state.cfg, cids)
+        except merge_svc.MergeError as e:
+            raise HTTPException(400, str(e))
+        return RedirectResponse(f"/conversations/{new}?merged={len(cids)}", status_code=303)
+    if what == "ai":
+        if not confirmed(confirm):
+            return RedirectResponse(f"/talks-bulk/ai?ids={','.join(map(str, cids))}", status_code=303)
+        for cid in cids:
+            ai_jobs.queue_rerun(conn, cid, approved=True)
+        return RedirectResponse("/conversations?note=summarizing", status_code=303)
+    raise HTTPException(400, "Pick Summarize, Merge or Delete")
 
 
 @router.post("/conversations/{cid}/restore")
@@ -1066,13 +1341,18 @@ def audio_file(request: Request, path: str | None) -> FileResponse:
                         headers={"Cache-Control": "private, max-age=86400"})
 
 
-@router.get("/audio/conversation/{cid}")
-def conversation_audio(request: Request, cid: int, conn: sqlite3.Connection = Conn):
-    """Plays the original while it's kept (30 days, D8), then the archive copy. Only formats browsers can play."""
+def playable_audio(conn: sqlite3.Connection, cid: int) -> str | None:
+    """The file a talk plays: the original while it's kept (30 days, D8), then the archive copy. Only formats browsers
+    can play, and only a file that's there (R5-15: the player showed for a talk whose audio was gone, and ▶ and every
+    timestamp did nothing). The talk page and the audio route both ask this, so they always agree."""
     row = conn.execute("SELECT r.vault_path, r.archive_path FROM conversation c JOIN recording r ON r.id = c.recording_id "
                        "WHERE c.id = ?", (cid,)).fetchone()
-    playable = [p for p in (row or []) if p and Path(p).suffix.lower() in AUDIO_TYPES and Path(p).is_file()]
-    return audio_file(request, playable[0] if playable else None)
+    return next((p for p in (row or []) if p and Path(p).suffix.lower() in AUDIO_TYPES and Path(p).is_file()), None)
+
+
+@router.get("/audio/conversation/{cid}")
+def conversation_audio(request: Request, cid: int, conn: sqlite3.Connection = Conn):
+    return audio_file(request, playable_audio(conn, cid))
 
 
 @router.get("/audio/speaker/{sid}")
@@ -1082,14 +1362,22 @@ def speaker_clip(request: Request, sid: int, conn: sqlite3.Connection = Conn):
 
 
 @router.post("/speakers/{sid}/name")
-def name_speaker(request: Request, sid: int, person_id: int | None = Form(None), new_name: str = Form(""),
+def name_speaker(request: Request, sid: int, person_id: OptId = None, new_name: str = Form(""), special: str = Form(""),
                  conn: sqlite3.Connection = Conn):
-    """Name a speaker once; the M2 pipeline then learns their voiceprint so they're recognised next time."""
+    """Name a speaker once; the M2 pipeline then learns their voiceprint so they're recognised next time.
+    special: "not" = "Not <name>" (back to its own Speaker N), "idk" = "Don't know" (stop asking) (Brian, 2026-11-22)."""
     if not conn.execute("SELECT 1 FROM speaker WHERE id = ?", (sid,)).fetchone():
-        raise HTTPException(404, "No such speaker")
+        raise HTTPException(404, "That speaker isn't here any more")
+    if special == "not" and not new_name.strip():
+        return unassign_speaker(request, sid, conn)
+    if special == "idk" and not new_name.strip():
+        return speaker_unknown(request, sid, conn)
+    if special == "idk_rest" and not new_name.strip():   # B11: "Don't know: this one and the rest"
+        cid = conn.execute("SELECT conversation_id FROM speaker WHERE id = ?", (sid,)).fetchone()[0]
+        return speakers_unknown_rest(request, cid, conn)
     with db.transaction(conn):
         person_id = person_from_form(conn, person_id, new_name)
-        conn.execute("UPDATE speaker SET person_id = ?, confirmed = 1 WHERE id = ?", (person_id, sid))
+        conn.execute("UPDATE speaker SET person_id = ?, confirmed = 1, unknown = 0 WHERE id = ?", (person_id, sid))
         conn.execute("UPDATE review_item SET status = 'done', resolved_at = ? WHERE kind = 'speaker' AND ref_id = ? "
                      "AND status = 'open'", (db.now(), sid))
     identify.enroll(conn, sid, person_id, cfg=request.app.state.cfg)  # adds their voice to the voiceprint
@@ -1128,14 +1416,51 @@ def unassign_speaker(request: Request, sid: int, conn: sqlite3.Connection = Conn
     """"This isn't X": the speaker goes back to unnamed (and back into Review) so Brian can name them again."""
     sp = conn.execute("SELECT * FROM speaker WHERE id = ?", (sid,)).fetchone()
     if sp is None:
-        raise HTTPException(404, "No such speaker")
+        raise HTTPException(404, "That speaker isn't here any more")
     with db.transaction(conn):
-        conn.execute("UPDATE speaker SET person_id = NULL, confirmed = 0, match_score = NULL WHERE id = ?", (sid,))
+        if sp["person_id"] and sp["confirmed"]:   # take this voice back out of their voiceprint, so it stops matching
+            identify.unenroll(conn, sid, sp["person_id"], cfg=request.app.state.cfg)
+        conn.execute("UPDATE speaker SET person_id = NULL, confirmed = 0, match_score = NULL, unknown = 0 WHERE id = ?", (sid,))
+        if sp["person_id"]:   # their name leaves this talk's summary, tasks and notes too (Brian, 2026-11-23)
+            extract.unname_in_text(conn, sid, sp["person_id"])
         if not conn.execute("SELECT 1 FROM review_item WHERE kind = 'speaker' AND ref_id = ? AND status = 'open'",
                             (sid,)).fetchone():
             conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('speaker', ?, ?, ?, ?)",
                          (sp["conversation_id"], sid, json.dumps({"clip": sp["clip_path"]}), db.now()))
     return back(request, f"/conversations/{sp['conversation_id']}")
+
+
+def _close_speaker_reviews(conn: sqlite3.Connection, sids: list[int]) -> None:
+    for sid in sids:
+        conn.execute("UPDATE review_item SET status = 'dismissed', resolved_at = ? WHERE kind = 'speaker' AND ref_id = ? "
+                     "AND status = 'open'", (db.now(), sid))
+
+
+@router.post("/speakers/{sid}/unknown")
+def speaker_unknown(request: Request, sid: int, conn: sqlite3.Connection = Conn):
+    """"Don't know" (Brian, 2026-11-22): stays "Speaker N", no longer asked about anywhere. Naming them later still works."""
+    sp = conn.execute("SELECT conversation_id FROM speaker WHERE id = ?", (sid,)).fetchone()
+    if sp is None:
+        raise HTTPException(404, "That speaker isn't here any more")
+    with db.transaction(conn):
+        undo.save(conn, "Marked as don't know", [("speaker", sid), *(("review_item", r[0]) for r in conn.execute(
+            "SELECT id FROM review_item WHERE kind = 'speaker' AND ref_id = ? AND status = 'open'", (sid,)))])
+        conn.execute("UPDATE speaker SET unknown = 1 WHERE id = ? AND person_id IS NULL", (sid,))
+        _close_speaker_reviews(conn, [sid])
+    return back(request, f"/conversations/{sp['conversation_id']}")
+
+
+@router.post("/conversations/{cid}/speakers-unknown")
+def speakers_unknown_rest(request: Request, cid: int, conn: sqlite3.Connection = Conn):
+    """"Don't know the rest" for big group talks: every speaker still unnamed in this talk stops being asked about."""
+    sids = [r[0] for r in conn.execute("SELECT id FROM speaker WHERE conversation_id = ? AND person_id IS NULL AND unknown = 0", (cid,))]
+    if sids:
+        with db.transaction(conn):
+            undo.save(conn, f"{len(sids)} marked as don't know", [*(("speaker", i) for i in sids), *(("review_item", r[0]) for r in conn.execute(
+                f"SELECT id FROM review_item WHERE kind = 'speaker' AND status = 'open' AND ref_id IN ({','.join('?' * len(sids))})", sids))])
+            conn.execute(f"UPDATE speaker SET unknown = 1 WHERE id IN ({','.join('?' * len(sids))})", sids)
+            _close_speaker_reviews(conn, sids)
+    return back(request, f"/conversations/{cid}")
 
 
 SHORT_SPEAKER_SECONDS = 30   # less talk than this: probably a split-off piece of another speaker (F7, 2026-10-21)
@@ -1169,18 +1494,19 @@ def line_edit_panel(request: Request, seg_id: int, conn: sqlite3.Connection = Co
     """A line's ⋯ panel, loaded when first opened (keeps long transcripts light)."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
-    return render(request, "_line_edit.html", "conversations", conn, s=seg, speakers=speakers_of(conn, seg["conversation_id"]))
+        raise HTTPException(404, "That line isn't here any more")
+    # a bare fragment (U12): none of the page frame's counts are needed for one panel
+    return templates.TemplateResponse(request, "_line_edit.html", {"s": seg, "speakers": speakers_of(conn, seg["conversation_id"])})
 
 
 @router.post("/segments/{seg_id}/speaker")
-def line_speaker(request: Request, seg_id: int, speaker_id: int | None = Form(None), new_name: str = Form(""),
+def line_speaker(request: Request, seg_id: int, speaker_id: OptId = None, new_name: str = Form(""),
                  ids: str = Form(""), conn: sqlite3.Connection = Conn):
     """Fix who said one line, or a block of lines in a row (`ids`, Brian 2026-11-20: tap the name, pick who). Only
     those lines move (and their talk time); voiceprints are untouched: a few lines are too little audio."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
+        raise HTTPException(404, "That line isn't here any more")
     cid = seg["conversation_id"]
     more = [int(x) for x in ids.split(",") if x.strip().isdigit()]
     segs = [seg] + [r for r in (conn.execute("SELECT * FROM segment WHERE id = ? AND conversation_id = ?", (x, cid)).fetchone()
@@ -1200,7 +1526,7 @@ def line_speaker(request: Request, seg_id: int, speaker_id: int | None = Form(No
                 conn.execute("UPDATE segment SET speaker_id = ? WHERE id = ?", (speaker_id, g["id"]))
     if _fast(request):
         return _fix_reply(conn, cid, before, lo, hi, uid)
-    return back(request, f"/conversations/{cid}#L{seg['idx']}")
+    return back(request, f"/conversations/{cid}?tx=1#L{seg['idx']}")
 
 
 def _fast(request: Request) -> bool:
@@ -1339,13 +1665,13 @@ def _reassign(conn: sqlite3.Connection, uid: int, seg: sqlite3.Row, a: int, b: i
 
 @router.post("/segments/{seg_id}/flip")
 def line_flip(request: Request, seg_id: int, at: int = Form(...), end: int | None = Form(None),
-              speaker_id: int | None = Form(None), new_name: str = Form(""), conn: sqlite3.Connection = Conn):
+              speaker_id: OptId = None, new_name: str = Form(""), conn: sqlite3.Connection = Conn):
     """Fix mode (Brian, 2026-11-20, replaces long-press selecting on the phone): tap the first word someone else
     said. Words `at` to the end of the line (or to `end`) go to that speaker: in a 1:1 the other person, otherwise
     the one picked. Same-speaker neighbours join up. No AI; Undo restores the whole transcript."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
+        raise HTTPException(404, "That line isn't here any more")
     cid = seg["conversation_id"]
     before, lo, hi = _window(conn, [seg])
     with db.transaction(conn):
@@ -1362,17 +1688,17 @@ def line_flip(request: Request, seg_id: int, at: int = Form(...), end: int | Non
         idx = _reassign(conn, uid, seg, at, n if end is None else end, sp)
     if _fast(request):
         return _fix_reply(conn, cid, before, lo, hi, uid)
-    return RedirectResponse(f"/conversations/{cid}#L{idx}", status_code=303)
+    return RedirectResponse(f"/conversations/{cid}?tx=1#L{idx}", status_code=303)
 
 
 @router.post("/segments/{seg_id}/split")
 def line_split(request: Request, seg_id: int, start: int = Form(...), end: int = Form(...),
-               speaker_id: int | None = Form(None), new_name: str = Form(""), conn: sqlite3.Connection = Conn):
+               speaker_id: OptId = None, new_name: str = Form(""), conn: sqlite3.Connection = Conn):
     """With a mouse (speaker fix A, 2026-11-20): select words, then "Split here" (they become their own line) or
     "Who said this?" (they also move to a speaker). Same-speaker neighbours join up afterwards."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
+        raise HTTPException(404, "That line isn't here any more")
     cid, text = seg["conversation_id"], seg["text"]
     a, b = _word_bounds(text, start, end)
     wa, wb = len(text[:a].split()), len(text[:b].split())
@@ -1380,7 +1706,7 @@ def line_split(request: Request, seg_id: int, start: int = Form(...), end: int =
     if a == b:
         wb = len(text.split())
     if not wants and (wa == 0 and wb == len(text.split())):
-        return RedirectResponse(f"/conversations/{cid}#L{seg['idx']}", status_code=303)
+        return RedirectResponse(f"/conversations/{cid}?tx=1#L{seg['idx']}", status_code=303)
     before, lo, hi = _window(conn, [seg])
     with db.transaction(conn):
         uid = undo.save(conn, f"Split line {seg['idx'] + 1}",
@@ -1410,7 +1736,7 @@ def line_split(request: Request, seg_id: int, start: int = Form(...), end: int =
             idx = seg["idx"] + (1 if wa > 0 else 0)
     if _fast(request):
         return _fix_reply(conn, cid, before, lo, hi, uid)
-    return RedirectResponse(f"/conversations/{cid}#L{idx}", status_code=303)
+    return RedirectResponse(f"/conversations/{cid}?tx=1#L{idx}", status_code=303)
 
 
 @router.post("/segments/{seg_id}/join")
@@ -1419,7 +1745,7 @@ def line_join(request: Request, seg_id: int, conn: sqlite3.Connection = Conn):
     them, talk time follows). Undo puts the line back."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
+        raise HTTPException(404, "That line isn't here any more")
     cid = seg["conversation_id"]
     prev = conn.execute("SELECT * FROM segment WHERE conversation_id = ? AND idx < ? ORDER BY idx DESC LIMIT 1",
                         (cid, seg["idx"])).fetchone()
@@ -1438,7 +1764,7 @@ def line_join(request: Request, seg_id: int, conn: sqlite3.Connection = Conn):
             conn.execute("UPDATE segment SET speaker_id = ? WHERE id = ?", (prev["speaker_id"], seg_id))
         _merge_runs(conn, cid, prev["idx"], seg["idx"], any_line=True)
         _renumber(conn, cid)
-    return RedirectResponse(f"/conversations/{cid}#L{prev['idx']}", status_code=303)
+    return RedirectResponse(f"/conversations/{cid}?tx=1#L{prev['idx']}", status_code=303)
 
 
 @router.post("/segments/{seg_id}/text")
@@ -1447,7 +1773,7 @@ def line_text(request: Request, seg_id: int, text: str = Form(...), heard: str =
     """Fix the words of one line (search follows). Optionally teach the glossary a mis-hearing for future AI runs."""
     seg = conn.execute("SELECT * FROM segment WHERE id = ?", (seg_id,)).fetchone()
     if seg is None:
-        raise HTTPException(404, "No such line")
+        raise HTTPException(404, "That line isn't here any more")
     if not text.strip():
         raise HTTPException(400, "A line can't be empty")
     before, lo, hi = _window(conn, [seg])
@@ -1459,7 +1785,7 @@ def line_text(request: Request, seg_id: int, text: str = Form(...), heard: str =
             add_glossary_variant(conn, correct.strip(), heard.strip())
     if _fast(request):   # Brian, 2026-11-20: a word fix reloaded the whole talk page and timed out on the phone
         return _fix_reply(conn, seg["conversation_id"], before, lo, hi, uid)
-    return back(request, f"/conversations/{seg['conversation_id']}#L{seg['idx']}")
+    return back(request, f"/conversations/{seg['conversation_id']}?tx=1#L{seg['idx']}")
 
 
 def add_glossary_variant(conn: sqlite3.Connection, term: str, heard: str) -> None:
@@ -1507,7 +1833,7 @@ def task_counts(request: Request, conn: sqlite3.Connection) -> dict[str, int]:
 
 @router.get("/tasks", response_class=HTMLResponse)
 def tasks_page(request: Request, tab: str = "mine", person: int | None = None, show: str = "open", n: int = TASKS_PER_PAGE,
-               conn: sqlite3.Connection = Conn):
+               sort: str = "due", conn: sqlite3.Connection = Conn):
     if tab == "decisions":
         counts = task_counts(request, conn)
         decisions, total = decision_rows(request, conn, n)
@@ -1519,6 +1845,10 @@ def tasks_page(request: Request, tab: str = "mine", person: int | None = None, s
         where += " AND (t.owner_person_id = ? OR EXISTS (SELECT 1 FROM speaker s WHERE s.conversation_id = t.conversation_id "
         where += "AND s.person_id = ?))"
         args += [person, person]
+    q = like_q(request.query_params.get("q"))
+    if q:   # N9: the search box above the list
+        where += " AND (t.title LIKE ? ESCAPE '\\' OR coalesce(t.short_title, '') LIKE ? ESCAPE '\\')"
+        args += [q, q]
     archived = request.query_params.get("archived") == "1"
     base, base_args = where, list(args)   # this tab, area and person, before the Open / Done / Old choice
     if show == "old":
@@ -1529,15 +1859,21 @@ def tasks_page(request: Request, tab: str = "mine", person: int | None = None, s
     else:
         where += " AND t.status = 'open'"
     rows, total = paged(conn,
-        "SELECT t.*, p.name AS owner_name, coalesce(nullif(c.short_title, ''), c.title) AS conv_title, (SELECT idx FROM segment g WHERE g.id = t.source_segment_id) AS line "
+        "SELECT t.*, p.name AS owner_name, coalesce(nullif(c.short_title, ''), c.title) AS conv_title, (SELECT idx FROM segment g WHERE g.id = t.source_segment_id) AS line, "
+        "(SELECT min(tg.name COLLATE NOCASE) FROM conversation_tag ct JOIN tag tg ON tg.id = ct.tag_id WHERE ct.conversation_id = t.conversation_id) AS first_tag "
         "FROM task t JOIN person p ON p.id = t.owner_person_id LEFT JOIN conversation c ON c.id = t.conversation_id "
-        f"WHERE {where} ORDER BY " + ("t.updated_at DESC" if show in ("done", "closed", "not_needed") else "t.due IS NULL, t.due, t.created_at DESC"),
+        f"WHERE {where} ORDER BY " + ("t.updated_at DESC" if show in ("done", "closed", "not_needed") else "t.created_at DESC" if sort == "added"
+                                    # by talk / by tag (Brian picked A, 2026-11-22 night): newest talk first, then due date
+                                    else "t.conversation_id IS NULL, coalesce(c.started_at, c.created_at) DESC, t.conversation_id, t.due IS NULL, t.due" if sort == "talk"
+                                    else "first_tag IS NULL, first_tag COLLATE NOCASE, t.due IS NULL, t.due" if sort == "tag"
+                                    else "t.due IS NULL, t.due, t.created_at DESC"),   # Sort (Brian, 2026-11-22)
         args, n, TASKS_PER_PAGE)
     counts = task_counts(request, conn)
     n_archived = conn.execute(f"SELECT count(*) FROM task t WHERE {base} AND t.status = 'done' AND t.archived_at IS NOT NULL",
                               base_args).fetchone()[0] if show in ("done", "closed", "not_needed") and not archived else 0
     return render(request, "tasks.html", "tasks", conn, rows=rows, tab=tab, counts=counts, people=people(conn), person=person, show=show,
-                  n_archived=n_archived, total=total)
+                  n_archived=n_archived, total=total, sort=sort if sort in ("added", "talk", "tag") else "due",
+                  q=(request.query_params.get("q") or "").strip()[:100])
 
 
 @router.post("/tasks")
@@ -1560,7 +1896,7 @@ def add_task(request: Request, title: str = Form(...), owner: str = Form(""), du
 def task_or_404(conn: sqlite3.Connection, tid: int) -> sqlite3.Row:
     row = conn.execute("SELECT * FROM task WHERE id = ?", (tid,)).fetchone()
     if row is None:
-        raise HTTPException(404, "No such task")
+        raise HTTPException(404, "That task isn't here any more")
     return row
 
 
@@ -1568,7 +1904,7 @@ def task_or_404(conn: sqlite3.Connection, tid: int) -> sqlite3.Row:
 def task_done(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     t = task_or_404(conn, tid)
     with db.transaction(conn):
-        undo.save(conn, f"Marked “{t['title']}” done", [("task", tid)])
+        undo.save(conn, "Marked done", [("task", tid)])
         conn.execute("UPDATE task SET status = 'done', closed_as = NULL, closed_note = NULL, rated = coalesce(rated, 'right'), "
                      "updated_at = ? WHERE id = ?", (db.now(), tid))
     return back(request, "/tasks")
@@ -1580,7 +1916,7 @@ def task_not_needed(request: Request, tid: int, note: str = Form(""), conn: sqli
     never counted as finished, no rating for the AI (it wasn't wrong). Undo or Reopen brings it back."""
     t = task_or_404(conn, tid)
     with db.transaction(conn):
-        undo.save(conn, f"“{t['title']}” marked no longer needed", [("task", tid)])
+        undo.save(conn, "Marked not needed", [("task", tid)])
         conn.execute("UPDATE task SET status = 'done', closed_as = 'not_needed', closed_note = ?, updated_at = ? WHERE id = ?",
                      (note.strip()[:200] or None, db.now(), tid))
     return back(request, "/tasks")
@@ -1605,9 +1941,11 @@ def task_reopen(request: Request, tid: int, conn: sqlite3.Connection = Conn):
 def task_edit(request: Request, tid: int, title: str = Form(...), owner: int = Form(ME), due: str = Form(""),
               conn: sqlite3.Connection = Conn):
     t = task_or_404(conn, tid)
+    if not conn.execute("SELECT 1 FROM person WHERE id = ?", (owner,)).fetchone():   # R5-03: merged/deleted elsewhere
+        raise HTTPException(409, "That person was merged or removed on another device. Reload and pick again.")
     changed = (title.strip(), owner, due or None) != (t["title"], t["owner_person_id"], t["due"])
     with db.transaction(conn):
-        undo.save(conn, f"Edited “{t['title']}”", [("task", tid)])
+        undo.save(conn, "Task edited", [("task", tid)])
         conn.execute("UPDATE task SET title = ?, owner_person_id = ?, due = ?, rated = ?, updated_at = ? WHERE id = ?",
                      (title.strip(), owner, due or None, "wrong" if changed and t["conversation_id"] else t["rated"],
                       db.now(), tid))
@@ -1618,7 +1956,7 @@ def task_edit(request: Request, tid: int, title: str = Form(...), owner: int = F
 
 
 @router.post("/tasks/{tid}/owner")
-def task_owner(request: Request, tid: int, person_id: int | None = Form(None), new_name: str = Form(""),
+def task_owner(request: Request, tid: int, person_id: OptId = None, new_name: str = Form(""),
                conn: sqlite3.Connection = Conn):
     """Change person: moves the task between You owe and They owe you. An AI task given to the wrong person counts as wrong."""
     t = task_or_404(conn, tid)
@@ -1626,7 +1964,7 @@ def task_owner(request: Request, tid: int, person_id: int | None = Form(None), n
         owner = person_from_form(conn, person_id, new_name)
         if owner != t["owner_person_id"]:
             name = conn.execute("SELECT name FROM person WHERE id = ?", (owner,)).fetchone()[0]
-            undo.save(conn, f"Moved “{t['title']}” to {'you' if owner == ME else name}", [("task", tid)])
+            undo.save(conn, f"Moved to {'you' if owner == ME else name}", [("task", tid)])
             conn.execute("UPDATE task SET owner_person_id = ?, rated = ?, updated_at = ? WHERE id = ?",
                          (owner, "wrong" if t["conversation_id"] else t["rated"], db.now(), tid))
     return back(request, "/tasks")
@@ -1636,7 +1974,7 @@ def task_owner(request: Request, tid: int, person_id: int | None = Form(None), n
 def task_delete(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     t = task_or_404(conn, tid)
     with db.transaction(conn):
-        undo.save(conn, f"Removed “{t['title']}”", [("task", tid), *(("review_item", r[0]) for r in conn.execute(   # Undo reopens it
+        undo.save(conn, "Task removed", [("task", tid), *(("review_item", r[0]) for r in conn.execute(   # Undo reopens it
             "SELECT id FROM review_item WHERE kind = 'inbox' AND ref_id = ? AND status = 'open'", (tid,)))])
         conn.execute("UPDATE task SET status = 'dropped', rated = 'wrong', inbox = 0, updated_at = ? WHERE id = ?", (db.now(), tid))
         unindex(conn, "task", tid)
@@ -1645,12 +1983,64 @@ def task_delete(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     return back(request, "/tasks")
 
 
+@router.post("/tasks-bulk/{what}")
+def tasks_bulk(request: Request, what: str, ids: str = Form(...), conn: sqlite3.Connection = Conn):
+    """N4 / A3.2 (Brian, 2026-11-25): Tasks › pick several › Done, Not needed or Delete. One Undo brings them all back."""
+    tids = [r[0] for r in (conn.execute("SELECT id FROM task WHERE id = ? AND status != 'dropped'", (i,)).fetchone()
+                           for i in _ids(ids)) if r]
+    if not tids or what not in ("done", "not-needed", "delete"):
+        return back(request, "/tasks")
+    n = f"{len(tids)} task{'s' if len(tids) != 1 else ''}"
+    marks = ",".join("?" * len(tids))
+    with db.transaction(conn):
+        label = {"done": f"Marked {n} done", "not-needed": f"Marked {n} not needed", "delete": f"Removed {n}"}[what]
+        items = [r[0] for r in conn.execute(
+            f"SELECT id FROM review_item WHERE kind = 'inbox' AND status = 'open' AND ref_id IN ({marks})", tids)]
+        undo.save(conn, label, [("task", t) for t in tids] + [("review_item", r) for r in items])
+        if what == "done":
+            conn.execute(f"UPDATE task SET status = 'done', closed_as = NULL, closed_note = NULL, rated = coalesce(rated, 'right'), "
+                         f"updated_at = ? WHERE id IN ({marks})", (db.now(), *tids))
+        elif what == "not-needed":
+            conn.execute(f"UPDATE task SET status = 'done', closed_as = 'not_needed', closed_note = NULL, updated_at = ? "
+                         f"WHERE id IN ({marks})", (db.now(), *tids))
+        else:
+            conn.execute(f"UPDATE task SET status = 'dropped', rated = 'wrong', inbox = 0, updated_at = ? WHERE id IN ({marks})",
+                         (db.now(), *tids))
+            for t in tids:
+                unindex(conn, "task", t)
+        if what != "done" or items:
+            conn.execute(f"UPDATE review_item SET status = 'dismissed', resolved_at = ? WHERE kind = 'inbox' AND status = 'open' "
+                         f"AND ref_id IN ({marks})", (db.now(), *tids))
+    return back(request, "/tasks")
+
+
+@router.post("/trash-bulk/{what}")
+def trash_bulk(request: Request, what: str, ids: str = Form(...), conn: sqlite3.Connection = Conn):
+    """N4 / A3.3 (Brian, 2026-11-25): Trash › pick several › Restore or Delete forever. Ids look like c12 (a talk) or r5
+    (a recording skipped in the Inbox). Delete forever removes the picked talks now (their audio goes in the nightly
+    clean-up). Skipped recordings leave by themselves after 30 days, so Delete forever leaves them as they are."""
+    picked = [x.strip() for x in ids.split(",")]
+    cids = [int(x[1:]) for x in picked if x[:1] == "c" and x[1:].isdigit()]
+    rids = [int(x[1:]) for x in picked if x[:1] == "r" and x[1:].isdigit()]
+    cids = [c for c in cids if conn.execute("SELECT 1 FROM conversation WHERE id = ? AND deleted_at IS NOT NULL", (c,)).fetchone()]
+    if what == "restore":
+        with db.transaction(conn):
+            for c in cids:
+                conn.execute("UPDATE conversation SET deleted_at = NULL, updated_at = ? WHERE id = ?", (db.now(), c))
+        for r in rids:
+            recording_unskip(request, r, conn)
+    elif what == "forever" and cids:
+        from scribe_bot.backup import trash as trash_svc
+        trash_svc._purge_talks(conn, cids)
+    return RedirectResponse("/conversations?trash=1", status_code=303)
+
+
 @router.post("/tasks/{tid}/sure")
 def task_sure(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     """"Unsure" → Looks right: the tag goes and the task leaves the Inbox."""
     t = task_or_404(conn, tid)
     with db.transaction(conn):
-        undo.save(conn, f"“{t['title']}” marked as right", [("task", tid)])
+        undo.save(conn, "Marked as right", [("task", tid)])
         conn.execute("UPDATE task SET confidence = 1, inbox = 0, updated_at = ? WHERE id = ?", (db.now(), tid))
         conn.execute("UPDATE review_item SET status = 'done', resolved_at = ? WHERE kind = 'inbox' AND ref_id = ? "
                      "AND status = 'open'", (db.now(), tid))
@@ -1699,7 +2089,7 @@ def decision_edit(request: Request, did: int, text: str = Form(...), conn: sqlit
     """Fix a decision's wording. Saved as rated 'right' (Brian's version), so a later AI re-run keeps it."""
     d = conn.execute("SELECT * FROM decision WHERE id = ?", (did,)).fetchone()
     if d is None:
-        raise HTTPException(404, "No such decision")
+        raise HTTPException(404, "That decision isn't here any more")
     if not text.strip():
         raise HTTPException(400, "A decision can't be empty")
     with db.transaction(conn):
@@ -1770,7 +2160,7 @@ def unnamed_voices(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 @router.post("/people/mentioned")
-def people_mentioned(request: Request, name: str = Form(...), action: str = Form(...), person_id: int = Form(0),
+def people_mentioned(request: Request, name: str = Form(...), action: str = Form(...), person_id: OptId = 0,
                      conn: sqlite3.Connection = Conn):
     """Mentioned, not added yet: Add (new person; their facts move over), Same as (an existing person; the name
     becomes their nickname), or Hide (never list this name again; the facts stay inside their conversations)."""
@@ -1785,7 +2175,7 @@ def people_mentioned(request: Request, name: str = Form(...), action: str = Form
         ids = people_svc.unlinked_fact_ids(conn, name)
         if action == "add":
             pid = people_svc.find(conn, name)
-            uid = undo.save(conn, f"Added {name} from People mentioned", [("person_fact", i) for i in ids])
+            uid = undo.save(conn, "Added to People", [("person_fact", i) for i in ids])
             if pid is None:
                 pid = people_svc.find_or_create(conn, name)
                 undo.created(conn, uid, "person", pid)
@@ -1830,7 +2220,7 @@ def merge_many_page(request: Request, ids: str = "", conn: sqlite3.Connection = 
 def person_page(request: Request, pid: int, n: int = PAGE, conn: sqlite3.Connection = Conn):
     p = conn.execute("SELECT * FROM person WHERE id = ?", (pid,)).fetchone()
     if p is None:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     facts = conn.execute(
         "SELECT f.*, coalesce(nullif(c.short_title, ''), c.title) AS conv_title FROM person_fact f LEFT JOIN conversation c ON c.id = f.conversation_id "
         f"WHERE f.person_id = ? AND coalesce(f.confirmed, 1) != 0 AND {live('f')} ORDER BY coalesce(f.date, f.created_at) DESC",
@@ -1861,7 +2251,7 @@ def merge_preview(request: Request, pid: int, into: int, conn: sqlite3.Connectio
     try:
         pv = people_svc.preview(conn, pid, into)
     except LookupError:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     return render(request, "merge.html", "people", conn, pv=pv, from_id=pid, into_id=into)
 
 
@@ -1870,10 +2260,20 @@ def merge_people(pid: int, into: int = Form(...), conn: sqlite3.Connection = Con
     try:
         people_svc.merge(conn, pid, into)
     except LookupError:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     except ValueError as e:
         raise HTTPException(400, str(e))
     return RedirectResponse(f"/people/{into}", status_code=303)
+
+
+@router.post("/people/{pid}/not-same")
+def people_not_same(pid: int, into: int = Form(...), later: int = Form(0), conn: sqlite3.Connection = Conn):
+    """A "Possibly the same person" suggestion: Don't merge (never suggest the pair again) or ✕ (hide it for 30 days).
+    Undo brings the suggestion back."""
+    with db.transaction(conn):
+        uid = undo.save(conn, "Suggestion hidden for 30 days" if later else "Marked as different people", [])
+        undo.created(conn, uid, "person_not_same", people_svc.not_same(conn, pid, into, 30 if later else None))
+    return RedirectResponse("/people", status_code=303)
 
 
 @router.post("/people/merge-many")
@@ -1910,11 +2310,11 @@ def delete_person(pid: int, conn: sqlite3.Connection = Conn):
     """Delete a person (people.delete says what happens to their lines and tasks). Undo works for 10 minutes."""
     p = conn.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()
     if p is None:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     if pid == ME:
         raise HTTPException(400, "You can't delete yourself")
     with db.transaction(conn):
-        uid = undo.save(conn, f"Deleted {p['name']}", people_svc.undo_rows(conn, pid))
+        uid = undo.save(conn, "Person deleted", people_svc.undo_rows(conn, pid))
         undo.removed(conn, uid, "person", "id = ?", (pid,))
         undo.removed(conn, uid, "voiceprint", "person_id = ?", (pid,))
         people_svc.delete(conn, pid)
@@ -1931,7 +2331,7 @@ def speaker_color(request: Request, sid: int, color: str = Form(""), conn: sqlit
     """A speaker's color in this one conversation (talk bar + chip). Empty = automatic."""
     row = conn.execute("SELECT conversation_id FROM speaker WHERE id = ?", (sid,)).fetchone()
     if row is None:
-        raise HTTPException(404, "No such speaker")
+        raise HTTPException(404, "That speaker isn't here any more")
     conn.execute("UPDATE speaker SET color = ? WHERE id = ?", (color if color in PERSON_COLORS else None, sid))
     return back(request, f"/conversations/{row[0]}")
 
@@ -1944,7 +2344,7 @@ def edit_person(request: Request, pid: int, name: str = Form(...), aliases: str 
     alias_list = [a.strip() for a in aliases.split(",") if a.strip()]
     p = conn.execute("SELECT name, stands_for_speaker FROM person WHERE id = ?", (pid,)).fetchone()
     if p is None:
-        raise HTTPException(404, "No such person")
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
     named_speaker = None
     if p["stands_for_speaker"] and name.strip() != p["name"]:
         # A placeholder ("Speaker 2 from Budget sync on Oct 20") given a real name: that names the speaker, everywhere.
@@ -1989,7 +2389,7 @@ def fact_edit(request: Request, fid: int, value: str = Form(...), conn: sqlite3.
     """Fix the wording of a people note in place."""
     f = conn.execute("SELECT * FROM person_fact WHERE id = ?", (fid,)).fetchone()
     if f is None:
-        raise HTTPException(404, "No such note")
+        raise HTTPException(404, "That note isn't here any more")
     if not value.strip():
         raise HTTPException(400, "A note can't be empty")
     with db.transaction(conn):
@@ -1999,12 +2399,25 @@ def fact_edit(request: Request, fid: int, value: str = Form(...), conn: sqlite3.
     return back(request)
 
 
+@router.post("/facts/{fid}/kind")
+def fact_kind(request: Request, fid: int, kind: str = Form(...), conn: sqlite3.Connection = Conn):
+    """Change what kind of note it is (Birthday, Family, ...) from the note's pop-up."""
+    if kind not in prompts.FACT_TYPES:
+        raise HTTPException(400, "Pick one of the kinds in the list")
+    if not conn.execute("SELECT 1 FROM person_fact WHERE id = ?", (fid,)).fetchone():
+        raise HTTPException(404, "That note isn't here any more")
+    with db.transaction(conn):
+        undo.save(conn, "Changed a note's kind", [("person_fact", fid)])
+        conn.execute("UPDATE person_fact SET type = ? WHERE id = ?", (kind, fid))
+    return back(request)
+
+
 @router.post("/facts/{fid}/person")
-def fact_person(request: Request, fid: int, person_id: int | None = Form(None), new_name: str = Form(""),
+def fact_person(request: Request, fid: int, person_id: OptId = None, new_name: str = Form(""),
                 conn: sqlite3.Connection = Conn):
     """Change person on a people note (the AI attached it to the wrong person). The note stays kept."""
     if not conn.execute("SELECT 1 FROM person_fact WHERE id = ?", (fid,)).fetchone():
-        raise HTTPException(404, "No such note")
+        raise HTTPException(404, "That note isn't here any more")
     with db.transaction(conn):
         pid = person_from_form(conn, person_id, new_name)
         name = conn.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()[0]
@@ -2144,7 +2557,7 @@ def _local_day(ts) -> str:
 
 @router.get("/inbox", response_class=HTMLResponse)
 def inbox_page(request: Request, sort: str = "newest", show: str = "all", has: str = "", length: str = "", kind: str = "",
-               source: str = "", min_m: str = "", max_m: str = "", start: str = "", end: str = "",
+               source: str = "", min_m: str = "", max_m: str = "", start: str = "", end: str = "", q: str = "",
                conn: sqlite3.Connection = Conn):
     """Recordings waiting to be processed: quick titles and previews, sort, and the Filter panel (FX-A: dropdowns,
     several at once, each shown as a chip you can ✕), with the same Transcribe + AI / Transcript Only / Skip buttons."""
@@ -2166,11 +2579,16 @@ def inbox_page(request: Request, sort: str = "newest", show: str = "all", has: s
         m, d = (x["duration_s"] or 0) / 60, _local_day(x["when"])
         return ((lo is None or m >= lo) and (hi is None or m <= hi) and (not start or (d and d >= start))
                 and (not end or (d and d <= end)))
-    ranged = [x for x in items if in_range(x)]
+    q = q.strip()[:100]
+    words = q.lower()
+
+    def found(x) -> bool:   # N9: the search box above the list (the title, the quick title or the opening words)
+        return not words or any(words in (x.get(k) or "").lower() for k in ("title", "quick_title", "preview_full", "preview"))
+    ranged = [x for x in items if in_range(x) and found(x)]
     shown = inbox_svc.sort(inbox_svc.fx_filter(ranged, chosen), sort)
     counts = {k: {v: sum(inbox_svc.fx_match(x, k, v) for x in inbox_svc.fx_filter(items, {a: b for a, b in chosen.items() if a != k}))
                   for v in opts} for k, (_, opts) in inbox_svc.FX.items()}
-    rng = {"min_m": str(lo) if lo is not None else "", "max_m": str(hi) if hi is not None else "", "start": start, "end": end}
+    rng = {"min_m": str(lo) if lo is not None else "", "max_m": str(hi) if hi is not None else "", "start": start, "end": end, "q": q}
 
     def url(**change):
         q = {**chosen, **rng, "sort": sort, **change}
@@ -2223,7 +2641,7 @@ def inbox_items(request: Request, conn: sqlite3.Connection, data: dict) -> list[
                       "title": x["payload"].get("title"), "duration_s": (x["payload"].get("minutes") or 0) * 60})
     for r in data["older"]:
         items.append({"rec_id": r["id"], "r": r, "older": True, "when": recorded_at(r["title"], r["received_at"]),
-                      "title": r["title"], "duration_s": r["duration_s"]})
+                      "title": r["title"], "duration_s": r["duration_s"], "ai_cost": ai_cost(r["duration_s"])})
     merged = {}
     for r in conn.execute("SELECT recording_id, count(*) AS n, group_concat(title, ' + ') AS t FROM recording_part GROUP BY recording_id"):
         merged[r["recording_id"]] = {"n": r["n"], "titles": r["t"]}
@@ -2298,7 +2716,7 @@ def inbox_transcript_txt(request: Request, rid: int, conn: sqlite3.Connection = 
         raise HTTPException(404)
     if it["transcript"].suffix.lower() != ".txt":   # a Voice Memo's transcript, from inside the .m4a
         return Response(inbox_svc.read(it["transcript"]), media_type="text/plain; charset=utf-8",
-                        headers={"Content-Disposition": f'attachment; filename="{it["transcript"].stem}.txt"'})
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(it['transcript'].stem + '.txt')}"})   # R5-05
     return FileResponse(it["transcript"], media_type="text/plain; charset=utf-8", filename=it["transcript"].name)
 
 
@@ -2377,6 +2795,59 @@ def needs_now(request: Request, what: str, conn: sqlite3.Connection = Conn):
     return back(request, "/")
 
 
+@router.get("/inbox-bulk/ai", response_class=HTMLResponse)
+def inbox_bulk_ai_confirm(request: Request, ids: str = "", conn: sqlite3.Connection = Conn):
+    """R5-24: Inbox › swipe › Summarize and Inbox › Select › Summarize sent recordings to the paid AI without showing the
+    cost (the select bar even said "the cost is confirmed per recording"). One confirm with the total, as on Talks.
+    Private recordings stay on the M14 (transcript only) and aren't counted."""
+    todo, cost, minutes, private = [], 0.0, 0.0, 0
+    for rec_id in _talk_ids(ids):
+        rec = conn.execute("SELECT status, duration_s, private FROM recording WHERE id = ?", (rec_id,)).fetchone()
+        r = conn.execute("SELECT payload FROM review_item WHERE kind = 'approval' AND status = 'open' AND ref_id = ? "
+                         "AND conversation_id IS NULL ORDER BY id DESC LIMIT 1", (rec_id,)).fetchone()
+        if rec is None or (r is None and rec["status"] != "backlog"):
+            continue   # already sent or gone
+        p = json.loads(r["payload"] or "{}") if r else {}
+        todo.append(rec_id)
+        if p.get("private") or rec["private"]:
+            private += 1
+            continue
+        cost += p["ai_cost"] if r and p.get("ai_cost") is not None else ai_cost(rec["duration_s"])
+        minutes += (rec["duration_s"] or 0) / 60
+    n = len(todo)
+    model = ai_router.task_config(conn, "extract")["chain"][0][1]
+    return confirm_page(request, conn, "inbox", heading=f"Summarize {n} recording{'s' if n != 1 else ''}?", cost=cost,
+                        model=model, tokens=round(minutes * TOKENS_PER_AUDIO_MINUTE + 2000 * (n - private), -2) if minutes else None,
+                        blocked=None if n else "these were already sent or are gone",
+                        detail="Speech-to-text runs on the M14. Then each transcript's text goes to "
+                               f"{model_label(model)} for the summary and tasks. The audio never leaves the M14."
+                               + (f" {private} Private recording{'s stay' if private != 1 else ' stays'} on the M14 (transcript only)." if private else ""),
+                        action="/inbox/bulk", cancel="/inbox", fields={"ids": ",".join(map(str, todo)), "what": "ai"})
+
+
+@router.post("/inbox/bulk")
+def inbox_bulk(request: Request, ids: str = Form(...), what: str = Form(...), meeting_type: str = Form(""),
+               confirm: str = Form(""), conn: sqlite3.Connection = Conn):
+    """Several Inbox recordings at once (Brian, 2026-11-22: picking older ones and tapping Transcript did nothing, they
+    needed "Get it ready" first). An older recording is got ready on the way, so AI notes / Transcript only / Delete
+    work on any mix. AI notes only from a button that shows the cost (confirm=1) or the confirm step (R5-24)."""
+    if what not in ("ai", "local", "skip"):
+        raise HTTPException(400, "Pick AI notes, Transcript only or Delete")
+    if what == "ai" and not confirmed(confirm):
+        return RedirectResponse(f"/inbox-bulk/ai?ids={','.join(x.strip() for x in ids.split(',') if x.strip().isdigit())}", status_code=303)
+    for rec_id in [int(x) for x in ids.split(",") if x.strip().isdigit()]:
+        ingest.backlog_to_review(conn, rec_id, request.app.state.cfg)   # does nothing unless it's an older recording
+        r = conn.execute("SELECT id FROM review_item WHERE kind = 'approval' AND status = 'open' AND ref_id = ? "
+                         "AND conversation_id IS NULL ORDER BY id DESC LIMIT 1", (rec_id,)).fetchone()
+        if not r:
+            continue
+        if what == "skip":
+            review_dismiss(request, r["id"], conn)
+        else:
+            review_approve(request, r["id"], ai="1" if what == "ai" else "0", confirm="1", meeting_type=meeting_type, conn=conn)
+    return back(request, "/inbox", note=None if what == "skip" else "transcribing")
+
+
 @router.post("/recordings/{rec_id}/review")
 def older_to_review(request: Request, rec_id: int, conn: sqlite3.Connection = Conn):
     """Older recordings: put one in Review like a new recording (nothing runs until Brian approves it there)."""
@@ -2407,7 +2878,7 @@ def estimate(conn: sqlite3.Connection, conversation_id: int | None) -> float | N
 def review_or_404(conn: sqlite3.Connection, rid: int) -> sqlite3.Row:
     r = conn.execute("SELECT * FROM review_item WHERE id = ?", (rid,)).fetchone()
     if r is None:
-        raise HTTPException(404, "No such review item")
+        raise HTTPException(404, "That item isn't waiting any more")
     return r
 
 
@@ -2437,7 +2908,7 @@ def review_restore(request: Request, rid: int, conn: sqlite3.Connection = Conn):
 def review_dismiss(request: Request, rid: int, conn: sqlite3.Connection = Conn):
     r = review_or_404(conn, rid)
     with db.transaction(conn):
-        undo.save(conn, "Moved to Trash", [("review_item", rid)] + ([("recording", r["ref_id"])] if r["kind"] == "approval" and r["ref_id"] else []))
+        undo.save(conn, "Moved to Trash" if r["kind"] == "approval" else "Skipped", [("review_item", rid)] + ([("recording", r["ref_id"])] if r["kind"] == "approval" and r["ref_id"] else []))
         if r["kind"] == "approval" and not r["conversation_id"] and r["ref_id"]:  # a waiting recording: leave it unprocessed
             conn.execute("UPDATE recording SET status = 'declined' WHERE id = ? AND status = 'awaiting_approval'", (r["ref_id"],))
         conn.execute("UPDATE review_item SET status = 'dismissed', resolved_at = ? WHERE id = ?", (db.now(), rid))
@@ -2495,7 +2966,9 @@ def review_approve(request: Request, rid: int, ai: str = Form("1"), confirm: str
         if r["kind"] == "approval" and r["conversation_id"]:
             ai_jobs.queue_rerun(conn, r["conversation_id"], approved=True)
         conn.execute("UPDATE review_item SET status = 'done', resolved_at = ? WHERE id = ?", (db.now(), rid))
-    return back(request, "/review")
+    note = ("transcribing" if r["kind"] == "approval" and not r["conversation_id"] and r["ref_id"]
+            else "summarizing" if r["kind"] == "approval" and r["conversation_id"] else None)
+    return back(request, "/review", note=note)
 
 
 # ---------- Search ----------
@@ -2608,9 +3081,9 @@ def search_page(request: Request, q: str = "", type: str = "all", person: int | 
                               f"{HIT_SPEAKER} AS said_by FROM search_index s WHERE search_index MATCH ? "
                               f"AND s.rowid IN ({','.join('?' * len(top))}) ORDER BY s.rank", [query, *top]):
             groups[h["cid"]]["rows"].append(h)
-        for r in conn.execute("SELECT s.conversation_id AS cid, group_concat(p.name, ', ') AS names FROM speaker s "
-                              f"JOIN person p ON p.id = s.person_id WHERE p.id != 1 AND s.conversation_id IN ({marks}) "
-                              "GROUP BY s.conversation_id", ids):
+        for r in conn.execute("SELECT cid, group_concat(name, ', ') AS names FROM (SELECT DISTINCT s.conversation_id AS cid, p.name FROM speaker s "
+                              f"JOIN person p ON p.id = s.person_id WHERE p.id != 1 AND s.conversation_id IN ({marks})) "
+                              "GROUP BY cid", ids):
             groups[r["cid"]]["people"] = r["names"]
     other = []   # not in a conversation: people, captures, tasks you added yourself (top of the first page)
     if tab in ("all", "person", "task") and n == SEARCH_GROUPS and not (said or start or end):
@@ -2623,6 +3096,16 @@ def search_page(request: Request, q: str = "", type: str = "all", person: int | 
 
 def remembering(conn: sqlite3.Connection) -> bool:
     return setting(conn, "search_history", "on") == "on"
+
+
+@router.get("/search/advanced", response_class=HTMLResponse)
+def search_advanced(request: Request, q: str = "", type: str = "all", person: int | None = None, said: int | None = None,
+                    start: str = "", end: str = "", sort: str = "best", conn: sqlite3.Connection = Conn):
+    """The fields of the desktop advanced search (Brian picked A4, 2026-11-23), loaded when ☷ opens; filled with the
+    search being shown, if any."""
+    return templates.TemplateResponse(request, "_adv_search.html", {
+        "q": q, "tab": type if type in SEARCH_TABS else "all", "search_tabs": SEARCH_TABS, "people": people(conn),
+        "f": {"person": person, "said": said, "start": start, "end": end, "sort": sort}})
 
 
 @router.get("/search/history")
@@ -2692,13 +3175,34 @@ def capture_note(text: str = Form(...), conn: sqlite3.Connection = Conn):
 TRANSCRIPT_TYPES = (".txt",)
 
 
+@router.post("/capture/known")
+async def capture_known(request: Request, conn: sqlite3.Connection = Conn):
+    """Before uploading, the browser sends each file's SHA-256 (Brian, 2026-11-23: a duplicate only showed up after its
+    whole upload). Files Scribe Bot already has are skipped without sending them. Older never-processed recordings
+    are left out here, so their upload still moves them into the Inbox."""
+    try:
+        body = await request.json()
+        given = body.get("hashes", []) if isinstance(body, dict) else []
+    except ValueError:   # R5-04: not JSON at all (an old page, a cut-off request): nothing known, upload as usual
+        given = []
+    hashes = [h for h in (given if isinstance(given, list) else []) if isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h)][:500]
+    out = {}
+    for h in hashes:
+        row = conn.execute("SELECT id, status FROM recording WHERE sha256 = ? AND audio_deleted_at IS NULL", (h,)).fetchone()
+        if row and row["status"] != "backlog":   # removed for good = new again (Brian, 2026-11-23)
+            out[h] = {"result": "known", **known_result(conn, row["id"])}
+    return JSONResponse({"known": out})
+
+
 @router.post("/capture/upload")
-def capture_upload(request: Request, file: list[UploadFile] = File(...), conn: sqlite3.Connection = Conn):
+def capture_upload(request: Request, file: list[UploadFile] = File(...), ai: str = Form(""), conn: sqlite3.Connection = Conn):
     """Audio uploads (and in-app voice notes) go to data/uploads/, which the M2 ingest watches alongside the phone folder.
     Not into inbound/: that is Syncthing's receive-only folder, where local additions would be flagged.
     Several at once (e.g. Apple Voice Memos dragged out of the app, 2026-11-20), and a .txt with the same name as a
-    recording is its transcript for the Inbox (replaces one with the same name)."""
-    up, said = request.app.state.cfg.data_dir / "uploads", []
+    recording is its transcript for the Inbox (replaces one with the same name).
+    The app's uploader sends one file at a time and asks for JSON (Brian, 2026-11-23: 23 memos showed a stuck screen and
+    no result), so it can show "3 of 23", then what happened to each file, duplicates included."""
+    up, results = request.app.state.cfg.data_dir / "uploads", []
     for f in file:
         if not f.filename:
             continue
@@ -2706,9 +3210,16 @@ def capture_upload(request: Request, file: list[UploadFile] = File(...), conn: s
             name = re.sub(r"[^\w .()-]", "_", Path(f.filename).name).strip() or "transcript.txt"
             up.mkdir(parents=True, exist_ok=True)
             (up / name).write_bytes(f.file.read(2_000_000))
-            said.append("transcript")
+            results.append({"name": f.filename, "result": "transcript"})
             continue
-        said.append(received_audio(request, conn, save_upload(up, f, UPLOAD_TYPES + TRANSCRIPT_TYPES)))
+        saved = save_upload(up, f, UPLOAD_TYPES + TRANSCRIPT_TYPES)
+        res = audio_result(request, conn, saved)
+        if res["result"] == "audio" and ai == "1":   # G2 (Brian, 2026-11-23): "Transcribe + AI notes" chosen on the upload card
+            ingest.want_ai(conn, ingest.sha256(saved))
+        results.append({"name": f.filename, **res})
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"results": results})
+    said = [r["result"] for r in results]
     audio = [x for x in said if x != "transcript"]
     return RedirectResponse(f"/capture?saved={audio[-1] if audio else 'transcript' if said else 'none'}"
                             f"&n={len(audio)}", status_code=303)
@@ -2745,15 +3256,45 @@ def capture_share(request: Request, title: str = Form(""), text: str = Form(""),
 
 
 def received_audio(request: Request, conn: sqlite3.Connection, path: Path) -> str:
-    """A shared/uploaded recording Scribe Bot may already have (e.g. an older one that synced earlier). Returns what
-    the Capture page should say: 'audio' (new), 'older' (an unprocessed older recording, now in Review) or 'known'."""
-    row = conn.execute("SELECT id, status FROM recording WHERE sha256 = ?", (ingest.sha256(path),)).fetchone()
-    if row is None:
-        return "audio"
-    path.unlink(missing_ok=True)   # our extra copy of a file we already have
+    """What the Capture page should say about a shared/uploaded recording (see audio_result)."""
+    r = audio_result(request, conn, path)["result"]
+    return "known" if r == "pending" else r
+
+
+def audio_result(request: Request, conn: sqlite3.Connection, path: Path) -> dict:
+    """A shared/uploaded recording Scribe Bot may already have (e.g. an older one that synced earlier, or the same memo
+    uploaded twice). 'audio' = new; 'older' = an unprocessed older recording, now in the Inbox; 'known' = already in
+    Scribe Bot (with its talk, if there is one); 'pending' = the same file was just uploaded and is still being added.
+    Our extra copy of a file we already have is removed, so nothing is ever added twice."""
+    digest = ingest.sha256(path)
+    row = conn.execute("SELECT id, status FROM recording WHERE sha256 = ? AND audio_deleted_at IS NULL", (digest,)).fetchone()
+    if row is None:   # never seen, or removed for good from Trash: a new talk (Brian, 2026-11-23)
+        size = path.stat().st_size
+        twin = any(p != path and p.is_file() and p.stat().st_size == size and ingest.sha256(p) == digest
+                   for p in path.parent.iterdir())
+        if not twin:
+            return {"result": "audio"}
+        path.unlink(missing_ok=True)
+        return {"result": "pending"}
+    path.unlink(missing_ok=True)
     if row["status"] == "backlog" and ingest.backlog_to_review(conn, row["id"], request.app.state.cfg):
-        return "older"
-    return "known"
+        return {"result": "older"}
+    return known_result(conn, row["id"])
+
+
+def known_result(conn: sqlite3.Connection, rec_id: int) -> dict:
+    """What to show for a file Scribe Bot already has: its talk (or Trash, or the Inbox)."""
+    row = {"id": rec_id}
+    joined = conn.execute("SELECT recording_id FROM recording_part WHERE source_id = ? ORDER BY id DESC LIMIT 1",
+                          (row["id"],)).fetchone()
+    talk = conn.execute("SELECT id, deleted_at, coalesce(short_title, title) AS title FROM conversation WHERE recording_id = ? "
+                        "ORDER BY deleted_at IS NOT NULL, id DESC LIMIT 1",
+                        (joined["recording_id"] if joined else row["id"],)).fetchone()
+    if talk and talk["deleted_at"]:
+        return {"result": "known", "title": talk["title"], "href": "/conversations?trash=1", "trash": True}
+    if talk:
+        return {"result": "known", "title": talk["title"], "href": f"/conversations/{talk['id']}"}
+    return {"result": "known", "href": "/inbox"}
 
 
 # ---------- Settings ----------
@@ -2825,7 +3366,8 @@ def settings_home(request: Request, conn: sqlite3.Connection, ctx: dict) -> list
     theme = request.cookies.get("theme") if request.cookies.get("theme") in ("light", "dark") else "system"
     last = conn.execute("SELECT status, finished_at FROM backup_run WHERE kind = 'backup' ORDER BY id DESC LIMIT 1").fetchone()
     n_accounts = conn.execute("SELECT count(*) FROM account").fetchone()[0]
-    subs = {"appearance": f"Theme: {theme.capitalize()}",
+    density = request.cookies.get("density") if request.cookies.get("density") in ("comfortable", "compact") else "default"
+    subs = {"appearance": f"Theme: {theme.capitalize()} · Density: {density.capitalize()}",
             "ai": f"{'Paused' if ctx['paused'] else 'Running'} · AI spend ${ctx['month']:.2f} of ${ctx['cap']:.0f} this month",
             "keys": f"{n_accounts} account{'s' if n_accounts != 1 else ''}",
             "privacy": f"{ctx['left_today']} call{'s' if ctx['left_today'] != 1 else ''} left the M14 today",
@@ -2858,7 +3400,7 @@ def settings_page(request: Request, group: str = "home", tested: int | None = No
     added = request.query_params.get("added")
     templates_ = [{"kind": k, "label": label, "text": setting(conn, f"template:{k}", prompts.TEMPLATES[k]),
                    "custom": setting(conn, f"template:{k}") is not None} for k, label in prompts.MEETING_TYPES.items()]
-    ctx = {"paused": setting(conn, "pipeline_paused", "0") == "1", "month": month, "cap": cap, "left_today": left_today, "glossary": glossary}
+    ctx = {"paused": setting(conn, "pipeline_paused", "0") == "1", "month": month, "all_time": spend(conn, "0000"), "cap": cap, "left_today": left_today, "glossary": glossary}
     return render(request, "settings.html", "settings", conn, group=group, group_title=SETTINGS_GROUPS.get(group, ("Settings",))[0],
                   settings_groups=settings_home(request, conn, ctx),
                   providers=(provs := accounts_by_provider(request, conn)), summary_templates=templates_,
@@ -2880,6 +3422,46 @@ def settings_page(request: Request, group: str = "home", tested: int | None = No
 CONSOLE_USAGE_URL = "https://console.anthropic.com/settings/usage"
 
 
+def cost_days(conn: sqlite3.Connection, days: int = 30) -> dict:
+    """B19 (Brian picked ⭐, 2026-11-25): the last 30 days of AI spend, one bar a day (the M14's own days), split by
+    account. Spend matched to the Anthropic console and key tests (no account) count as "Other"."""
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+    since = datetime.combine(start, time()).astimezone(timezone.utc).isoformat(timespec="seconds")
+    rows = conn.execute("SELECT l.time, l.cost_usd, a.nickname FROM ledger_entry l LEFT JOIN account a ON a.id = l.account_id "
+                        "WHERE l.time >= ? AND l.cost_usd > 0", (since,)).fetchall()
+    per: dict[date, dict[str, float]] = {}
+    names: dict[str, float] = {}
+    for t, usd, nick in rows:
+        try:
+            d = datetime.fromisoformat(t.replace("Z", "+00:00")).astimezone().date()
+        except ValueError:
+            continue
+        if d < start or d > end:
+            continue
+        who = nick or "Other"
+        per.setdefault(d, {})[who] = per.get(d, {}).get(who, 0) + usd
+        names[who] = names.get(who, 0) + usd
+    order = sorted(names, key=lambda n: (n == "Other", -names[n]))[:5]
+    top = max((sum(v.values()) for v in per.values()), default=0)
+    bars = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        v = per.get(d, {})
+        y, parts = 0.0, []
+        for k, n in enumerate(order):
+            usd = v.get(n, 0)
+            if usd and top:
+                h = usd / top * 60
+                parts.append({"k": k, "y": round(70 - y - h, 2), "h": round(max(h, .8), 2)})
+                y += h
+        bars.append({"x": i * 10 + 1, "day": d, "usd": sum(v.values()), "parts": parts})
+    total = sum(names.values())
+    peak = max(bars, key=lambda b: b["usd"]) if total else None
+    return {"bars": bars, "names": order, "totals": [names[n] for n in order], "top": top, "total": total, "peak": peak,
+            "start": start, "end": end}
+
+
 @router.get("/costs", response_class=HTMLResponse)
 def costs_page(request: Request, conn: sqlite3.Connection = Conn):
     """Every AI call with its cost (from the Data Ledger), grouped by conversation, plus today / month / all-time totals."""
@@ -2896,7 +3478,7 @@ def costs_page(request: Request, conn: sqlite3.Connection = Conn):
     return render(request, "costs.html", "costs", conn, rows=rows, by_conv=by_conv, cap=cap, today_spend=spend(conn, today0),
                   month=spend(conn, month_start()), all_time=spend(conn, "0000"), console_url=CONSOLE_USAGE_URL,
                   model_label=model_label, credits=costs.credits_left(conn), check=costs.console_check(conn),
-                  matched=request.query_params.get("matched"))
+                  matched=request.query_params.get("matched"), graph=cost_days(conn))
 
 
 @router.post("/costs/console")
@@ -2995,6 +3577,14 @@ def processing_speed(request: Request, mode: str = Form("auto"), conn: sqlite3.C
     return back(request, "/processing#now")
 
 
+@router.post("/processing/{job_id}/retry")
+def processing_retry(request: Request, job_id: int, conn: sqlite3.Connection = Conn):
+    """Try again from the failed step; finished steps (like the transcript) are kept."""
+    if not queue.retry(conn, job_id):
+        raise HTTPException(409, "Only a failed recording can be tried again.")
+    return back(request, "/processing")
+
+
 @router.post("/processing/{job_id}/cancel")
 def processing_cancel(request: Request, job_id: int, conn: sqlite3.Connection = Conn):
     """Back to the Inbox, half-done files deleted (only while paused and before the transcript is saved)."""
@@ -3024,5 +3614,8 @@ def add_glossary(request: Request, term: str = Form(...), variants: str = Form("
 
 @router.post("/settings/glossary/{gid}/delete")
 def delete_glossary(request: Request, gid: int, conn: sqlite3.Connection = Conn):
-    conn.execute("DELETE FROM glossary_term WHERE id = ?", (gid,))
+    with db.transaction(conn):   # U12 (Brian, 2026-11-25): every delete can be undone
+        if conn.execute("SELECT 1 FROM glossary_term WHERE id = ?", (gid,)).fetchone():
+            undo.removed(conn, undo.save(conn, "Word removed", []), "glossary_term", "id = ?", (gid,))
+        conn.execute("DELETE FROM glossary_term WHERE id = ?", (gid,))
     return back(request, "/settings/glossary")

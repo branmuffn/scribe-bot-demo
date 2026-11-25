@@ -1,25 +1,30 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
 {% block title %}Settings · Scribe Bot{% endblock %}
+{# R5-17: a back link in the same top spot as every other page. Phone: a group goes back to the Settings list; the list
+   and every computer view go back to Today (on a computer the groups are listed on the left). #}
+{% block back %}{% if group == 'home' %}<a class="back-link" href="/">‹ Today</a>{% else %}<a class="back-link settings-back" href="/settings">‹ Settings</a><a class="back-link settings-back-wide" href="/">‹ Today</a>{% endif %}{% endblock %}
 {% block body %}
 {# Claude-settings style: on wide screens the groups stay listed on the left (icons), the open one on the right.
    On a phone: the list, then one group per page with "‹ Settings". #}
 <div class="settings-grid{{ ' at-home' if group == 'home' }}">
 <nav class="settings-nav" aria-label="Settings"><div class="settings-nav-title">Settings</div>
-  {% for g in settings_groups %}<a href="{{ g.href }}" class="{{ 'on' if g.href == '/settings/' ~ group }}" {{ 'aria-current=page' if g.href == '/settings/' ~ group }}>{{ m.icon(g.icon) }} {{ g.title }}</a>{% endfor %}
+  {% for g in settings_groups %}<a href="{{ g.href }}" class="{{ 'on' if g.href == '/settings/' ~ group }}" {{ 'aria-current=page' if g.href == '/settings/' ~ group }}>{{ m.icon(g.icon) }} <span class="sn-t">{{ g.title }}</span></a>{% endfor %}
 </nav>
 <div class="settings-pane">
 {% if group == 'home' %}
+{# B27 (Brian, 2026-11-25): on a computer this list adds nothing (the groups are listed on the left), so go straight to the first #}
+<script>if (matchMedia('(min-width: 960px)').matches) location.replace('/settings/appearance')</script>
 <div class="page-head"><h1>Settings</h1></div>
 {# A short home: one row per group, each its own page, so no page gets long. #}
 <div class="card">
   {% for g in settings_groups %}
-  <div class="item tap-row"><div class="item-main"><a class="item-link" href="{{ g.href }}">{{ m.icon(g.icon) }} {{ g.title }}</a>
+  {# B27 (Brian, 2026-11-25): the icon sits in its own column, centred on the title and the line under it #}
+  <div class="item tap-row set-home"><span class="sh-ic" aria-hidden="true">{{ m.icon(g.icon) }}</span><div class="item-main"><a class="item-link" href="{{ g.href }}">{{ g.title }}</a>
     <div class="item-sub"><span>{{ g.sub }}</span></div></div><span class="chev meta">{{ m.icon("chev") }}</span></div>
   {% endfor %}
 </div>
 {% else %}
-<a class="back-link settings-back" href="/settings">‹ Settings</a>
 <div class="page-head"><h1>{{ group_title }}</h1></div>
 {% endif %}
 
@@ -32,12 +37,31 @@
 <section class="section">
   {{ m.section("", id="appearance") }}
   <div class="card">
-    <div class="item"><div class="item-main"><div class="item-title">Theme</div>
-      <div class="item-sub">System follows this device's light or dark mode. Dark mode in the ⋯ menu switches Light and Dark.
-        Saved on this device only.</div></div>
+    <div class="item set-row"><div class="item-main"><div class="item-title">Theme</div>
+      <div class="item-sub">System follows this device. Saved on this device only.</div></div>
       <div class="item-actions"><span class="seg" role="group" aria-label="Theme">
         {% for t in ("light", "dark", "system") %}<button type="button" data-theme-set="{{ t }}" class="{{ 'on' if theme == t }}"
           aria-pressed="{{ 'true' if theme == t else 'false' }}">{{ t|capitalize }}</button>{% endfor %}</span></div></div>
+    {# Brian, 2026-11-23: Quick settings' Density and Reading pane live here too (saved on this device) #}
+    {% set density = request.cookies.get('density') if request.cookies.get('density') in ('comfortable', 'compact') else 'default' %}
+    {% set rpane = request.cookies.get('pane') if request.cookies.get('pane') in ('none', 'below') else 'right' %}
+    <div class="item set-row"><div class="item-main"><div class="item-title">Density</div>
+      <div class="item-sub">How much fits in lists: Compact shows one line per row.</div></div>
+      <div class="item-actions"><span class="seg" role="group" aria-label="Density">
+        {% for k in ("default", "comfortable", "compact") %}<button type="button" data-density-set="{{ k }}" class="{{ 'on' if density == k }}"
+          aria-pressed="{{ 'true' if density == k else 'false' }}">{{ k|capitalize }}</button>{% endfor %}</span></div></div>
+    {# B13 (Brian, 2026-11-25): people notes without a line under each one; bullets by default #}
+    {% set pnotes = request.cookies.get('pnotes') if request.cookies.get('pnotes') in ('paragraph', 'lines') else 'bullets' %}
+    <div class="item set-row"><div class="item-main"><div class="item-title">People notes</div>
+      <div class="item-sub">How notes about people look on a talk and on each person's page.</div></div>
+      <div class="item-actions"><span class="seg" role="group" aria-label="People notes">
+        {% for k, label in (("bullets", "Bullets"), ("paragraph", "Paragraph"), ("lines", "Lines")) %}<button type="button" data-pnotes-set="{{ k }}" class="{{ 'on' if pnotes == k }}"
+          aria-pressed="{{ 'true' if pnotes == k else 'false' }}">{{ label }}</button>{% endfor %}</span></div></div>
+    <div class="item set-row desk-only"><div class="item-main"><div class="item-title">Reading pane</div>
+      <div class="item-sub">Computers: where a talk, person, recording or task opens beside its list.</div></div>
+      <div class="item-actions"><span class="seg" role="group" aria-label="Reading pane">
+        {% for k in ("none", "right", "below") %}<button type="button" data-pane-set="{{ k }}" class="{{ 'on' if rpane == k }}"
+          aria-pressed="{{ 'true' if rpane == k else 'false' }}">{{ k|capitalize }}</button>{% endfor %}</span></div></div>
   </div>
 </section>
 {% endif %}
@@ -50,7 +74,7 @@
       <div class="item-sub">Speech and speakers on the M14 · summary, tasks and people notes by the model you pick below</div></div>
       <span class="badge badge-cloud">{{ m.icon("cloud") }}Cloud default</span></div>
     <div class="item"><div class="item-main"><div class="item-title">Transcript only</div>
-      <div class="item-sub">Never leaves the M14. Make AI notes on the talk any time later.</div></div>
+      <div class="item-sub">Never leaves the M14. Summarize the talk any time later.</div></div>
       <span class="badge badge-outline">Local</span></div>
   </div>
   <h3 class="sub-head">Who writes your meeting notes</h3>
@@ -91,7 +115,7 @@
         <form method="post" action="/settings/quick-titles"><input type="hidden" name="on" value="{{ 0 if quick_titles else 1 }}">
           <button class="btn">{{ 'Turn off' if quick_titles else 'Turn on' }}</button></form></div></div>
     {% set pct = (month / cap * 100) if cap else 0 %}
-    <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} this month of the ${{ '%.0f'|format(cap) }} cap</a>
+    <div class="item tap-row" id="costs"><div class="item-main"><a class="item-link" href="/costs">AI spend: ${{ '%.2f'|format(month) }} this month of the ${{ '%.0f'|format(cap) }} cap · ${{ '%.2f'|format(all_time or 0) }} all time</a>
       <div class="meter {{ 'bad' if pct >= 100 else 'warn' if pct >= 50 }}"><span style="width:{{ [pct, 100]|min }}%"></span></div>
       <div class="item-sub">Alerts at 50%, 80% and 100%. Runs stop at the cap. Tap for every call and its cost.</div></div></div>
   </div>
@@ -127,10 +151,10 @@
   {% endfor %}
   <form class="quick-add" method="post" action="/settings/accounts" aria-label="Add an account">
     <label class="field"><span>Provider</span><select name="provider">{% for p in providers %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></label>
-    <label class="field"><span>Nickname</span><input name="nickname" required placeholder="e.g. Brian personal" size="14"></label>
+    <label class="field"><span>Nickname</span><input name="nickname" required placeholder="e.g. Personal" size="18"></label>
     <label class="field"><span>Owner</span><input name="owner" value="Brian" size="8"></label>
     <label class="field"><span>Type</span><select name="type">{% for t in account_types %}<option value="{{ t }}" {{ 'selected' if t == 'paid' }}>{{ t|capitalize }}</option>{% endfor %}</select></label>
-    <label class="field"><span>Monthly cap ($)</span><input name="monthly_cap_usd" inputmode="decimal" placeholder="optional" size="6"></label>
+    <label class="field"><span>Monthly cap ($)</span><input name="monthly_cap_usd" inputmode="decimal" placeholder="Optional" size="9"></label>
     <button class="btn btn-primary" style="align-self:end">{{ m.icon("plus") }} Add account</button>
   </form>
   <p class="meta">Adding an account never asks for its key. A Google “free” account may train on data, so it is blocked for real meetings.</p>
@@ -149,9 +173,11 @@
         <button class="btn {{ 'btn-danger' if not offline else 'btn-primary' }}">{{ 'Turn offline on' if not offline else 'Turn offline off' }}</button></form></div></div>
     <div class="item"><div class="item-main"><div class="item-title">Left the M14 today</div></div><b>{{ left_today }} AI call{{ 's' if left_today != 1 }}</b></div>
   </div>
-  <div class="section-head" style="margin-top:var(--s4)" id="ledger"><h3>Data Ledger</h3><span class="count">last {{ ledger|length }}</span></div>
+  {# B31 (Brian, 2026-11-25): the ledger folds away and has a filter box (what, where, talk, model) #}
+  <details class="fold-sec" id="ledger" open><summary class="section-head" style="margin-top:var(--s4)"><span class="chev">{{ m.icon("chev") }}</span><h3>Data Ledger</h3><span class="count">last {{ ledger|length }}</span></summary>
   <div class="card">
     {% if ledger %}
+    <label class="lb-q rows-q">{{ m.icon("search") }}<input type="search" placeholder="Filter the ledger" aria-label="Filter the ledger" data-rows="#ledger tbody tr" autocomplete="off"></label>
     <div class="table-wrap"><table>
       <thead><tr><th>When</th><th>What was sent</th><th>Where</th><th class="num">Cost</th></tr></thead>
       <tbody>{% for l in ledger %}
@@ -161,8 +187,9 @@
         <td data-label="Where"><span title="{{ l.model }}">{{ l.model|model_label }}</span><div class="meta">{{ l.nickname or l.provider }}{% if l.training_policy %} · {{ l.training_policy }}{% endif %}</div></td>
         <td data-label="Cost" class="num">${{ '%.4f'|format(l.cost_usd) }}</td></tr>
       {% endfor %}</tbody></table></div>
+    <p class="meta rows-none" hidden>Nothing matches.</p>
     {% else %}{{ m.empty("shield", "Nothing has left the M14 yet") }}{% endif %}
-  </div>
+  </div></details>
 </section>
 {% endif %}
 
@@ -171,7 +198,7 @@
   {{ m.section("", id="glossary") }}
   <form class="quick-add" method="post" action="/settings/glossary">
     <input name="term" placeholder="Correct term" required aria-label="Term">
-    <input name="variants" placeholder="Mis-hearings, comma separated" class="grow" aria-label="Mis-hearings">
+    <input name="variants" placeholder="Mis-hearings, commas" class="grow" aria-label="Mis-hearings">
     <button class="btn btn-primary">{{ m.icon("plus") }} Add</button>
   </form>
   <div class="card">
@@ -200,13 +227,16 @@
 {% if group == 'backups' %}
 <div id="system"></div>
 <section class="section">
-  {{ m.section("Backups", id="backups") }}
-  <div class="card">
+  {# B31: Backups fold away; a filter box finds a destination, a day or "failed" #}
+  <details class="fold-sec" id="backups" open><summary class="section-head"><span class="chev">{{ m.icon("chev") }}</span><h2>Backups</h2><span class="count">{{ backups|length }}</span></summary>
+  <div class="card" id="backup-rows">
+    {% if backups|length > 5 %}<label class="lb-q rows-q">{{ m.icon("search") }}<input type="search" placeholder="Filter backups (e.g. failed)" aria-label="Filter backups" data-rows="#backup-rows .item" autocomplete="off"></label>{% endif %}
     {% for b in backups %}<div class="item"><div class="item-main"><div class="item-title">{{ b.destination }}</div>
       <div class="item-sub"><span>{{ b.kind|replace('_', ' ')|capitalize }}</span><span>{{ b.started_at|local_datetime }}</span>{% if b.bytes %}<span>{{ (b.bytes / 1e9)|round(2) }} GB</span>{% endif %}</div></div>
       <span class="badge {{ 'badge-ok' if b.status == 'ok' else 'badge-outline' if b.status == 'running' else 'badge-bad' }}">{{ b.status }}</span></div>
     {% else %}{{ m.empty("archive", "No backups yet", "Nightly encrypted backups to your Google Drive accounts.") }}{% endfor %}
-  </div>
+    <p class="meta rows-none" hidden>Nothing matches.</p>
+  </div></details>
 </section>
 
 <section class="section">

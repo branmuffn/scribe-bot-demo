@@ -41,9 +41,8 @@
     {% for u in unnamed %}
     <div class="item unnamed-item"><div class="item-main"><div class="item-title">Speaker {{ u.num }} · <a href="/conversations/{{ u.cid }}#speakers">{{ u.conv_title or 'Conversation' }}</a></div>
       <div class="item-sub"><span>{{ u.at|local_date }}</span>{% if u.talk_seconds %}<span>{{ u.talk_seconds|duration }} talking</span>{% endif %}{% if u.n_tasks %}<span>{{ u.n_tasks }} task{{ 's' if u.n_tasks != 1 }}</span>{% endif %}{% if u.n_facts %}<span>{{ u.n_facts }} note{{ 's' if u.n_facts != 1 }}</span>{% endif %}</div>
-      {% if u.clip_path %}<audio controls preload="none" src="/audio/speaker/{{ u.sid }}" style="width:100%;margin-top:6px"></audio>{% endif %}
-      <form method="post" action="/speakers/{{ u.sid }}/name" class="row" style="margin-top:6px">
-        <select name="person_id" aria-label="Who this is" class="grow" data-autosave><option value="">Who is it?</option>{% for p in everyone %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>
+      <form method="post" action="/speakers/{{ u.sid }}/name" class="row sp-pick" style="margin-top:6px">
+        <select name="person_id" aria-label="Who this is" class="grow" data-autosave><option value="">Who is it?</option>{% for p in everyone %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}<option value="__new">＋ Someone new…</option></select>{% if u.clip_path is file_there %}{{ m.voice("/audio/speaker/" ~ u.sid) }}{% endif %}
         <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits></form></div></div>
     {% endfor %}
   </div></div>
@@ -55,17 +54,20 @@
   <div class="card">
     {% for d in duplicates %}
     <div class="item tap-row"><div class="item-main"><a class="item-link" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">{{ d.from_name }} and {{ d.into_name }}</a>
-      <div class="item-sub">See what would move before anything changes</div></div>
-      <div class="item-actions"><a class="btn" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">Review merge</a></div></div>
+      </div>{# "See what would move…" line dropped (low-value space, 2026-11-23): Review merge shows it first anyway #}
+      {# Brian, 2026-11-25: Merge / Don't merge / ✕ on each suggestion (Merge opens the review first; both others can be undone) #}
+      <div class="item-actions dup-acts"><a class="btn btn-sm btn-primary" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">Merge</a>
+        <form method="post" action="/people/{{ d.from_id }}/not-same"><input type="hidden" name="into" value="{{ d.into_id }}"><button class="btn btn-sm">Don't merge</button></form>
+        <form method="post" action="/people/{{ d.from_id }}/not-same"><input type="hidden" name="into" value="{{ d.into_id }}"><input type="hidden" name="later" value="1"><button class="icon-btn" aria-label="Hide this suggestion for 30 days" title="Hide for 30 days">{{ m.icon("x") }}</button></form></div></div>
     {% endfor %}
   </div>
   {% if more_duplicates > 0 %}<p class="meta" style="margin-top:var(--s2)">…and {{ more_duplicates }} more. Merge these first; the list updates.</p>{% endif %}
 </section>
 <div class="section"></div>
 {% endif %}
-<form class="toolbar people-tools" method="get" action="/people" role="search" {{ m.live("/people") }}>
-  <input type="search" id="people-q" name="q" value="{{ q }}" placeholder="Find a person" aria-label="Find a person" class="grow">
-  <label class="inline-label"><span class="sr-only">Sort</span><select name="sort" class="sort-mini" aria-label="Sort">{% for k, (label, _) in sorts.items() %}
+<form class="toolbar fx-row people-tools lbar" method="get" action="/people" role="search" {{ m.live("/people") }}>
+  {{ m.list_search("/people", q, "Find a person", "people-q", live=False) }}
+  <label class="inline-label"><span class="sr-only">Sort</span><select name="sort" class="fx-sort" aria-label="Sort">{% for k, (label, _) in sorts.items() %}
     <option value="{{ k }}" {{ 'selected' if sort == k }}>↕ {{ label }}</option>{% endfor %}</select></label>
   <details class="fx-sheet"><summary class="btn" aria-label="Add a person">{{ m.icon("plus") }}</summary>
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
@@ -76,11 +78,18 @@
   <button type="button" class="btn btn-ghost" data-pk-start="people-list">Select</button>
   <noscript><button class="btn">Find</button></noscript>{% if q %}<a class="btn btn-ghost" href="/people{{ '?sort=' ~ sort if sort != 'name' }}">Clear</a>{% endif %}
 </form>
+<div class="pk2" data-pk-bar="people-list" hidden role="region" aria-label="Selected people">
+  <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
+    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-pk-all aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
+  <div class="pk-bot">
+    <button type="button" data-pk-go="/people/merge-many" data-pk-min="2" title="Same person: keep one name"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-merge"/></svg></i><span class="pk-l">Merge</span></button>
+    <button type="button" data-pk-post="/people/delete-many" data-pk-confirm="Remove these people? Undo works for 10 minutes." class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Remove</span></button>
+  </div></div>
 <div class="card" id="people-list" data-picker>
   {% set gs = namespace(g="") %}
   {% for p in rows %}
   {% if p.id != 1 and not q %}{% if sort == 'name' %}{{ m.list_head((p.name or "?")[:1]|upper, gs) }}{% elif sort == 'recent' %}{{ m.list_head(p.last_spoken_at|date_group if p.last_spoken_at else "Never recorded", gs) }}{% endif %}{% endif %}
-  <div class="item tap-row person-row"{% if p.id != 1 %} data-pick-id="{{ p.id }}"{% endif %}>{{ m.avatar(p.name) }}<div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
+  <div class="item tap-row person-row"{% if p.id != 1 %} data-pick-id="{{ p.id }}"{% endif %}>{% if p.id != 1 %}<span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span>{% else %}<span class="row-cb pk-cb pk-cb-none" aria-hidden="true"></span>{% endif %}{{ m.avatar(p.name) }}<div class="item-main"><a class="item-link" href="/people/{{ p.id }}">{{ p.name }}{{ ' (me)' if p.id == 1 }}</a>
       <div class="item-sub">{% if sort == 'talked' and p.talked %}<span>talked {{ p.talked|hours }}</span>{% endif %}
         {% if p.last_spoken_at %}<span>{{ p.last_spoken_at|local_date }}</span>{% endif %}{% if p.n_facts %}<span>{{ p.n_facts }} note{{ 's' if p.n_facts != 1 }}</span>{% endif %}
         {% if p.id == 1 %}{% if p.n_owed %}<span>{{ p.n_owed }} open task{{ 's' if p.n_owed != 1 }}</span>{% endif %}
@@ -91,11 +100,5 @@
   {{ m.more("people-list", rows|length, total) }}
 </div>
 {# Select (Brian, 2026-11-21, like Gmail): long-press or Select, tick people, then Merge or Remove. Tap outside to stop. #}
-<div class="pk2" data-pk-bar="people-list" hidden role="region" aria-label="Selected people">
-  <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
-    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish" data-pk-all>Select all</button></div>
-  <div class="pk-bot">
-    <button type="button" data-pk-go="/people/merge-many" data-pk-min="2" title="Same person: keep one name"><i aria-hidden="true">⧉</i><span class="pk-l">Merge</span></button>
-    <button type="button" data-pk-post="/people/delete-many" data-pk-confirm="Remove these people? Undo works for 10 minutes." class="pk-danger"><i aria-hidden="true">🗑</i><span class="pk-l">Remove</span></button>
-  </div></div>
+
 {% endblock %}

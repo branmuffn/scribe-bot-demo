@@ -1,27 +1,29 @@
-{# One transcript line's fix panel, fetched when its ⋯ is first opened (GET /segments/{id}/edit). #}
+{# One transcript line's fix panel (its ⋯, or right-click › More fixes). R4-11/R4-13 (Brian, 2026-11-25): "Who said this"
+   lives here too, and the panel is compact: one row per fix, no Save speaker button (picking a name saves it), short
+   labels, the explanations in tooltips. #}
 {% import "macros.html" as m with context %}
-<div class="chip-panel">
-          <form {{ m.hx("/segments/" ~ s.id ~ "/speaker", "L" ~ s.idx, "speakers") }} class="picker-form">
-            <label class="sr-only" for="ls-{{ s.id }}">Who said this line</label>
-            <select id="ls-{{ s.id }}" name="speaker_id">{% for sp in speakers %}
-              <option value="{{ sp.id }}" {{ 'selected' if sp.id == s.speaker_id }}>{{ sp.name }}</option>{% endfor %}</select>
-            <input name="new_name" placeholder="or someone else" aria-label="Someone else's name" class="grow">
-            <button class="btn btn-primary">Save speaker</button>
+<div class="chip-panel le-panel">
+          <form {{ m.hx("/segments/" ~ s.id ~ "/speaker", "L" ~ s.idx, "speakers") }} class="le-row le-who">
+            <label class="le-k" for="ls-{{ s.id }}" title="Changes only this line. To relabel everything a speaker said, tap their name above the transcript.">Who said this</label>
+            <select id="ls-{{ s.id }}" name="speaker_id" data-le-who>{% for sp in speakers %}
+              <option value="{{ sp.id }}" {{ 'selected' if sp.id == s.speaker_id }}>{{ sp.name }}</option>{% endfor %}
+              <option value="">Someone new…</option></select>
+            <input name="new_name" placeholder="Their name" aria-label="Someone else's name" class="le-new" hidden>
+            <button class="btn btn-sm btn-primary le-new" hidden>Save</button>
           </form>
-          <p class="meta">Changes only this line. To relabel everything a speaker said, tap their name above the transcript.</p>
-          <form {{ m.hx("/segments/" ~ s.id ~ "/text", "L" ~ s.idx) }} class="line-text-form">
-            <label class="field"><span>Words</span><textarea name="text" rows="3" required>{{ s.text }}</textarea></label>
-            <details class="teach"><summary>Also teach the glossary</summary>
-              <div class="picker-form">
-                <input name="heard" placeholder="Heard as (e.g. Hexterware)" aria-label="Heard as" class="grow">
-                <input name="correct" placeholder="Correct term (e.g. Hexaware)" aria-label="Correct term" class="grow">
-              </div>
-              <p class="meta">Future AI runs fix this mis-hearing automatically. Manage terms in Settings → Glossary.</p>
-            </details>
-            <button class="btn btn-primary">Save words</button>
+          <form {{ m.hx("/segments/" ~ s.id ~ "/text", "L" ~ s.idx) }} class="le-words">
+            <textarea name="text" rows="2" required aria-label="Words">{{ s.text }}</textarea>
+            <div class="le-row">
+              <button class="btn btn-sm btn-primary">Save words</button>
+              <details class="teach"><summary title="Future AI runs fix this mis-hearing automatically. Manage terms in Settings › Glossary.">Teach the glossary</summary>
+                <div class="le-row">
+                  <input name="heard" placeholder="Heard as" aria-label="Heard as" class="grow">
+                  <input name="correct" placeholder="Correct term" aria-label="Correct term" class="grow">
+                </div>
+              </details>
+            </div>
           </form>
-          {% if s.idx > 0 %}<form method="post" action="/segments/{{ s.id }}/join" class="picker-form">
-            <button class="btn btn-ghost">Join with line above</button>
-            <span class="meta">For a sentence cut in two. To split a line, select its words.</span>
+          {% if s.idx is string or s.idx > 0 %}<form method="post" action="/segments/{{ s.id }}/join" class="le-join">
+            <button class="btn btn-sm btn-ghost" title="For a sentence cut in two. To split a line, select its words.">Join with line above</button>
           </form>{% endif %}
         </div>

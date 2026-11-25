@@ -1,11 +1,10 @@
 """How hard processing works (Brian, 2026-11-21: "heat OK", Auto + Gentle + Night only after 1 AM).
 
 Speed setting 'processing_mode':
-  auto   (default) full speed while nobody uses the Mac; half the cores (Gentle) while someone does, and for 10 minutes
-         after they stop. "Someone uses the Mac" = any of: keyboard or mouse in the last 5 min, an SSH session typed in
-         within 30 min, a Screen Sharing or RustDesk connection, or a Claude / Codex chat that wrote in the last 10 min
-         WHILE the Mac is busy with other work (Brian, 2026-11-22: a chat is almost always open; it only counts when it
-         runs something heavy, like tests; same rule day and night).
+  auto   (default) full speed (all 4 cores) unless the Mac is busy with OTHER work (Brian, 2026-11-22: judge by real
+         use, not by keyboard / RustDesk / open chats). Every minute: other apps' CPU (Scribe Bot's own work is skipped)
+         and free memory. Other apps using more than 2 of the 8 cores, or under 20% memory free: half speed, until it
+         has been calm for 3 minutes. More than 6 cores on 2 checks in a row: pause, until under 4 cores for 2 minutes.
          Overnight backlog (Brian, 2026-11-22): every night 1-7 AM the Inbox is worked through, oldest first, as
          Transcript only (no AI, no cost): see control.overnight_next.
   full   always all 4 cores.
@@ -21,7 +20,7 @@ on 2 checks 5 minutes apart pauses processing at the next safe point (the same s
 "Paused: the Mac is hot". It resumes once the Mac has stayed under 80 °C for 5 minutes, or after 2 hours paused on
 half the cores. Heat comes from the watcher's once-a-minute log (hottest core) when it's fresh, else osx-cpu-temp.
 
-Nothing here reads content: only idle time, session counts, file modification times and temperatures.
+Nothing here reads content: only CPU and memory use per app and temperatures.
 """
 from __future__ import annotations
 
@@ -36,11 +35,11 @@ from pathlib import Path
 
 MODES = ("auto", "full", "gentle", "night")
 FULL, HALF = 4, 2                  # threads: the M14 has 4 physical cores
-IDLE_S = 5 * 60                    # keyboard / mouse
-AWAY_S = 10 * 60                   # Auto stays Gentle this long after the last sign of use
-SSH_IDLE_S = 30 * 60
-CHAT_S = 10 * 60                   # a Claude / Codex chat file written this recently = in use (only while BUSY_PCT)
-BUSY_PCT = 150.0                   # other apps' CPU (100 = one core) above this = the Mac is busy
+HALF_PCT = 200.0                   # other apps' CPU (100 = one core of 8) above this: half speed
+PAUSE_PCT, RESUME_PCT = 600.0, 400.0   # above 6 cores twice in a row: pause; back under 4 cores for 2 min: resume
+MEM_LOW = 20.0                     # % memory free under this: half speed
+CALM_S = 3 * 60                    # Auto stays at half speed this long after the Mac calms down
+BUSY_CHECK_S, BUSY_CALM_S = 60, 2 * 60
 NIGHT_START, NIGHT_END = 1, 7      # Night only: 1 AM to 7 AM local
 HOT_C, COOL_C = 95.0, 80.0
 WARM_C = 90.0                      # step down to half the cores first
@@ -49,9 +48,8 @@ COOL_FOR_S = 5 * 60
 HEAT_MAX_PAUSE_S = 2 * 3600
 WATCHER_LOG = Path.home() / "Library/Application Support/m14-health"
 TEMP_TOOL = "/usr/local/bin/osx-cpu-temp"
-HOME = Path.home()
 
-_state = {"threads": FULL, "last_use": 0.0, "why": "", "hot_since": None, "hot_seen": None, "cool_since": None,
+_state = {"threads": FULL, "last_use": 0.0, "why": "", "busy_seen": None, "busy_calm": None, "hot_since": None, "hot_seen": None, "cool_since": None,
           "heat_paused_at": None, "warm_seen": None, "warm_cool": None}
 
 
@@ -79,37 +77,6 @@ def set_mode(conn: sqlite3.Connection, m: str) -> None:
 
 # ---------- is someone using the Mac? (pure parsers + one runner) ----------
 
-def parse_hid_idle(text: str) -> float | None:
-    m = re.search(r'"HIDIdleTime"\s*=\s*(\d+)', text or "")
-    return int(m.group(1)) / 1e9 if m else None
-
-
-def parse_who(text: str) -> int:
-    """SSH sessions typed in within 30 min. `who -u` lines: user tty month day time idle pid (host). Local terminals
-    have no (host); idle is '.' (this minute), 'old' (a day+) or hh:mm."""
-    n = 0
-    for line in (text or "").splitlines():
-        if "(" not in line or "console" in line:
-            continue
-        parts = line.split()
-        idle = parts[5] if len(parts) > 5 else "old"
-        if idle == ".":
-            n += 1
-        elif re.fullmatch(r"\d+:\d\d", idle):
-            h, mi = idle.split(":")
-            n += (int(h) * 3600 + int(mi) * 60) < SSH_IDLE_S
-    return n
-
-
-def parse_remote(ps_text: str, netstat_text: str) -> list[str]:
-    out = []
-    if re.search(r"RustDesk\S*\s+--cm\b", ps_text or ""):   # RustDesk opens its connection window per session
-        out.append("RustDesk")
-    if re.search(r"\.5900\s+\S+\s+ESTABLISHED", netstat_text or ""):
-        out.append("Screen Sharing")
-    return out
-
-
 def parse_busy(ps_text: str) -> float:
     """CPU % used by everything except Scribe Bot's own work. `ps -axo nice=,pcpu=,comm=` lines. Scribe Bot's worker and
     its speech engine run at nice 10 (skipped), and Docker's VM is skipped too (the speaker-labelling engine runs there)."""
@@ -128,25 +95,6 @@ def parse_busy(ps_text: str) -> float:
     return total
 
 
-def _recent_file(root: Path, within_s: float, now: float, depth: int = 3) -> bool:
-    """Any file under root modified within the window (only names and times are looked at, never contents)."""
-    if not root.is_dir():
-        return False
-    stack = [(root, 0)]
-    while stack:
-        d, lv = stack.pop()
-        try:
-            for e in os.scandir(d):
-                if e.is_dir(follow_symlinks=False):
-                    if lv < depth:
-                        stack.append((Path(e.path), lv + 1))
-                elif e.name.endswith(".jsonl") and now - e.stat().st_mtime < within_s:
-                    return True
-        except OSError:
-            continue
-    return False
-
-
 def _run(args: list[str], run=subprocess.run) -> str:
     try:
         return run(args, capture_output=True, text=True, timeout=10).stdout or ""
@@ -154,22 +102,50 @@ def _run(args: list[str], run=subprocess.run) -> str:
         return ""
 
 
-def in_use(run=subprocess.run, now: float | None = None, home: Path = HOME) -> str:
-    """'' if nobody seems to be using the Mac, else a short reason ('keyboard or mouse', 'SSH', 'a busy Claude chat', ...)."""
-    now = now or time.time()
-    idle = parse_hid_idle(_run(["ioreg", "-c", "IOHIDSystem", "-d", "4"], run))
-    if idle is not None and idle < IDLE_S:
-        return "keyboard or mouse"
-    if parse_who(_run(["who", "-u"], run)):
-        return "SSH"
-    remote = parse_remote(_run(["ps", "-axo", "command"], run), _run(["netstat", "-an", "-p", "tcp"], run))
-    if remote:
-        return remote[0]
-    chat = ("a busy Claude chat" if _recent_file(home / ".claude/projects", CHAT_S, now) else
-            "a busy Codex chat" if _recent_file(home / ".codex/sessions", CHAT_S, now, depth=4) else "")
-    if chat and parse_busy(_run(["ps", "-axo", "nice=,pcpu=,comm="], run)) >= BUSY_PCT:
-        return chat
+def parse_mem_free(text: str) -> float | None:
+    m = re.search(r"free percentage:\s*(\d+(?:\.\d+)?)%", text or "")
+    return float(m.group(1)) if m else None
+
+
+def load(run=subprocess.run) -> tuple[float, float | None]:
+    """(other apps' CPU %, % memory free). 100 = one core of the 8."""
+    return (parse_busy(_run(["ps", "-axo", "nice=,pcpu=,comm="], run)),
+            parse_mem_free(_run(["memory_pressure", "-Q"], run)))
+
+
+def in_use(run=subprocess.run, now: float | None = None) -> str:
+    """'' if the Mac has room, else a short reason for half speed ('other apps using 2.4 of 8 cores', ...)."""
+    busy, free = load(run)
+    _state["busy"] = busy
+    if busy > HALF_PCT:
+        return f"other apps using {busy / 100:.1f} of 8 cores"
+    if free is not None and free < MEM_LOW:
+        return f"only {free:.0f}% memory free"
     return ""
+
+
+def busy_step(conn: sqlite3.Connection, busy: float, now: float | None = None) -> str | None:
+    """Auto only: pause while other apps use more than 6 cores (2 checks in a row), resume once under 4 for 2 min."""
+    now = now or time.time()
+    if _get(conn, "busy_paused") == "1":
+        if busy < RESUME_PCT:
+            _state["busy_calm"] = _state["busy_calm"] or now
+            if now - _state["busy_calm"] >= BUSY_CALM_S:
+                _set(conn, "busy_paused", None)
+                _state["busy_calm"] = _state["busy_seen"] = None
+                return "resumed"
+        else:
+            _state["busy_calm"] = None
+        return None
+    if busy > PAUSE_PCT:
+        if _state["busy_seen"] is not None and now - _state["busy_seen"] >= BUSY_CHECK_S - 5:
+            _set(conn, "busy_paused", "1")
+            _state["busy_calm"] = None
+            return "paused"
+        _state["busy_seen"] = _state["busy_seen"] or now
+    else:
+        _state["busy_seen"] = None
+    return None
 
 
 # ---------- heat ----------
@@ -282,7 +258,7 @@ def threads_for(conn: sqlite3.Connection, use_reason: str, now: float | None = N
         return FULL
     if use_reason:
         _state["last_use"], _state["why"] = now, use_reason
-    return HALF if now - _state["last_use"] < AWAY_S else FULL
+    return HALF if now - _state["last_use"] < CALM_S else FULL
 
 
 def update(conn: sqlite3.Connection, run=subprocess.run, notify=None, now: float | None = None) -> dict:
@@ -291,17 +267,23 @@ def update(conn: sqlite3.Connection, run=subprocess.run, notify=None, now: float
     now = now or time.time()
     change = heat_step(conn, hottest_core(run, now), now, notify)
     reason = in_use(run, now) if mode(conn) == "auto" else ""
+    if mode(conn) == "auto":
+        busy_step(conn, _state.get("busy", 0.0), now)
+    elif _get(conn, "busy_paused") == "1":
+        _set(conn, "busy_paused", None)   # only Auto pauses for a busy Mac
     t = threads_for(conn, reason, now)
     _state["threads"] = t
     if heat_paused(conn):
         label = "Paused: the Mac is hot"
+    elif _get(conn, "busy_paused") == "1":
+        label = f"Paused: other apps are using {_state.get('busy', 0) / 100:.1f} of 8 cores"
     elif _get(conn, "heat_warm") == "1":
         label = "Half speed: the Mac is warm"
     elif mode(conn) == "night" and not night_window():
         label = "Night only: waits until 1 AM"
     elif t == HALF:
         why = _state["why"] if mode(conn) == "auto" else ""
-        label = f"Gentle (half the cores){': ' + why + ' in use' if why else ''}"
+        label = f"Half speed{': ' + why if why else ''}"
     else:
         label = "Full speed"
     _set(conn, "processing_pace", label)

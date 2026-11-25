@@ -24,7 +24,7 @@ PEEK_SECONDS = 120
 PEEK_WORDS = 300         # about 2 minutes of talk, when the start comes from an existing transcript
 PEEK_GAP_S = 90          # at most one peek every 1.5 min (each takes ~15-30 s of M14 work)
 WAITING = ('awaiting_approval', 'backlog')
-_last = 0.0
+_last = float("-inf")   # monotonic time can be small right after a boot: the first peek is never held back
 
 
 def _transcribe_start(src: str, seconds: int) -> str:

@@ -30,6 +30,17 @@ PROMPT_VERSION = "v2.2"
 TITLE_RULE = ("\n- title: 3 to 8 words saying what the conversation was about (its topic). No date, and no names unless "
               "the topic needs them.")
 TITLE_MAX = 80
+# One AI run per talk (Brian, 2026-11-22): the list names come in the same reply (no separate short-name send), and so
+# do detailed notes for talks of 30 minutes or more.
+SHORT_RULE = ('\n- short_title: 2 to 4 words naming the topic for a phone list, e.g. "Budget review". No date.'
+              '\n- in each task and waiting_on item, "short": at most 6 words, starting with the action, keeping the key '
+              'person or thing, no due date.')
+SHORT_MAX, TASK_SHORT_MAX = 40, 60
+DETAIL_RULE = ('\n- detailed: detailed notes as one string. Group them by topic in the order they came up: a line '
+               '"## <short topic name>" then 3 to 8 lines starting with "- " covering what was said, reasons, numbers, '
+               'names, dates, open questions and anything agreed. End with "## Next steps" (who does what, by when) if '
+               'there are any.')
+DETAIL_MIN_S = 30 * 60
 AREA_RULE = ('\n- area: "work" if this conversation is mainly about {me}\'s job, "school" if it is about his classes or '
              'studies, "personal" if it is about his personal life (family, friends, health, home, hobbies), "other" if '
              "none of these fit; area_confidence: 0 to 1, how sure you are.")   # school/other: Brian, 2026-11-21
@@ -75,14 +86,17 @@ TAG_RULE = ('\n- tags: up to 3 of these existing tags that clearly fit, else [].
 
 
 def extract_system(me: str = "Brian", meeting_type: str | None = None, template: str | None = None,
-                   detect_learning: bool = False, tags: list[str] | None = None) -> str:
+                   detect_learning: bool = False, tags: list[str] | None = None, detailed: bool = False) -> str:
     """The v2 prompt, plus the meeting type's template when it has one (custom text from Settings, else the default)."""
     text = (template if template is not None else TEMPLATES.get(meeting_type or "", "")).strip()
     extra = f"\nMeeting type: {MEETING_TYPES.get(meeting_type, meeting_type)}. {text.replace('{me}', me)}" if text else ""
     if detect_learning and meeting_type != "learning":
         extra += LEARNING_DETECT.format(me=me, rules=TEMPLATES["learning"].split(", not a meeting. ", 1)[1].replace("{me}", me))
     tag_rule = TAG_RULE.format(tags=json.dumps(tags[:200])) if tags else ""   # M4: the AI only picks existing tags
-    return EXTRACT_V2.format(me=me) + extra + TITLE_RULE + AREA_RULE.format(me=me) + tag_rule + SPEAKER_NOTE + SCHEMA_TEXT
+    schema = SCHEMA_TEXT.replace('"summary": str,', '"short_title": str, "summary": str,' + (' "detailed": str,' if detailed else ''))
+    schema = schema.replace('"title": str, "owner": str,', '"title": str, "short": str, "owner": str,')
+    return (EXTRACT_V2.format(me=me) + extra + TITLE_RULE + SHORT_RULE + (DETAIL_RULE if detailed else "")
+            + AREA_RULE.format(me=me) + tag_rule + SPEAKER_NOTE + schema)
 
 
 def apply_glossary(text: str, fixes: dict[str, str]) -> str:
@@ -149,7 +163,16 @@ def parse_extract(text: str) -> dict:
         "people_facts": _items(data, "people_facts", {"person": (str,), "fact": (str,), "line": (int,)}),
         "tags": [t.strip() for t in (data.get("tags") or [])[:3] if isinstance(t, str) and t.strip()]
         if isinstance(data.get("tags"), list) else [],
+        "short_title": _short(data.get("short_title"), SHORT_MAX),
+        "detailed": clean_detail(data["detailed"]) if isinstance(data.get("detailed"), str) and data["detailed"].strip() else None,
     }
+
+
+def _short(v, cap: int) -> str | None:
+    if not isinstance(v, str):
+        return None
+    v = re.sub(r"\s+", " ", v).strip().strip("\"'“”").rstrip(".").strip()
+    return v[:cap].rstrip() or None
 
 
 # Short / Detailed notes (Brian, 2026-11-20): Detailed is a longer, topic-by-topic version, made only on request.
@@ -172,3 +195,16 @@ def clean_detail(text: str) -> str:
     while "\n\n\n" in out:
         out = out.replace("\n\n\n", "\n\n")
     return out[:20000]
+
+
+_BARE = re.compile(r"^(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)$", re.I)
+
+
+def clean_due(v) -> str | None:
+    """A due phrase that's only a bare number ("2", "two") means nothing on its own (Brian, 2026-11-22: a task said
+    "due 2"): drop it. Real phrases ("Friday", "in two weeks", "Nov 15") are kept as said."""
+    if not isinstance(v, str) or not v.strip():
+        return None
+    v = v.strip()
+    return None if _BARE.match(v) else v
+

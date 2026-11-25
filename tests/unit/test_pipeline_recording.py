@@ -38,10 +38,13 @@ def seed_brian(conn):
                  (identify.to_blob(BRIAN_VOICE), now()))
 
 
-def record(conn, cfg, name="Weekly sync.m4a", content=b"synthetic"):
+def record(conn, cfg, name="Weekly sync.m4a", content=b"synthetic", ai=True):
+    """ai=True: as if Brian picked Summarize (new recordings alone are Transcript only since 2026-11-23)."""
     ingest.scan_inbound(conn, cfg)  # baseline (empty folder)
     drop_file(paths.inbound(cfg), name, content)
     [rec_id] = ingest.scan_inbound(conn, cfg)
+    if ai:
+        conn.execute("UPDATE job SET payload = json_set(payload, '$.ai', json('true')) WHERE recording_id = ?", (rec_id,))
     job = queue.run_next(conn, PIPELINES, cfg.jobs_dir)
     status = conn.execute("SELECT status, error FROM job WHERE id = ?", (job,)).fetchone()
     assert status["status"] == "done", status["error"]
@@ -100,7 +103,7 @@ def test_transcript_only_skips_the_ai_without_locking(conn, cfg, monkeypatch):
     def boom(*a):
         raise AssertionError("Transcript Only (No AI) must not call the AI")
     monkeypatch.setattr("scribe_bot.ai.extract.extract_conversation", boom)
-    conn.execute("UPDATE setting SET value = 'ask' WHERE key = 'processing_mode'")
+    conn.execute("INSERT OR REPLACE INTO setting (key, value) VALUES ('approval_mode', 'ask')")
     speech.set_engine(FakeEngine([segment(words(1, 20, "hello"))], turns((0, 20, 0)), {0: GUEST_VOICE}))
     ingest.scan_inbound(conn, cfg)
     drop_file(paths.inbound(cfg), "Oct 3 at 14_05.m4a", b"synthetic")

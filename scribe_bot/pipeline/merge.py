@@ -87,7 +87,7 @@ def merge(conn: sqlite3.Connection, cfg: settings.Settings, rec_ids: list[int]) 
         dst = paths.uploads(cfg) / f"{title.replace('/', '-')}.m4a"
         dst.parent.mkdir(parents=True, exist_ok=True)
         _encode(joined, dst)
-        new_id = ingest.add_file(conn, cfg, dst)
+        new_id = ingest.add_file(conn, cfg, dst, wait=True)
         if new_id is None:
             raise MergeError("Those recordings were already merged")
         with transaction(conn):
@@ -139,3 +139,108 @@ def first_start(conn: sqlite3.Connection, rec_id: int) -> str | None:
     r = conn.execute("SELECT started_at FROM recording_part WHERE recording_id = ? ORDER BY idx LIMIT 1", (rec_id,)).fetchone()
     return r[0] if r else None
 
+
+
+# ---------- Merge finished talks (Brian, 2026-11-22: two talks transcribed overnight were one conversation) ----------
+
+def _talk_audio(conn: sqlite3.Connection, c) -> Path | None:
+    if not c["recording_id"]:
+        return None
+    r = conn.execute("SELECT vault_path, archive_path FROM recording WHERE id = ?", (c["recording_id"],)).fetchone()
+    for p in (r or []):
+        if p and Path(p).is_file():
+            return Path(p)
+    return None
+
+
+def merge_talks(conn: sqlite3.Connection, cfg: settings.Settings, cids: list[int]) -> int:
+    """Join finished talks into ONE new talk, in recorded order: transcript lines (times shifted), speakers (the same
+    named person becomes one speaker), tags and the joined audio. The new talk has no AI notes yet (Summarize it).
+    The originals go to Trash (Restore within 30 days); nothing is re-transcribed. Returns the new talk's id."""
+    import hashlib
+    ids = list(dict.fromkeys(int(i) for i in cids))
+    if len(ids) < 2:
+        raise MergeError("Pick at least two talks to merge")
+    convs = [conn.execute("SELECT * FROM conversation WHERE id = ? AND deleted_at IS NULL", (i,)).fetchone() for i in ids]
+    if any(c is None for c in convs):
+        raise MergeError("One of those talks is gone")
+    if any(c["status"] == "transcribing" for c in convs):
+        raise MergeError("Wait until every picked talk has finished processing")
+    convs.sort(key=lambda c: c["started_at"] or c["created_at"])
+    lengths = [c["duration_s"] or conn.execute("SELECT coalesce(max(end_s), 0) FROM segment WHERE conversation_id = ?",
+                                               (c["id"],)).fetchone()[0] for c in convs]
+    audio = [_talk_audio(conn, c) for c in convs]
+    new_rec, parts = None, []
+    if all(audio):   # join the audio; a talk without audio (a pasted transcript) gives a text-only merge
+        work = cfg.data_dir / "tmp" / f"talks-{'-'.join(str(c['id']) for c in convs)}"
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True)
+        try:
+            joined, offset, params = work / "joined.wav", 0.0, None
+            with wave.open(str(joined), "wb") as out:
+                for i, (c, src) in enumerate(zip(convs, audio)):
+                    w = work / f"{i}.wav"
+                    _to_wav(src, w)
+                    with wave.open(str(w)) as inp:
+                        if params is None:
+                            params = inp.getparams()
+                            out.setnchannels(params.nchannels); out.setsampwidth(params.sampwidth); out.setframerate(params.framerate)
+                        out.writeframes(inp.readframes(inp.getnframes()))
+                        dur = inp.getnframes() / inp.getframerate()
+                    parts.append((c, offset, dur))
+                    offset += dur
+            dst = paths.archive(cfg) / f"merged-talks-{'-'.join(str(c['id']) for c in convs)}.m4a"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            _encode(joined, dst)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        sha = hashlib.sha256(dst.read_bytes()).hexdigest()
+    else:
+        offset = 0.0
+        for c, n in zip(convs, lengths):
+            parts.append((c, offset, n))
+            offset += n
+    title = " + ".join(_short(c["short_title"] or c["title"], 40 if len(convs) == 2 else 24) for c in convs)
+    t = now()
+    with transaction(conn):
+        if all(audio):
+            # archive_path only (no vault_path): the 30-day original cleanup never touches it
+            new_rec = conn.execute(
+                "INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title, archive_path) "
+                "VALUES ('merge', ?, ?, ?, ?, 'done', ?, ?)", (str(dst), sha, round(offset, 2), t, title, str(dst))).lastrowid
+            for i, (c, off, dur) in enumerate(parts):
+                if c["recording_id"]:
+                    conn.execute("INSERT INTO recording_part (recording_id, source_id, idx, offset_s, duration_s, title, started_at, prev_status) "
+                                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'done')", (new_rec, c["recording_id"], i, round(off, 2), round(dur, 2),
+                                                                          c["short_title"] or c["title"], c["started_at"]))
+        first = convs[0]
+        cid = conn.execute(
+            "INSERT INTO conversation (recording_id, title, started_at, duration_s, type, area, status, processed_by, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'transcribed', 'local', ?, ?)",
+            (new_rec, title, first["started_at"], round(offset, 2), first["type"], first["area"], t, t)).lastrowid
+        sp_map, by_person, cluster = {}, {}, 0
+        for c in convs:
+            for s in conn.execute("SELECT * FROM speaker WHERE conversation_id = ? ORDER BY cluster", (c["id"],)):
+                if s["person_id"] and s["person_id"] in by_person:
+                    sp_map[s["id"]] = by_person[s["person_id"]]
+                    conn.execute("UPDATE speaker SET talk_seconds = talk_seconds + ? WHERE id = ?", (s["talk_seconds"], sp_map[s["id"]]))
+                    continue
+                new = conn.execute("INSERT INTO speaker (conversation_id, cluster, person_id, match_score, confirmed, talk_seconds, clip_path, color) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (cid, cluster, s["person_id"], s["match_score"], s["confirmed"],
+                                                                       s["talk_seconds"], s["clip_path"], s["color"])).lastrowid
+                cluster += 1
+                sp_map[s["id"]] = new
+                if s["person_id"]:
+                    by_person[s["person_id"]] = new
+        idx = 0
+        for c, off, _ in parts:
+            for g in conn.execute("SELECT * FROM segment WHERE conversation_id = ? ORDER BY idx", (c["id"],)).fetchall():
+                sid = conn.execute("INSERT INTO segment (conversation_id, idx, start_s, end_s, speaker_id, text, confidence) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?)", (cid, idx, round(g["start_s"] + off, 2), round(g["end_s"] + off, 2),
+                                                                    sp_map.get(g["speaker_id"]), g["text"], g["confidence"])).lastrowid
+                conn.execute("INSERT INTO search_index (kind, ref_id, conversation_id, text) VALUES ('segment', ?, ?, ?)", (sid, cid, g["text"]))
+                idx += 1
+            conn.execute("INSERT OR IGNORE INTO conversation_tag (conversation_id, tag_id, by_ai, created_at) "
+                         "SELECT ?, tag_id, by_ai, ? FROM conversation_tag WHERE conversation_id = ?", (cid, t, c["id"]))
+            conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ?", (t, t, c["id"]))
+    return cid

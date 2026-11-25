@@ -12,7 +12,7 @@ def last_undo(conn):
 def test_task_done_and_remove_undo(env):
     client, conn, _ = env
     page = client.post("/tasks/1/done").text
-    assert 'id="undo-bar"' in page and "Marked “Review the launch deck” done" in page and "/undo/" in page
+    assert 'id="undo-bar"' in page and "Marked done" in page and "/undo/" in page
     client.post(f"/undo/{last_undo(conn)}")
     assert one(conn, "SELECT status FROM task WHERE id = 1") == "open"
     client.post("/tasks/1/delete")

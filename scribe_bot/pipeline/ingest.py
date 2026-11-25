@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime
 import shutil
 import sqlite3
 import time
@@ -53,8 +54,36 @@ def inbound_files(cfg: settings.Settings) -> list[Path]:
     return sorted(found)
 
 
+def want_ai(conn: sqlite3.Connection, digest: str) -> None:
+    """An upload Brian chose "Transcribe + AI notes" for (the upload card, 2026-11-23): remembered by its fingerprint
+    until the file is added, then its job gets AI notes after the transcript."""
+    with transaction(conn):
+        conn.execute("INSERT OR REPLACE INTO setting (key, value) VALUES (?, '1')", (f"upload_ai:{digest}",))
+
+
+def _take_ai(conn: sqlite3.Connection, digest: str) -> bool:
+    return conn.execute("DELETE FROM setting WHERE key = ? RETURNING 1", (f"upload_ai:{digest}",)).fetchone() is not None
+
+
 def _known(conn: sqlite3.Connection, digest: str) -> bool:
     return conn.execute("SELECT 1 FROM recording WHERE sha256 = ?", (digest,)).fetchone() is not None
+
+
+def _gone(conn: sqlite3.Connection, digest: str) -> int | None:
+    """A recording whose audio was removed for good (purged from Trash). Brian, 2026-11-23: uploading that file again
+    makes it a new talk. Only uploads count: the phone folder's own copy is still skipped, or it would come back alone."""
+    row = conn.execute("SELECT id FROM recording WHERE sha256 = ? AND audio_deleted_at IS NOT NULL", (digest,)).fetchone()
+    return row[0] if row else None
+
+
+def release_gone(conn: sqlite3.Connection, digest: str) -> bool:
+    """Free a removed-for-good recording's fingerprint so a new upload can use it (sha256 is unique). The old row keeps
+    a marked copy; the new recording takes the real one, so the phone folder's copy is still recognised."""
+    rid = _gone(conn, digest)
+    if rid is None:
+        return False
+    conn.execute("UPDATE recording SET sha256 = ? WHERE id = ?", (f"gone-{rid}-{digest}", rid))
+    return True
 
 
 def _started_at(path: Path, duration: float) -> str:
@@ -69,9 +98,11 @@ AI_USD_PER_AUDIO_MINUTE = 0.0011       # #3: ~$0.045 for 42 min on Sonnet
 
 
 def ask_first(conn: sqlite3.Connection) -> bool:
-    """Setting 'processing_mode': 'ask' (default) or 'auto'."""
-    row = conn.execute("SELECT value FROM setting WHERE key = 'processing_mode'").fetchone()
-    return (row[0] if row else "ask") != "auto"
+    """Setting 'approval_mode': 'auto' (default: transcribe right away, Transcript only) or 'ask' (wait in the Inbox).
+    2026-11-23: this read 'processing_mode', which the speed setting (pace.py) also uses; its "auto" made every new
+    recording skip the Inbox, and with no AI choice in the job they got paid AI notes (19 memos, Nov 23)."""
+    row = conn.execute("SELECT value FROM setting WHERE key = 'approval_mode'").fetchone()
+    return (row[0] if row else "auto") == "ask"
 
 
 def request_approval(conn: sqlite3.Connection, rec_id: int, title: str, duration: float | None, private: bool) -> None:
@@ -85,10 +116,12 @@ def request_approval(conn: sqlite3.Connection, rec_id: int, title: str, duration
     # the Inbox tab shows the count). Notes are kept for things that need him or that he can't see coming.
 
 
-def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backlog: bool = False) -> int | None:
+def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backlog: bool = False,
+             wait: bool | None = None) -> int | None:
     """Record one inbound file. Returns the new recording id, or None if it was already known."""
     digest = sha256(path)
-    if _known(conn, digest):
+    upload = paths.uploads(cfg) in path.parents
+    if _known(conn, digest) and not (upload and _gone(conn, digest)):
         return None
     eng = speech.engine()
     duration = eng.duration(path)
@@ -102,14 +135,16 @@ def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backl
             shutil.copy2(path, tmp)
             tmp.replace(dst)
         vault_path = str(dst)
-    hold = not backlog and ask_first(conn)
+    hold = not backlog and (ask_first(conn) if wait is None else wait)   # wait=True: merges stay in the Inbox
     with transaction(conn):
+        if upload:
+            release_gone(conn, digest)
         if _known(conn, digest):  # another scan got there first
             return None
         cur = conn.execute(
             "INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title, vault_path, private) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("upload" if paths.uploads(cfg) in path.parents else "recorder", str(path), digest, duration, now(),
+            ("upload" if upload else "recorder", str(path), digest, duration, now(),
              "backlog" if backlog else ("awaiting_approval" if hold else "queued"), title, vault_path,
              0),  # Private is gone (Brian, 2026-11-21)
         )
@@ -119,7 +154,8 @@ def add_file(conn: sqlite3.Connection, cfg: settings.Settings, path: Path, backl
         elif hold:
             request_approval(conn, rec_id, title, duration, False)
         else:
-            queue.enqueue(conn, "recording", rec_id, {"started_at": _started_at(path, duration)})
+            ai = upload and _take_ai(conn, digest)   # AI only when Brian taps Summarize, or chose it when uploading
+            queue.enqueue(conn, "recording", rec_id, {"started_at": _started_at(path, duration), "ai": ai})
     return rec_id
 
 
@@ -204,6 +240,25 @@ def process_backlog(conn: sqlite3.Connection, recording_ids: list[int], cfg: set
             tmp.replace(dst)
         with transaction(conn):
             conn.execute("UPDATE recording SET status = 'queued', vault_path = ? WHERE id = ?", (str(dst), rec_id))
-            queue.enqueue(conn, "recording", rec_id, {"started_at": _started_at(src, row["duration_s"] or 0)})
+            queue.enqueue(conn, "recording", rec_id, {"started_at": _started_at(src, row["duration_s"] or 0), "ai": False})
         queued.append(rec_id)
     return queued
+
+
+def fix_recorded_dates(conn: sqlite3.Connection) -> int:
+    """Once per start: talks from files named with their recording time ("20251009 143052", Voice Memos) get that
+    time, not the upload time (Brian, 2026-11-23). Only changes talks off by more than an hour. Returns how many."""
+    n = 0
+    for r in conn.execute("SELECT c.id, c.started_at, r.original_path FROM conversation c JOIN recording r ON r.id = c.recording_id").fetchall():
+        real = recorder_names.parse_stamp(Path(r["original_path"]).stem)
+        if real is None:
+            continue
+        try:
+            off = abs((datetime.fromisoformat(r["started_at"]) - real).total_seconds()) if r["started_at"] else 1e9
+        except ValueError:
+            off = 1e9
+        if off > 3600:
+            conn.execute("UPDATE conversation SET started_at = ? WHERE id = ?", (real.isoformat(timespec="seconds"), r["id"]))
+            n += 1
+    return n
+

@@ -175,14 +175,37 @@ def _preview(conn: sqlite3.Connection, rec_id: int | None) -> str:
 
 
 def active_jobs(conn: sqlite3.Connection, now: datetime | None = None) -> list[dict]:
-    """Recording jobs that are running or waiting their turn, oldest first."""
+    """Recording jobs that are running or waiting their turn: the running one first, then in the order they'll run.
+
+    B39 (Brian, 2026-11-25): the M14 does one recording at a time, so a waiting job's times start when the ones ahead
+    of it finish ("starts ~11:52", "ready ~12:30"), not now (every card used to say about the same ready time)."""
+    now = now or datetime.now(timezone.utc)
     ids = [r[0] for r in conn.execute(
-        "SELECT id FROM job WHERE kind = 'recording' AND status IN ('running', 'pending') ORDER BY id")]
-    return [p for p in (job_progress(conn, i, now) for i in ids) if p]
+        "SELECT id FROM job WHERE kind = 'recording' AND status IN ('running', 'pending') "
+        "ORDER BY status = 'running' DESC, id")]
+    out, ahead = [], 0.0
+    for i in ids:
+        p = job_progress(conn, i, now)
+        if p is None:
+            continue
+        if not p["started_at"] and ahead:
+            p = job_progress(conn, i, now + timedelta(seconds=ahead))
+            p["remaining_s"] += ahead
+            p["starts"] = local_time(now + timedelta(seconds=ahead))
+        out.append(p)
+        ahead = max(ahead, p["remaining_s"]) if p["started_at"] else p["remaining_s"]
+    for n, p in enumerate(out):
+        p["queue_pos"] = n
+    return out
+
+
+def progress_of(conn: sqlite3.Connection, job_id: int) -> dict | None:
+    """One job's progress, with queue-aware times when it's waiting its turn (B39)."""
+    return next((p for p in active_jobs(conn) if p["job_id"] == job_id), None) or job_progress(conn, job_id)
 
 
 def latest_for_recording(conn: sqlite3.Connection, recording_id: int | None) -> dict | None:
     if recording_id is None:
         return None
     row = conn.execute("SELECT max(id) FROM job WHERE kind = 'recording' AND recording_id = ?", (recording_id,)).fetchone()
-    return job_progress(conn, row[0]) if row and row[0] else None
+    return progress_of(conn, row[0]) if row and row[0] else None

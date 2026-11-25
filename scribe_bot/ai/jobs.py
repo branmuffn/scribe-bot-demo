@@ -29,9 +29,26 @@ def pending_for(conn: sqlite3.Connection, conversation_id: int) -> bool:
         "SELECT payload FROM job WHERE kind = ? AND status IN ('pending', 'running')", (KIND,)))
 
 
+def pending_ids(conn: sqlite3.Connection) -> set[int]:
+    """Talks with Summarize / Re-run AI waiting or running, so lists can show "Working…" on their rows."""
+    return {json.loads(r[0]).get("conversation_id") for r in conn.execute(
+        "SELECT payload FROM job WHERE kind = ? AND status IN ('pending', 'running')", (KIND,))}
+
+
+def ready_note(conn: sqlite3.Connection, cid: int, result: dict, what: str = "AI notes") -> None:
+    """Brian (2026-11-23): Summarize on an older talk finished with no notification, so it was lost among his talks."""
+    if result.get("status") != "done":
+        return
+    from scribe_bot.discord_bot import notify
+    row = conn.execute("SELECT title FROM conversation WHERE id = ? AND deleted_at IS NULL", (cid,)).fetchone()
+    if row:
+        notify.enqueue(conn, "bot", f"{what} ready: {row['title'] or 'Untitled talk'}", f"/conversations/{cid}")
+
+
 def rerun_stage(ctx: queue.StageContext) -> str:
     cid = ctx.payload["conversation_id"]
     result = extract_conversation(ctx.conn, cid, approved=bool(ctx.payload.get("approved")))
+    ready_note(ctx.conn, cid, result)
     if result.get("status") == "pending_approval" and ctx.conn.execute(
             "SELECT 1 FROM review_item WHERE kind = 'approval' AND conversation_id = ? AND status = 'open'",
             (cid,)).fetchone() is None:
@@ -80,7 +97,10 @@ def detail_pending(conn: sqlite3.Connection, conversation_id: int) -> bool:
 
 def detail_stage(ctx: queue.StageContext) -> str:
     from scribe_bot.ai.extract import detail_conversation
-    return json.dumps(detail_conversation(ctx.conn, ctx.payload["conversation_id"], approved=True))
+    cid = ctx.payload["conversation_id"]
+    result = detail_conversation(ctx.conn, cid, approved=True)
+    ready_note(ctx.conn, cid, result, "Detailed notes")
+    return json.dumps(result)
 
 
 DETAIL_PIPELINE: queue.Pipeline = [("detail", detail_stage)]

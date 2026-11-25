@@ -20,6 +20,24 @@
       tip="Your Anthropic credit balance when you last entered it below, minus what Scribe Bot has spent since. Correct it any time from the console.") }}{% endif %}
 </div>
 
+{# B19 (Brian picked ⭐, 2026-11-25): the last 30 days, one bar a day, colored by account #}
+<section class="section cost-graph" id="cost-graph">
+  {{ m.section("Last 30 days", "$" ~ '%.2f'|format(graph.total), help="One bar a day, split by account. Tap or hover a bar for that day.") }}
+  <div class="card pad">
+  {% if graph.total %}
+    <div class="cg-ax">Highest day ${{ '%.2f'|format(graph.top) }}</div>
+    <svg class="cg" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="AI spend over the last 30 days: ${{ '%.2f'|format(graph.total) }} in all; the highest day was {{ graph.peak.day.strftime('%b %-d') }} at ${{ '%.2f'|format(graph.peak.usd) }}">
+      <line class="cg-base" x1="0" x2="300" y1="70.5" y2="70.5"/>
+      <line class="cg-top" x1="0" x2="300" y1="10.5" y2="10.5"/>
+      {% for b in graph.bars %}<g class="cg-day"><title>{{ b.day.strftime('%a %b %-d') }}: ${{ '%.2f'|format(b.usd) }}</title>
+        <rect class="cg-hit" x="{{ b.x - 1 }}" y="0" width="10" height="72"/>{% for p in b.parts %}<rect class="cg-{{ p.k }}" x="{{ b.x }}" y="{{ p.y }}" width="8" height="{{ p.h }}" rx="1.5"/>{% endfor %}</g>{% endfor %}
+    </svg>
+    <div class="cg-ax cg-dates"><span>{{ graph.start.strftime('%b %-d') }}</span><span>Today</span></div>
+    <div class="cg-key">{% for n in graph.names %}<span><i class="cg-{{ loop.index0 }}"></i>{{ n }} · ${{ '%.2f'|format(graph.totals[loop.index0]) }}</span>{% endfor %}</div>
+  {% else %}<p class="meta">No AI spend in the last 30 days.</p>{% endif %}
+  </div>
+</section>
+
 <details class="section transcript" id="console"{{ ' open' if matched }}>
   <summary><span class="chev">{{ m.icon("chev") }}</span><h2>Update from the Anthropic console</h2>
     <span class="count meta">{% if check %}last {{ check.time|local_datetime }}{% else %}never{% endif %}</span></summary>
@@ -30,7 +48,7 @@
       listed as “Matched to the Anthropic console”), and Scribe Bot's own calls add on top from then on. It counts toward the monthly cap. Nothing is sent anywhere.</p>
     <form class="quick-add" method="post" action="/costs/console" aria-label="Update from the Anthropic console">
       <label class="field"><span>Spent this month ($)</span><input name="spent" required inputmode="decimal" size="6" value="{{ '%.2f'|format(month) }}"></label>
-      <label class="field"><span>Credits left ($)</span><input name="credits" inputmode="decimal" size="8" placeholder="Optional"{% if credits is not none %} value="{{ '%.2f'|format(credits) }}"{% endif %}></label>
+      <label class="field"><span>Credits left ($)</span><input name="credits" inputmode="decimal" size="10" placeholder="Optional"{% if credits is not none %} value="{{ '%.2f'|format(credits) }}"{% endif %}></label>
       <button class="btn btn-primary" style="align-self:end">{{ m.icon("check") }} Match</button>
     </form>
   </div>

@@ -5,6 +5,15 @@
   <div><h1>Today</h1><div class="meta">{{ today_label }}</div></div>
 </div>
 
+{% if overnight %}{# S1, Brian picked A (2026-11-22): swipe either way (or ✕) to dismiss for today #}
+<div class="card overnight-card" id="overnight" data-sw='{{ {"l": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}], "r": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}]}|tojson }}'>
+  <a class="item-link" href="/conversations?night=1" aria-label="See last night's talks"></a>
+  <span class="oc-ic" aria-hidden="true">☾</span>
+  <div class="oc-main"><b>Overnight: {{ overnight.ok }} recording{{ 's' if overnight.ok != 1 }} transcribed</b>
+    <div class="meta">{{ overnight.hours }} h of audio · done {{ overnight.last }}{% if overnight.bad %} · <span class="warn-text">{{ overnight.bad }} failed</span>{% endif %} · tap to see them</div></div>
+  <form method="post" action="/overnight/dismiss" class="on-dismiss"><button class="icon-btn" aria-label="Dismiss" title="Dismiss for today">{{ m.icon("x") }}</button></form>
+</div>
+{% endif %}
 {% if paused %}
 <div class="notice" role="status">{{ m.icon("alert") }}<div style="flex:1"><b>Processing is paused.</b> New recordings wait on the M14; nothing is transcribed or sent to the AI until you resume.</div>
   <form method="post" action="/settings/pause"><input type="hidden" name="on" value="0"><button class="btn btn-primary">Resume</button></form></div>
@@ -28,7 +37,7 @@
 </nav>
 {# Brian, 2026-11-21: delete-from-your-devices. The checklist line while there's something on it; the pop-up once
    per batch Scribe Bot deleted (no "remind me later": tap outside and it asks again next time you open Today). #}
-{% if cleanup.get('todo') %}<a class="notice cl-notice" href="/cleanup">🧹 <span><b>{{ cleanup.todo }} to delete from your devices</b></span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+{% if cleanup.get('todo') %}<a class="notice cl-notice" href="/cleanup">{{ m.icon("trash") }}<span><b>{{ cleanup.todo }} to delete from your devices</b></span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
 {% if cleanup_ask %}
 <details class="fx-sheet cl-ask" open><summary hidden></summary>
   <div class="fx-back" data-fx-close aria-hidden="true"></div>
@@ -48,7 +57,7 @@
       <form method="post" action="/help/dismiss"><button class="btn btn-ghost">Got it, hide this</button></form></div></div>
   <ol>
     <li><b>Record</b> in Google Recorder as usual. It syncs to the M14 in seconds.</li>
-    <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>AI notes</i> for a summary and tasks, or <i>Transcript only</i> (free, stays on the M14).</li>
+    <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>Summarize</i> for a summary and tasks, or <i>Transcript only</i> (free, stays on the M14).</li>
     <li><b>Read</b> it in <a href="/conversations">Conversations</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
     <li><b>Fix</b> anything wrong right there: tap <i>Done</i>, or <i>⋯</i> for <i>Change person</i>, <i>Edit</i> and <i>Remove</i>. Tap a speaker's name to rename them. Every change can be undone.</li>
     <li><b>Find</b> it later in <a href="/conversations">Talks</a> (conversations and people), <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
@@ -66,8 +75,11 @@
   <div class="section-head"><h2>Needs you</h2>{% if needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}<a class="aside" href="/review?tab=done" title="Everything you've handled, with Restore">History</a></div>
   <div class="card">
     {% if m14 %}<a class="row1" href="/status"><span class="rdot bad"></span><span class="r1-t">The M14 needs attention<small>{{ m14|join(' · ')|capitalize }}</small></span><span class="go">›</span></a>{% endif %}
-    {% if n_inbox %}<a class="row1" href="/inbox"><span class="rdot warn"></span><span class="r1-t">Process {{ n_inbox }} recording{{ 's' if n_inbox != 1 }}<small>{{ '%.1f'|format(inbox_hours) }} h of audio waiting</small></span><span class="go pri">›</span></a>{% endif %}
-    {% for cid, g in convs.items() %}<a class="row1" href="/conversations/{{ cid }}#speakers"><span class="rdot warn"></span><span class="r1-t">Name {{ g.n }} speaker{{ 's' if g.n != 1 }}<small>{{ g.t or 'Conversation' }}</small></span><span class="go">›</span></a>{% endfor %}
+    {% if n_inbox %}<a class="row1" href="/inbox"><span class="rdot warn"></span><span class="r1-t">Process {{ n_inbox }} recording{{ 's' if n_inbox != 1 }}<small>{{ '%.1f'|format(inbox_hours) }} h of audio waiting</small></span><span class="go">›</span></a>{% endif %}
+    {# Brian picked B (2026-11-22): many "Name N speakers" rows fold into one group row that opens to show them #}
+    {% if convs|length > 2 %}<details class="row-group"><summary class="row1"><span class="rdot warn"></span><span class="r1-t">Name {{ n_speakers }} speaker{{ 's' if n_speakers != 1 }}<small>in {{ convs|length }} talks · tap to see them</small></span><span class="go rg-chev" aria-hidden="true">⌄</span></summary>
+      <div class="rg-list">{% for cid, g in convs.items() %}<a class="row1" href="/conversations/{{ cid }}#speakers"><span class="rdot warn"></span><span class="r1-t">Name {{ g.n }} speaker{{ 's' if g.n != 1 }}<small>{{ g.t or 'Conversation' }}</small></span><span class="go">›</span></a>{% endfor %}</div></details>
+    {% else %}{% for cid, g in convs.items() %}<a class="row1" href="/conversations/{{ cid }}#speakers"><span class="rdot warn"></span><span class="r1-t">Name {{ g.n }} speaker{{ 's' if g.n != 1 }}<small>{{ g.t or 'Conversation' }}</small></span><span class="go">›</span></a>{% endfor %}{% endif %}
     {% if n_unsure %}<a class="row1" href="/tasks?tab=inbox"><span class="rdot warn"></span><span class="r1-t">{{ n_unsure }} unsure task{{ 's' if n_unsure != 1 }}<small>Keep or remove</small></span><span class="go">›</span></a>{% endif %}
     {% if approvals %}<a class="row1" href="/review"><span class="rdot warn"></span><span class="r1-t">{{ approvals|length }} AI run{{ 's' if approvals|length != 1 }} to approve</span><span class="go">›</span></a>{% endif %}
     {% if glossary %}<a class="row1" href="/review"><span class="rdot"></span><span class="r1-t">{{ glossary|length }} glossary suggestion{{ 's' if glossary|length != 1 }}</span><span class="go">›</span></a>{% endif %}
@@ -89,7 +101,7 @@
 <section class="section">
   <div class="section-head"><h2>Late promises to you</h2><a class="aside" href="/tasks?tab=waiting">All</a></div>
   <div class="card" data-cap="3" data-all="/tasks?tab=waiting">{% for t in overdue_theirs %}
-    <div class="item{{ ' tap-row' if t.conversation_id }}">{{ m.avatar(t.owner_name) }}<div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}
+    <div class="item{{ ' tap-row' if t.conversation_id }}">{{ m.avatar(t.owner_name) }}<div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ m.task_full(t) }}
       <div class="item-sub"><b>{{ t.owner_name }}</b>{{ m.due(t) }}</div></div>
       <div class="item-actions"><button type="button" class="btn btn-sm" data-copy="#nudge-{{ t.id }}"
         title="Copies a friendly reminder to paste into a text or email. Nothing is sent.">Nudge</button>

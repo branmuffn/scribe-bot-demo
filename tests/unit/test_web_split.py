@@ -89,7 +89,7 @@ def test_line_panel_offers_join_and_page_has_select_hint(env):
     client, conn, _ = env
     sid = one(conn, "SELECT id FROM segment WHERE conversation_id = 1 AND idx = 2")
     assert f'action="/segments/{sid}/join"' in client.get(f"/segments/{sid}/edit").text
-    page = client.get("/conversations/1").text
+    page = client.get("/conversations/1?tx=1").text
     assert "data-split-speakers" in page and "tap a <b>coloured name</b>" in page and "<b>✂ split</b>" in page
 
 

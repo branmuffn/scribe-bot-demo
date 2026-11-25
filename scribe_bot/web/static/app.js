@@ -1,6 +1,13 @@
+/* No vibration (Brian, 2026-11-23: his browser can't vibrate, so the setting and every buzz are gone). */
+(function () {
+  // a talk page that was loaded early (on press) reports that it was really opened, so its New badge goes
+  function opened() { var m = document.getElementById("mark-opened"); if (m && !m.dataset.sent) { m.dataset.sent = "1"; fetch("/conversations/" + m.dataset.cid + "/opened", { method: "POST", credentials: "same-origin" }).catch(function () {}); } }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", opened); else opened();
+})();
+
 // Scribe Bot page helpers (vanilla JS, no framework). Event delegation, so content swapped in by htmx just works.
 //   tap a timestamp to play · highlight the line being played · "line N" links open the transcript
-//   keep scroll position on boosted form posts · keyboard shortcuts · copy-to-clipboard · in-app voice notes
+//   keyboard shortcuts · copy-to-clipboard · in-app voice notes
 (function () {
   var lastUserScroll = 0;
   ["wheel", "touchmove"].forEach(function (ev) {
@@ -102,16 +109,26 @@
   // playing it checks every 0.1 s (timeupdate alone comes every ~0.25 s), with a small LEAD: word times mark a word a
   // moment after it starts. (2026-10-20: it ran ~1 s late, because the finished line kept the light for its whole TAIL.)
   var current = null, ticker = null, LEAD = 0.2, TAIL = 0.75;
+  // R5-22: the lines and their times are read once and kept until the page changes, not looked up and parsed again
+  // 10 times a second while playing (a long talk has thousands of lines: that ran the whole time audio played).
+  var timedCache = null;
+  if (window.MutationObserver) new MutationObserver(function () { timedCache = null; })
+    .observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-start", "data-end"] });
+  function timed() {
+    if (!timedCache || !window.MutationObserver) {
+      var ls = lines();
+      timedCache = { ls: ls, s: ls.map(function (l) { return parseFloat(l.dataset.start); }), e: ls.map(function (l) { return parseFloat(l.dataset.end); }) };
+    }
+    return timedCache;
+  }
   function highlight(a) {
     if (!document.body.contains(a)) { clearInterval(ticker); ticker = null; return; }   // left the page while playing
-    var t = a.currentTime + LEAD, hit = null, tail = null;
-    lines().some(function (l) {   // lines are in time order
-      var s = parseFloat(l.dataset.start), end = parseFloat(l.dataset.end);
-      if (s > t) return true;
-      if (t < end) hit = l;
-      else if (t < end + TAIL) tail = l;
-      return false;
-    });
+    var t = a.currentTime + LEAD, hit = null, tail = null, tm = timed();
+    for (var i = 0; i < tm.ls.length; i++) {   // lines are in time order
+      if (tm.s[i] > t) break;
+      if (t < tm.e[i]) hit = tm.ls[i];
+      else if (t < tm.e[i] + TAIL) tail = tm.ls[i];
+    }
     hit = hit || tail;
     if (hit === current) return;
     if (current) current.classList.remove("playing");
@@ -119,7 +136,8 @@
     if (!hit) return;
     hit.classList.add("playing");
     var d = document.getElementById("transcript");
-    if (d && d.open && Date.now() - lastUserScroll > 4000) {
+    // R4-12 (Brian, 2026-11-25): never scroll away from a line being fixed
+    if (d && d.open && Date.now() - lastUserScroll > 4000 && !document.querySelector(".lines details.line-edit[open], .lines [contenteditable=\"true\"], .fix-menu")) {
       var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       hit.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     }
@@ -133,6 +151,18 @@
   ["pause", "ended"].forEach(function (ev) {
     document.addEventListener(ev, function (e) { if (e.target.id === "player") { clearInterval(ticker); ticker = null; } }, true);
   });
+
+  // R5-10: a second tap on a form's button before the page answers sent it twice (two "Add task"s, a line split or
+  // joined twice). A plain post (one that loads a page) goes once; forms the page code sends itself are left alone.
+  // Checked last (on window), so a form another handler took over (htmx, fetch, a confirm step) is already marked.
+  window.addEventListener("submit", function (e) {
+    var f = e.target;
+    if (e.defaultPrevented || !f || !f.getAttribute || (f.getAttribute("method") || "").toLowerCase() !== "post" || f.target) return;
+    var t = +f.dataset.sentAt || 0;
+    if (Date.now() - t < 4000) { e.preventDefault(); return; }
+    f.dataset.sentAt = Date.now();
+  });
+  addEventListener("pageshow", function () { document.querySelectorAll("form[data-sent-at]").forEach(function (f) { delete f.dataset.sentAt; }); });
 
   // Fallback for full-page form posts: come back to the same scroll position instead of the top.
   document.addEventListener("submit", function (e) {
@@ -279,15 +309,19 @@
     var start = e.target.closest("[data-tour-start]");
     if (start) { setTour({ i: 0, conv: start.dataset.tourStart || null }); showTour(); return; }
     var b = e.target.closest("[data-tour]");
-    if (!b) return;
     var st = tourState();
     if (!st) return;
+    // B26 (Brian, 2026-11-25): a tap anywhere outside the tour card ends the tour, like the ✕ (and Escape).
+    if (!b) { var card = document.getElementById("tour"); if (card && !card.hidden && !card.contains(e.target)) { setTour(null); showTour(); } return; }
     if (b.dataset.tour === "skip" || (b.dataset.tour === "next" && st.i === TOUR.length - 1)) setTour(null);
     else { st.i = Math.max(0, st.i + (b.dataset.tour === "next" ? 1 : -1)); setTour(st); }
     showTour();
   });
+  document.addEventListener("keydown", function (e) {
+    var card = document.getElementById("tour");
+    if (e.key === "Escape" && card && !card.hidden && tourState()) { setTour(null); showTour(); }
+  });
   document.addEventListener("DOMContentLoaded", showTour);
-  document.addEventListener("htmx:afterSettle", function (e) { if (e.detail.boosted) showTour(); });
 
   // Today's Processing card is replaced every 15 s: an opened "Each step" list stays open.
   var openSteps = [];
@@ -299,37 +333,6 @@
     openSteps.forEach(function (id) { var d = document.querySelector('#progress-live details.steps[data-job="' + id + '"]'); if (d) d.open = true; });
     openSteps = [];
   });
-
-  // Swipe a row (phone): left runs its form[data-swipe=left] (Remove / Dismiss), right its form[data-swipe=right]
-  // (Remind me later). The buttons stay for desktop and for anyone who prefers them.
-  var sw = null;
-  document.addEventListener("touchstart", function (e) {
-    var row = e.target.closest && e.target.closest(".swipeable");
-    if (!row || e.touches.length !== 1 || e.target.closest("input,textarea,select,details[open]")) { sw = null; return; }
-    sw = { row: row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, on: false };
-  }, { passive: true });
-  document.addEventListener("touchmove", function (e) {
-    if (!sw) return;
-    var dx = e.touches[0].clientX - sw.x, dy = e.touches[0].clientY - sw.y;
-    if (!sw.on && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }   // scrolling, not swiping
-    if (Math.abs(dx) > 10) sw.on = true;
-    if (!sw.on) return;
-    var f = swipeForm(sw.row, dx < 0 ? "left" : "right");
-    sw.dx = f ? dx : dx / 4;   // no action that way: a small rubber-band only
-    sw.row.style.transform = "translateX(" + sw.dx + "px)";
-    sw.row.dataset.swipeHint = f ? (f.dataset.swipeLabel || "") : "";
-    sw.row.classList.toggle("swipe-left", dx < 0); sw.row.classList.toggle("swipe-right", dx > 0);
-  }, { passive: true });
-  document.addEventListener("touchend", function () {
-    if (!sw || !sw.on) { sw = null; return; }
-    var row = sw.row, dx = sw.dx, f = swipeForm(row, dx < 0 ? "left" : "right");
-    sw = null;
-    if (f && Math.abs(dx) > row.offsetWidth * 0.35) {
-      row.style.transform = "translateX(" + (dx < 0 ? "-" : "") + "110%)"; row.style.opacity = "0";
-      setTimeout(function () { f.requestSubmit(); }, 150);
-    } else { row.style.transform = ""; row.classList.remove("swipe-left", "swipe-right"); }
-  });
-  function swipeForm(row, dir) { return row.querySelector('form[data-swipe="' + dir + '"], form[data-swipe="both"]'); }
 
   // Long lists: a card with data-limit="5" shows its first 5 rows and a "Show all N" button.
   // Folded sections with data-remember stay open or closed the way Brian left them (this browser only).
@@ -448,6 +451,7 @@
   window.ScribeEdit = startEdit;
   document.addEventListener("dblclick", function (e) {
     var el = e.target.closest("[data-edit-url]");
+    if (el && el.closest("[data-hold-copy]")) return;   // summary text: a double-tap selects words (Brian, 2026-11-23); ✎ edits
     // Splitting a line ("Only part of it?") uses taps too: a double-tap there, or right after a split, isn't an edit
     // (Brian, 2026-11-21: the two collided). Words are fixed with ✎ Fix words in the name menu, or a double-tap elsewhere.
     if (el && window.ScribeFix && window.ScribeFix.busy()) { e.preventDefault(); return; }
@@ -483,6 +487,43 @@
     if (f) { e.stopImmediatePropagation(); cancelEdit(f); }
   }, true);
 
+  // U12 (Brian, 2026-11-25: a transcript line's ⋯ and right-click › More fixes were "unusable as built", waiting on the
+  // M14 every time): the line's fix panel is copied from the page's one #line-edit-tpl the moment it opens, and filled
+  // with this line's id, speaker and words. Only if that copy is missing does it ask the M14 (the old way).
+  // R4-12 (Brian, 2026-11-25): opening a line's fixes pauses the audio, so the page stops moving under you
+  document.addEventListener("toggle", function (e) {
+    var d = e.target; if (!d.open || !d.matches || !d.matches("details.line-edit")) return;
+    var a = document.getElementById("player"); if (a && !a.paused) a.pause();
+  }, true);
+  // R4-11: picking who said the line saves it at once; "Someone new…" asks for the name first
+  document.addEventListener("change", function (e) {
+    var sel = e.target; if (!sel.matches || !sel.matches("select[data-le-who]")) return;
+    var f = sel.form, extra = f.querySelectorAll(".le-new");
+    if (!sel.value) { extra.forEach(function (x) { x.hidden = false; }); var n = f.querySelector('input[name="new_name"]'); if (n) n.focus(); return; }
+    extra.forEach(function (x) { x.hidden = true; });
+    if (f.requestSubmit) f.requestSubmit(); else f.submit();
+  });
+  document.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (!d.open || !d.matches || !d.matches("details.line-edit") || d.dataset.filled) return;
+    var line = d.closest(".line[data-seg]"), panel = d.querySelector(":scope > .chip-panel"); if (!line || !panel) return;
+    d.dataset.filled = "1";
+    var sid = line.dataset.seg, idx = line.id.slice(1), tpl = document.getElementById("line-edit-tpl");
+    function put(html) {
+      var w = document.createElement("div"); w.innerHTML = html;
+      var np = w.querySelector(".chip-panel"); if (!np) return;
+      var sel = np.querySelector('select[name="speaker_id"]'); if (sel && line.dataset.sp) sel.value = line.dataset.sp;
+      var ta = np.querySelector('textarea[name="text"]'), said = line.querySelector(":scope > div > span");
+      if (ta && said && !ta.value) ta.value = said.textContent;
+      if (idx === "0") { var j = np.querySelector(".le-join"); if (j) j.remove(); }
+      panel.replaceWith(np);
+      if (window.htmx) htmx.process(np);
+      try { np.querySelectorAll("textarea").forEach(grow); } catch (_) {}
+    }
+    if (tpl) put(tpl.innerHTML.replace(/__SID__/g, sid).replace(/__IDX__/g, idx));
+    else fetch("/segments/" + sid + "/edit", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.text() : ""; }).then(put).catch(function () { delete d.dataset.filled; });
+  }, true);
+
   // "Change person" pickers fill their list from the page's single #people-options when first opened.
   document.addEventListener("toggle", function (e) {
     if (!e.target.open) return;
@@ -503,6 +544,7 @@
     var mr = null, chunks = [];
     rec.hidden = false;
     rec.addEventListener("click", function () {
+      if (rec.dataset.retry && rec._retry) { delete rec.dataset.retry; rec._retry(); return; }
       if (mr && mr.state === "recording") { mr.stop(); return; }
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
         chunks = [];
@@ -510,15 +552,25 @@
         mr.ondataavailable = function (e) { chunks.push(e.data); };
         mr.onstop = function () {
           stream.getTracks().forEach(function (t) { t.stop(); });
-          rec.textContent = "Uploading…";
           var f = new FormData();
           var stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", "_");
           f.append("file", new Blob(chunks, { type: "audio/webm" }), "Voice note " + stamp + ".webm");
-          fetch("/capture/upload", { method: "POST", body: f }).then(function () { location.href = "/capture?saved=audio"; });
+          // R5-13: a failed upload kept "Uploading…" for good; now it says so and the next tap sends the same note again
+          var up = function () {
+            rec.textContent = "Uploading…";
+            fetch("/capture/upload", { method: "POST", body: f }).then(function (r) {
+              if (!r.ok) throw r.status;
+              location.href = "/capture?saved=audio";
+            }).catch(function (st) {
+              rec.textContent = "Didn't save · Tap to try again"; rec.dataset.retry = "1"; rec._retry = up;
+              window.sbNote(window.sbFail(typeof st === "number" ? st : 0));
+            });
+          };
+          up();
         };
         mr.start();
         rec.textContent = "■ Stop and save";
-      });
+      }).catch(function () { window.sbNote("The microphone isn't allowed. Allow it for this site in the browser's settings."); });
     });
   }
 
@@ -533,22 +585,19 @@
     n.textContent = text; n.hidden = false;
     clearTimeout(netNote.t); netNote.t = setTimeout(function () { n.hidden = true; }, 8000);
   }
+  window.sbNote = netNote;   // R5-12: the app's own note for every block (no browser alert boxes)
+  // R5-11: never an error code on screen; a plain sentence that says what to do
+  window.sbFail = function (status) {
+    return status >= 500 ? "Something went wrong on the M14. Try again; if it keeps happening, open Status."
+      : status === 0 ? "Can't reach the M14. Check Tailscale is on, then try again."
+      : status === 413 ? "That file is too big to send."
+      : "That didn't work. Reload the page and try again.";
+  };
   document.addEventListener("htmx:responseError", function (e) {
     var d = e.detail, msg = "";
-    if (d.boosted && d.requestConfig && d.requestConfig.verb === "get") { location.href = d.pathInfo.requestPath; return; }
     try { msg = JSON.parse(d.xhr.responseText).detail; } catch (_) {}
-    netNote(typeof msg === "string" && msg ? msg : "That didn't work (error " + d.xhr.status + "). Try again.");
-  });
-  // After a deploy, a window left open kept running the page code it first loaded (htmx swaps only the page body), so
-  // fixes didn't reach it (2026-10-22: tapping transcript text still did nothing on the desktop). Every response says
-  // which page code the M14 serves; when it's newer, the page change loads in full instead (new CSS and JS).
-  var loadedV = (/[?&]v=(\w+)/.exec((document.querySelector('script[src*="/static/app.js"]') || {}).src || "") || [])[1];
-  document.addEventListener("htmx:beforeSwap", function (e) {
-    var d = e.detail, v = d.xhr && d.xhr.getResponseHeader("X-Asset-V"), url = d.xhr && d.xhr.responseURL;
-    if (!d.boosted || !v || !loadedV || v === loadedV || !url) return;
-    if (d.requestConfig && d.requestConfig.verb !== "get" && new URL(url).pathname === d.pathInfo.requestPath) return;   // a post shown in place
-    d.shouldSwap = false;
-    location.href = url;
+    if (d.xhr.status === 422 && typeof msg !== "string") msg = "Something in that form was missing. Check it and try again.";
+    netNote(typeof msg === "string" && msg ? msg : window.sbFail(d.xhr.status));
   });
   document.addEventListener("htmx:sendError", function () { netNote("Can't reach the M14. Check Tailscale is on, then try again."); });
   document.addEventListener("htmx:timeout", function () { netNote("The M14 is slow to answer. Try again in a moment."); });
@@ -611,16 +660,7 @@
     st.classList.toggle("saved", e.detail.successful);
   });
   document.addEventListener("DOMContentLoaded", onPage);
-  document.addEventListener("htmx:afterSettle", function (e) { bindRecorder(e.target); if (e.detail && e.detail.boosted) onPage(); });
-  // A new page starts at the top (Brian, 2026-11-20: pages opened "randomly in the middle"). Boosted links kept the
-  // old page's scroll position (scrollIntoViewOnBoost is off so saves made in place keep your spot); now any page
-  // opened by a link or a search/filter form goes to the top, unless the link points at a spot (#transcript, #L12).
-  document.addEventListener("htmx:afterSwap", function (e) {
-    var d = e.detail || {};
-    if (!d.boosted || !d.requestConfig || d.requestConfig.verb !== "get" || location.hash) return;
-    window.scrollTo(0, 0);
-    var side = document.querySelector(".conv-side"); if (side) side.scrollTop = 0;
-  });
+  document.addEventListener("htmx:afterSettle", function (e) { bindRecorder(e.target); });
   // Zoomed in by accident stays zoomed on the next page (links swap the page in place, so the browser keeps the zoom;
   // Brian, 2026-11-21: "I have to zoom out to see the rail"). Each new page snaps back to 100%: the viewport is pinned
   // to scale 1 for a moment, then pinch-zoom is allowed again.
@@ -631,7 +671,6 @@
     meta.setAttribute("content", base + ",maximum-scale=1");
     setTimeout(function () { meta.setAttribute("content", base); }, 400);
   }
-  document.addEventListener("htmx:afterSwap", function (e) { var d = e.detail || {}; if (d.boosted) unzoom(); });
   window.addEventListener("pageshow", unzoom);
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 })();
@@ -658,6 +697,9 @@
 
 /* A link to a line (#L12) or a section opens the full conversation page instead of the glance card. */
 (function () {
+  // B16 (2026-11-25): this block called openTranscript(), which lives in another block, so a page opened at "#L6" stopped
+  // with "openTranscript is not defined" and the transcript never loaded. It has its own copy now.
+  function openTranscript() { var d = document.getElementById("transcript"); if (d) d.open = true; }
   /* The last choice is remembered on this device (Brian, 2026-11-20: getting to "Show everything" took a long scroll):
      after "Show everything", talks open in full until "‹ At a glance" is tapped. */
   function wantsFull() { try { return localStorage.getItem("talkView") === "full"; } catch (_) { return false; } }
@@ -665,6 +707,7 @@
     if (!location.hash && wantsFull() && cv.classList.contains("glance-on")) { cv.classList.remove("glance-on"); var g0 = document.getElementById("glance"); if (g0) g0.hidden = true; return; }
     if (location.hash && location.hash !== "#glance") { cv.classList.remove("glance-on"); var gl = document.getElementById("glance"); if (gl) gl.hidden = true;
     var el = document.getElementById(location.hash.slice(1));   // "#transcript" etc. arrives opened, not folded
+    if (!el && /^#(L\d+|part-\d+)$/.test(location.hash)) { openTranscript(); return; }   // a line: load the transcript first, then this runs again
     if (el) { for (var d = el; d; d = d.parentElement) if (d.tagName === "DETAILS") d.open = true; el.scrollIntoView({ block: "start" }); } } }
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
@@ -912,6 +955,8 @@
     menu.innerHTML = html; menu._y = scrollY;
     document.body.appendChild(menu);
     var r = anchor.getBoundingClientRect(), w = menu.offsetWidth;
+    // R4-11: a line that follows the same speaker hides its name, so a menu anchored there opened in the top-left corner
+    if (!r.width && !r.height) r = (anchor.closest(".line") || anchor).getBoundingClientRect();
     menu.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left)) + "px";
     var top = r.bottom + 6; if (top + menu.offsetHeight > innerHeight - 70) top = Math.max(8, r.top - menu.offsetHeight - 6);
     menu.style.top = top + "px";
@@ -995,9 +1040,186 @@
   document.addEventListener("htmx:afterSettle", function () { if (box()) regroup(); });
 })();
 
+/* Uploads with progress (Brian, 2026-11-23: 23 Voice Memos sat on a stuck screen with no sign of life or result).
+   One file at a time, so the card can say "Uploading 3 of 23", the file name and its %, then "Checking" while the M14
+   saves it. At the end every file is listed: Added / Already in Scribe Bot (never added twice; links to the talk) /
+   Didn't upload (Try again). Leaving the page mid-upload asks first. Used by Capture › Upload and drag-and-drop. */
+window.ScribeUpload = (function () {
+  var card = null, busy = false, xhr = null, stop = false;
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function mb(n) { return n < 1048576 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
+  function el() {
+    if (card) return card;
+    card = document.createElement("div"); card.className = "up-card"; card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
+    card.innerHTML = '<div class="up-head"><b class="up-title"></b><button type="button" class="up-x" aria-label="Close">✕</button></div>' +
+      '<div class="up-bar"><i></i></div><div class="up-now meta"></div><ul class="up-list"></ul><div class="up-actions"></div>';
+    document.body.appendChild(card);
+    card.querySelector(".up-x").addEventListener("click", close);
+    return card;
+  }
+  function close() {
+    if (busy === true) { window.sbConfirm("Stop uploading? Files already sent are kept.", "Stop").then(function (ok) { if (ok) { stop = true; if (xhr) xhr.abort(); } }); return; }
+    busy = false; if (card) { card.remove(); card = null; }
+  }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && card && busy !== true) close(); });
+  document.addEventListener("pointerdown", function (e) { if (card && busy !== true && !card.contains(e.target)) close(); }, true);
+  window.addEventListener("beforeunload", function (e) { if (busy === true) { e.preventDefault(); e.returnValue = ""; } });
+  var LABEL = { audio: ["ok", "Added"], older: ["ok", "Added (you had it, never processed)"], transcript: ["ok", "Transcript saved"],
+    known: ["dup", "Already in Scribe Bot, skipped"], pending: ["dup", "Already uploaded, skipped"], failed: ["bad", "Didn't upload"] };
+  function row(f) {
+    var li = document.createElement("li"); li.className = "up-row up-wait";
+    li.innerHTML = '<span class="up-ic"></span><span class="up-name">' + esc(f.name) + '</span><span class="up-st meta">Waiting</span>';
+    return li;
+  }
+  function mark(li, res) {
+    var l = LABEL[res.result] || LABEL.audio, st = li.querySelector(".up-st");
+    li.className = "up-row up-" + l[0];
+    var txt = l[1];
+    if (res.result === "known" && res.trash) txt = "Already in Scribe Bot (in Trash), skipped";
+    st.innerHTML = esc(txt) + (res.href && res.title ? ': <a href="' + esc(res.href) + '">' + esc(res.title) + "</a>" : "");
+  }
+  var withAi = false;   // G2: the choice made on the card before uploading
+  function send(f, onProg) {
+    return new Promise(function (ok) {
+      var fd = new FormData(); fd.append("file", f, f.name); if (withAi) fd.append("ai", "1");
+      xhr = new XMLHttpRequest();
+      xhr.open("POST", "/capture/upload"); xhr.setRequestHeader("Accept", "application/json");
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable) onProg(e.loaded, e.total); };
+      xhr.upload.onload = function () { onProg(-1); };
+      xhr.onload = function () {
+        var r = null; try { r = JSON.parse(xhr.responseText).results[0]; } catch (_) {}
+        ok(xhr.status === 200 && r ? r : { result: "failed" });
+      };
+      xhr.onerror = xhr.onabort = xhr.ontimeout = function () { ok({ result: "failed" }); };
+      xhr.send(fd);
+    });
+  }
+  // G2 (Brian, 2026-11-23): choose up front: Transcribe only (free) or Transcribe + AI notes (with a cost estimate from
+  // the files' lengths). The last choice is remembered on this device.
+  function lengthOf(f) {
+    return new Promise(function (ok) {
+      if (!/^audio|^video/.test(f.type || "") && !/\.(m4a|mp3|wav|webm|opus|ogg|aac|flac)$/i.test(f.name)) return ok(0);
+      var a = document.createElement("audio"), u = URL.createObjectURL(f), done = function (v) { URL.revokeObjectURL(u); ok(v || 0); };
+      a.preload = "metadata"; a.onloadedmetadata = function () { done(isFinite(a.duration) ? a.duration : 0); }; a.onerror = function () { done(0); };
+      setTimeout(function () { done(0); }, 4000); a.src = u;
+    });
+  }
+  function choose(files) {
+    var audio = files.filter(function (f) { return !/\.(txt|vtt|srt)$/i.test(f.name); });
+    if (!audio.length) return Promise.resolve(false);
+    var c = el(), last = null; try { last = localStorage.getItem("upChoice"); } catch (_) {}
+    c.querySelector(".up-title").textContent = "Upload " + audio.length + " recording" + (audio.length > 1 ? "s" : "");
+    c.querySelector(".up-list").innerHTML = ""; c.querySelector(".up-now").textContent = ""; c.classList.add("up-done");
+    var acts = c.querySelector(".up-actions");
+    acts.innerHTML = '<div class="up-choose" role="radiogroup" aria-label="What to make">' +
+      '<button type="button" class="up-opt" data-up-ai="0" role="radio"><i class="qs-radio"></i><span><b>Transcribe only</b><small>Free · Summarize any of them later</small></span></button>' +
+      '<button type="button" class="up-opt" data-up-ai="1" role="radio"><i class="qs-radio"></i><span><b>Transcribe + AI notes</b><small class="up-cost">Summary, tasks and decisions · working out the cost…</small></span></button></div>' +
+      '<div class="up-btns"><button type="button" class="btn btn-ghost up-cancel">Cancel</button><button type="button" class="btn btn-primary up-go">Upload</button></div>';
+    var pick = last === "1" ? "1" : "0";
+    function paintPick() { acts.querySelectorAll(".up-opt").forEach(function (b) { var on = b.dataset.upAi === pick; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); }); }
+    paintPick();
+    Promise.all(audio.map(lengthOf)).then(function (secs) {
+      var mins = secs.reduce(function (a, b) { return a + b; }, 0) / 60, known = secs.every(Boolean);
+      var cost = Math.max(0.01, mins * 0.0011);
+      var el2 = acts.querySelector(".up-cost"); if (el2) el2.textContent = "Summary, tasks and decisions · " + (mins ? (known ? "about $" : "at least $") + cost.toFixed(2) : "about $0.001 a minute");
+    });
+    return new Promise(function (ok) {
+      acts.addEventListener("click", function (e) {
+        var o = e.target.closest(".up-opt"); if (o) { pick = o.dataset.upAi; paintPick(); return; }
+        if (e.target.closest(".up-cancel")) { ok(null); return; }
+        if (e.target.closest(".up-go")) { try { localStorage.setItem("upChoice", pick); } catch (_) {} ok(pick === "1"); }
+      });
+    });
+  }
+  function run(files, ai) {
+    if (busy || !files.length) return;
+    files = Array.prototype.slice.call(files);
+    if (ai === undefined) { busy = "choosing"; return choose(files).then(function (v) { busy = false; if (v === null) { close(); return; } run(files, v); }); }
+    withAi = !!ai;
+    var c = el(), list = c.querySelector(".up-list"), bar = c.querySelector(".up-bar i"), now = c.querySelector(".up-now"),
+      title = c.querySelector(".up-title"), acts = c.querySelector(".up-actions");
+    list.innerHTML = ""; acts.innerHTML = ""; c.classList.remove("up-done");
+    var rows = files.map(function (f) { var li = row(f); list.appendChild(li); return li; });
+    var total = files.reduce(function (a, f) { return a + f.size; }, 0) || 1, before = 0, out = [];
+    busy = true; stop = false;
+    var i = 0, pre = {};
+    // Fingerprint each file here first and ask which ones Scribe Bot already has, so duplicates are skipped at once
+    // instead of after a full upload (Brian, 2026-11-23). Needs crypto.subtle (https); without it every file is sent.
+    function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }
+    function precheck() {
+      if (!(window.crypto && crypto.subtle)) return Promise.resolve();
+      title.textContent = "Checking for duplicates…";
+      var hs = [], k = 0;
+      return files.reduce(function (p, f) {
+        return p.then(function () {
+          if (stop || /\.(txt|vtt|srt)$/i.test(f.name) || f.size > 400 * 1048576) { hs.push(null); return; }
+          now.textContent = "Checking " + (++k) + " of " + files.length + " · " + f.name;
+          return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(function (d) { hs.push(hex(d)); },
+            function () { hs.push(null); });
+        });
+      }, Promise.resolve()).then(function () {
+        var ask = hs.filter(Boolean); if (!ask.length) return;
+        return fetch("/capture/known", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ hashes: ask }) }).then(function (r) { return r.ok ? r.json() : { known: {} }; }).then(function (j) {
+          hs.forEach(function (h, n) { if (h && j.known[h]) pre[n] = j.known[h]; });
+        });
+      }).catch(function () {});
+    }
+    precheck().then(function () { now.textContent = ""; next(); });
+    function next() {
+      if (i < files.length && pre[i]) { out.push({ file: files[i], res: pre[i] }); mark(rows[i], pre[i]); before += files[i].size; i++; return next(); }
+      if (i >= files.length || stop) return finish();
+      var f = files[i], li = rows[i];
+      title.textContent = "Uploading " + (i + 1) + " of " + files.length;
+      li.className = "up-row up-now-row"; li.querySelector(".up-st").textContent = "Uploading";
+      li.scrollIntoView({ block: "nearest" });
+      send(f, function (done, size) {
+        if (done < 0) { now.textContent = f.name + " · Checking and saving on the M14…"; li.querySelector(".up-st").textContent = "Checking"; return; }
+        now.textContent = f.name + " · " + mb(done) + " of " + mb(size) + " (" + Math.round(done / size * 100) + "%)";
+        bar.style.width = Math.min(100, (before + done) / total * 100) + "%";
+      }).then(function (res) {
+        out.push({ file: f, res: res }); mark(li, res);
+        before += f.size; bar.style.width = (before / total * 100) + "%";
+        i++; next();
+      });
+    }
+    function finish() {
+      busy = false; xhr = null;
+      rows.slice(out.length).forEach(function (li) { li.querySelector(".up-st").textContent = "Not sent (stopped)"; });
+      var n = function (k) { return out.filter(function (o) { return k.indexOf(o.res.result) >= 0; }).length; };
+      var added = n(["audio", "older"]), dup = n(["known", "pending"]), bad = n(["failed"]), tx = n(["transcript"]);
+      var parts = [];
+      if (added) parts.push(added + " added");
+      if (tx) parts.push(tx + " transcript" + (tx > 1 ? "s" : ""));
+      if (dup) parts.push(dup + " already in Scribe Bot");
+      if (bad) parts.push(bad + " didn't upload");
+      title.textContent = (bad ? "Done, with problems: " : "✓ Done: ") + (parts.join(" · ") || "nothing sent");
+      now.textContent = added ? (withAi ? "New recordings show in Talks within a minute; AI notes follow a few minutes after each transcript." : "New recordings show in Talks within a minute, transcript only. Summarize any of them when you like.") :
+        dup && !bad ? "Nothing new: Scribe Bot already had these." : "";
+      c.classList.add("up-done");
+      acts.innerHTML = (bad ? '<button type="button" class="btn up-retry">Try again (' + bad + ")</button>" : "") +
+        (added ? '<a class="btn btn-primary" href="/inbox">Open Inbox</a>' : "") + '<button type="button" class="btn up-close">Close</button>';
+      acts.querySelector(".up-close").addEventListener("click", close);
+      var rt = acts.querySelector(".up-retry");
+      if (rt) rt.addEventListener("click", function () { run(out.filter(function (o) { return o.res.result === "failed"; }).map(function (o) { return o.file; }), withAi); });
+    }
+  }
+  /* Capture › Upload: the form sends through the uploader instead of a page load (a plain post still works without JS) */
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.matches || !form.matches('form[action="/capture/upload"]')) return;
+    var inp = form.querySelector('input[type="file"]');
+    if (!inp || !inp.files.length || !window.XMLHttpRequest) return;
+    e.preventDefault();
+    run(inp.files);
+    setTimeout(function () { inp.value = ""; }, 0);
+  });
+  return run;
+})();
+
 /* Drop anywhere (Brian, 2026-11-20: dragging a memo onto the page just opened it in a new tab). Drop audio files
-   (Voice Memos, Recorder, anything) and .txt transcripts on any Scribe Bot page: they upload together and the Inbox
-   opens. A .txt with the same name as a recording is its transcript; Voice Memos carry theirs inside the file. */
+   (Voice Memos, Recorder, anything) and .txt transcripts on any Scribe Bot page: they upload with the progress card
+   above (one at a time, each file's result listed). A .txt with the same name as a recording is its transcript; Voice Memos carry theirs inside the file. */
 (function () {
   var over = null, depth = 0;
   function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") >= 0; }
@@ -1006,7 +1228,7 @@
     over.innerHTML = "<div>" + text + "</div>"; over.hidden = false;
   }
   function hide() { depth = 0; if (over) over.hidden = true; }
-  document.addEventListener("dragenter", function (e) { if (!hasFiles(e)) return; depth++; show("⬇︎ Drop recordings and .txt transcripts<br><small>They go to the Inbox, waiting for your OK</small>"); });
+  document.addEventListener("dragenter", function (e) { if (!hasFiles(e)) return; depth++; show("⬇︎ Drop recordings and .txt transcripts<br><small>You choose Transcribe only or + AI notes next</small>"); });
   document.addEventListener("dragleave", function (e) { if (hasFiles(e) && --depth <= 0) hide(); });
   document.addEventListener("dragover", function (e) { if (hasFiles(e)) e.preventDefault(); });   // without this the browser opens the file
   document.addEventListener("drop", function (e) {
@@ -1015,12 +1237,7 @@
     if (e.target.closest && e.target.closest('input[type="file"]')) { hide(); return; }
     var files = Array.prototype.filter.call(e.dataTransfer.files, function (f) { return /\.(m4a|mp3|wav|webm|opus|ogg|aac|flac|txt)$/i.test(f.name); });
     if (!files.length) { show("Only audio files and .txt transcripts can be added here."); setTimeout(hide, 2500); return; }
-    var fd = new FormData(); files.forEach(function (f) { fd.append("file", f, f.name); });
-    show("Uploading " + files.length + " file" + (files.length > 1 ? "s" : "") + "…");
-    fetch("/capture/upload", { method: "POST", body: fd, credentials: "same-origin" }).then(function (r) {
-      if (!r.ok) throw new Error(r.status);
-      location.href = "/inbox";
-    }).catch(function () { show("That upload didn't work. Try again, or use Capture › Upload."); setTimeout(hide, 4000); });
+    hide(); window.ScribeUpload(files);
   });
 })();
 
@@ -1085,8 +1302,7 @@
   }
   /* Brian, 2026-11-21: the first outline row says which page you're on ("↑ Inbox") instead of "Top" */
   function topLabel() {
-    var h = document.querySelector("#content h1"), t = h ? h.textContent.replace(/\s+/g, " ").trim() : "";
-    return "↑ " + (t ? (t.length > 26 ? t.slice(0, 25).trim() + "…" : t) : "Top");
+    return "↑ Top";   // Brian, 2026-11-25: always "Top" (a long title was cut with "…", which looked tacky)
   }
   function gather() {
     var g = gather0();
@@ -1147,8 +1363,7 @@
   function point(i) { [].forEach.call(out.querySelectorAll("a"), function (a, j) { a.classList.toggle("pointed", j === i); }); }
   function rowAt(y) { var as = out.querySelectorAll("a"); for (var i = 0; i < as.length; i++) { var r = as[i].getBoundingClientRect(); if (y >= r.top && y <= r.bottom) return i; } return -1; }
   function jump(i) { close(); var a = out.querySelectorAll("a")[i]; if (a) a.click(); }
-  /* Built on every page, including pages reached by tapping a link (hx-boost swaps the page without a reload: before
-     2026-11-20 the rail only appeared after a manual refresh). Rebuilt when the page's sections change (At a glance <->
+  /* Built on every page load and when coming back from the Back cache. Rebuilt when the page's sections change (At a glance <->
      Show everything, the transcript opened or closed), otherwise left alone. */
   function build() {
     var next = gather(), s = next.length >= 3 ? next.map(function (it) { return it.id; }).join(",") : "";
@@ -1202,9 +1417,13 @@
   window.addEventListener("scroll", schedule, { passive: true });
   var later = 0;
   function rebuild() { clearTimeout(later); later = setTimeout(build, 30); }
+  // U16P (Brian, 2026-11-25: "task sheet laggy on phone"): opening a task, a menu or a pop-up doesn't change the page's
+  // sections, so it no longer re-measures the whole page while the sheet is rising (that read stalled the animation).
+  var POPS = ".fx-sheet, .row-menu, .chip-menu, .menu-panel, .chip-pop, dialog, .task-row, .item-main, .ctx-menu, .pick-bar";
+  function fromPage(e) { var t = e.target; if (!t || !t.closest || !t.closest(POPS)) rebuild(); }
   window.addEventListener("resize", rebuild);
-  document.addEventListener("toggle", rebuild, true);              // a section or the transcript opened/closed
-  document.addEventListener("click", rebuild);                     // At a glance <-> Show everything
+  document.addEventListener("toggle", fromPage, true);             // a section or the transcript opened/closed
+  document.addEventListener("click", fromPage);                    // At a glance <-> Show everything
   window.addEventListener("hashchange", rebuild);
   document.addEventListener("htmx:afterSettle", rebuild);          // a new page arrived by tapping a link
   document.addEventListener("htmx:historyRestore", rebuild);       // Back button
@@ -1232,9 +1451,12 @@
   function n() { return Object.keys(picked).length; }
   function paint() {
     var l = list(), bar = document.getElementById("pick-bar"), on = !!(l && l.classList.contains("picking"));
-    if (l) [].forEach.call(l.querySelectorAll(".item"), function (it) { it.classList.toggle("picked", !!picked[idOf(it)]); });
-    if (bar) { bar.hidden = !on; bar.querySelector(".pick-n").textContent = n() + " picked"; bar.querySelector("[data-pick-export]").disabled = !n(); }
-    var b = document.querySelector("[data-pick-mode]"); if (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Done" : "Select"; }
+    if (l) [].forEach.call(l.querySelectorAll(".item"), function (it) { var p = !!picked[idOf(it)]; it.classList.toggle("picked", p);
+      var c = it.querySelector("[data-row-cb]"); if (c) c.setAttribute("aria-checked", p ? "true" : "false"); });
+    var mc = document.querySelector("[data-pick-all]"); if (mc && l) { var tot = l.querySelectorAll(".item [data-row-cb]").length; mc.setAttribute("aria-checked", n() && n() >= tot ? "true" : n() ? "mixed" : "false"); }
+    if (bar) { bar.hidden = !on; bar.querySelector(".pick-n").textContent = n() + " picked";
+      [].forEach.call(bar.querySelectorAll("[data-pick-export], [data-pick-act]"), function (x) { x.disabled = !n(); }); }
+    var b = document.querySelector("[data-pick-mode]:not(.pk-x)"); if (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Done" : "Select"; }
     var head = document.querySelector("[data-export-head]");
     if (head) head.innerHTML = on && n() ? "<b>Export " + n() + " picked talk" + (n() > 1 ? "s" : "") + "</b>" : '<b>Export the talks shown</b> <span class="muted">(up to 100)</span>';
     [].forEach.call(document.querySelectorAll(".fx-more .dl-list a[href]"), function (a) {
@@ -1243,18 +1465,71 @@
       a.setAttribute("href", on && n() ? base.replace(/\?.*$/, "") + "?ids=" + Object.keys(picked).join(",") + (/transcript=1/.test(base) ? "&transcript=1" : "") : base);
     });
   }
+  var lastIdx = null;
+  function fine() { return matchMedia("(hover: hover) and (pointer: fine)").matches; }
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
+    // B1 / B3 (Brian, 2026-11-23): the checkbox (computers) or the round icon (any screen) picks a talk; Shift picks a range;
+    // the last one unticked ends picking (Gmail).
+    var cb = e.target.closest("#conv-list .item [data-row-cb], #conv-list .item [data-pick-ic]");
+    if (cb) {
+      e.preventDefault(); e.stopPropagation();
+      var L0 = list(), it0 = cb.closest(".item"), id0 = idOf(it0); if (!id0 || !L0) return;
+      var all = [].slice.call(L0.querySelectorAll(".item")), i0 = all.indexOf(it0);
+      if (e.shiftKey && lastIdx != null && all[lastIdx]) { var on = !picked[id0];
+        all.slice(Math.min(i0, lastIdx), Math.max(i0, lastIdx) + 1).forEach(function (x) { var k = idOf(x); if (k) { if (on) picked[k] = 1; else delete picked[k]; } }); }
+      else if (picked[id0]) delete picked[id0]; else picked[id0] = 1;
+      lastIdx = i0; L0.classList.toggle("picking", n() > 0); paint(); return;
+    }
+    // computers: while some are ticked, clicking a talk still opens it (the boxes do the picking)
+    if (fine() && e.target.closest("#conv-list.picking .item") && !e.target.closest(".show-more")) return;
     if (e.target.closest("[data-pick-mode]")) { var l = list(); if (l) { l.classList.toggle("picking"); if (!l.classList.contains("picking")) picked = {}; } paint(); return; }
-    if (e.target.closest("[data-pick-all]")) { var l2 = list(); if (l2) [].forEach.call(l2.querySelectorAll(".item"), function (it) { var i = idOf(it); if (i) picked[i] = 1; }); paint(); return; }
+    if (e.target.closest("[data-pick-all]")) { var l2 = list(); if (l2) { var its = l2.querySelectorAll(".item"), every = n() && n() >= [].filter.call(its, idOf).length;
+      if (every) { picked = {}; if (fine()) l2.classList.remove("picking"); } else [].forEach.call(its, function (it) { var i = idOf(it); if (i) picked[i] = 1; }); } paint(); return; }
     if (e.target.closest("[data-pick-export]")) { var d = document.querySelector("details.fx-more"); if (d) d.open = true; return; }
+    var act = e.target.closest("[data-pick-act]");
+    if (act && n()) {
+      var ids = Object.keys(picked).join(",");
+      if (act.dataset.pickAct === "ai") { location.href = "/talks-bulk/ai?ids=" + ids; return; }   // the cost first
+      var lab = act.querySelector("span") || act;   // the label next to the icon
+      if (act.dataset.pickAct === "merge" && n() < 2) { lab.textContent = "Pick 2+"; setTimeout(function () { lab.textContent = "Merge"; }, 1500); return; }
+      act.disabled = true; if (act.dataset.pickAct === "merge") lab.textContent = "Merging.";
+      var f = new FormData(); f.append("ids", ids); f.append("what", act.dataset.pickAct);
+      fetch("/talks-bulk", { method: "POST", body: f, credentials: "same-origin" }).then(function (r) {
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.detail || window.sbFail(r.status)); });
+        location.href = act.dataset.pickAct === "merge" ? r.url : "/conversations";   // merged: open the new talk
+      }).catch(function (err) { act.disabled = false; lab.textContent = "Try again"; window.sbNote(err instanceof TypeError ? window.sbFail(0) : err.message); });
+      return;
+    }
+    if (Date.now() - heldAt < 700 && heldIt && e.target.closest("#conv-list .item") === heldIt) { heldIt = null; e.preventDefault(); e.stopPropagation(); return; }   // the long-press's own lift
     var it = e.target.closest("#conv-list.picking .item");
     if (it && !e.target.closest(".show-more")) {
       e.preventDefault(); e.stopPropagation();
       var id = idOf(it); if (id) { if (picked[id]) delete picked[id]; else picked[id] = 1; }
-      paint();
+      paint(); return;
+    }
+    // Brian, 2026-11-22: a tap anywhere that isn't a talk, the bar or the Export sheet stops picking (like every list)
+    var L = list();
+    if (L && L.classList.contains("picking") && !e.target.closest("#conv-list .item, #pick-bar, .fx-sheet[open] .fx-body, .undo-bar, .show-more")) {
+      e.preventDefault(); e.stopPropagation(); L.classList.remove("picking"); picked = {}; paint();
     }
   }, true);
+  document.addEventListener("keydown", function (e) { var L = list(); if (e.key === "Escape" && L && L.classList.contains("picking")) { L.classList.remove("picking"); picked = {}; paint(); } });
+  // Long-press a talk to start picking (Brian, 2026-11-22: "unable to click and hold and select them"), like the Inbox
+  var held = null, heldAt = 0, heldIt = null;
+  document.addEventListener("pointerdown", function (e) {
+    var it = e.target.closest && e.target.closest("#conv-list .item"), l = list();
+    if (!it || !l || l.classList.contains("picking") || e.pointerType === "mouse") return;
+    held = setTimeout(function () {
+      held = null; heldAt = Date.now(); heldIt = it; l.classList.add("picking"); picked = {};
+      var id = idOf(it); if (id) picked[id] = 1; paint();
+    }, 480);
+    held0 = [e.clientX, e.clientY];
+  });
+  var held0 = [0, 0];   // moving 8px any way (a swipe or a scroll) cancels the long-press (2026-11-22)
+  ["pointerup", "pointercancel", "pointermove"].forEach(function (ev) { document.addEventListener(ev, function (e) {
+    if (held && (ev !== "pointermove" || Math.hypot(e.clientX - held0[0], e.clientY - held0[1]) > 8)) { clearTimeout(held); held = null; } }); });
+  document.addEventListener("contextmenu", function (e) { if (e.target.closest && e.target.closest("#conv-list .item")) e.preventDefault(); });
   document.addEventListener("htmx:afterSettle", function () {   // "Show more" swaps the list in: keep the ticks
     var l = list(), bar = document.getElementById("pick-bar");
     if (l && bar && !bar.hidden && !l.classList.contains("picking")) l.classList.add("picking");
@@ -1277,24 +1552,42 @@
 /* Inbox (redesign, 2026-11-21): ✦ opens the row's sheet with the cost to confirm; long-press a row (or Select) to pick
    several, then Transcript only or Skip for all of them. */
 (function () {
-  var picking = false, picked = {}, held = null, heldAt = 0;
+  var picking = false, picked = {}, held = null, heldAt = 0, lastCb = null;
   function bar() { return document.getElementById("in-pick"); }
   function paint() {
     var b = bar(); if (!b) return;
     b.hidden = !picking; b.querySelector(".pick-n").textContent = Object.keys(picked).length + " selected";
     var l = document.getElementById("inbox-list"); if (l) l.classList.toggle("picking", picking);
-    document.querySelectorAll("#inbox-list .in-row").forEach(function (r) { r.classList.toggle("picked", !!picked[r.dataset.pickId]); });
+    var rows = document.querySelectorAll("#inbox-list .in-row"), n = Object.keys(picked).length;
+    rows.forEach(function (r) { var on = !!picked[r.dataset.pickId]; r.classList.toggle("picked", on); var cb = r.querySelector("[data-in-cb]"); if (cb) cb.setAttribute("aria-checked", on); });
+    var all = b.querySelector(".pk-all-in"); if (all) all.setAttribute("aria-checked", n && n === rows.length ? "true" : n ? "mixed" : "false");
     var sb = document.querySelector('[data-inpick="start"]'); if (sb) sb.textContent = picking ? "Done" : "Select";
   }
   function start() { picking = true; picked = {}; paint(); }
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
+    // Computers (Brian, 2026-11-23): a checkbox on each row, like Talks. Ticking one starts picking, unticking the last
+    // stops it; Shift-click ticks the rows in between.
+    var cb = e.target.closest("[data-in-cb]");
+    if (cb) {
+      e.preventDefault(); e.stopPropagation();
+      var r0 = cb.closest(".in-row"), id0 = r0 && r0.dataset.pickId; if (!id0) return;
+      var on = !picked[id0], list = [].slice.call(document.querySelectorAll("#inbox-list .in-row:not([hidden])"));
+      if (e.shiftKey && lastCb && picked[lastCb]) {
+        var i = list.findIndex(function (r) { return r.dataset.pickId === lastCb; }), j = list.indexOf(r0);
+        if (i >= 0) list.slice(Math.min(i, j), Math.max(i, j) + 1).forEach(function (r) { picked[r.dataset.pickId] = 1; });
+      } else if (on) picked[id0] = 1; else delete picked[id0];
+      lastCb = id0; picking = Object.keys(picked).length > 0; paint(); return;
+    }
     var b = e.target.closest("[data-inpick]");
     if (b) {
       var what = b.dataset.inpick;
       if (what === "start") { if (picking) { picking = false; picked = {}; paint(); } else start(); return; }
       if (what === "done") { picking = false; picked = {}; paint(); return; }
-      if (what === "all") { document.querySelectorAll("#inbox-list .in-row").forEach(function (r) { picked[r.dataset.pickId] = 1; }); paint(); return; }
+      if (what === "all") { var rs = document.querySelectorAll("#inbox-list .in-row:not([hidden])");
+        if (rs.length && Object.keys(picked).length >= rs.length) { picked = {}; if (matchMedia("(hover: hover) and (pointer: fine) and (min-width: 960px)").matches) picking = false; }
+        else rs.forEach(function (r) { picked[r.dataset.pickId] = 1; });
+        paint(); return; }
       var ids = Object.keys(picked); if (!ids.length) return;
       if (what === "merge") {
         var lb = b.querySelector(".pk-l") || b;
@@ -1305,14 +1598,14 @@
         var rows = ids.map(function (id) { return document.getElementById("rec-" + id); }).filter(Boolean);
         var names = rows.map(function (r) { var t = r.querySelector(".r1-t"); return t && t.firstChild ? t.firstChild.textContent.trim() : ""; }).filter(Boolean);
         var ph = document.createElement("div"); ph.className = "item in-merging"; ph.setAttribute("aria-live", "polite");
-        ph.innerHTML = '<span class="ib spin" aria-hidden="true">⧉</span><div class="item-main"><div class="item-title"></div><div class="item-sub"><span>Merging in the background</span></div></div>';
+        ph.innerHTML = '<span class="ib spin" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-merge"/></svg></span><div class="item-main"><div class="item-title"></div><div class="item-sub"><span>Merging in the background</span></div></div>';
         ph.querySelector(".item-title").textContent = names.join(" + ");
         if (rows[0]) rows[0].before(ph);
         rows.forEach(function (r) { r.hidden = true; });
         picking = false; picked = {}; paint();
         var mf = new FormData(); mf.append("ids", ids.join(","));
         fetch("/inbox/merge", { method: "POST", body: mf, credentials: "same-origin" }).then(function (r) {
-          if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || "Merge failed"); });
+          if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.detail || window.sbFail(r.status)); });
           return fetch(r.url, { credentials: "same-origin" }).then(function (x) { return x.text(); }).then(function (html) {
             var doc = new DOMParser().parseFromString(html, "text/html"), fresh = doc.getElementById("inbox-list"), cur = document.getElementById("inbox-list");
             if (fresh && cur) { cur.replaceWith(fresh); if (window.htmx) htmx.process(fresh); }
@@ -1321,20 +1614,22 @@
           });
         }).catch(function (err) {
           ph.remove(); rows.forEach(function (r) { r.hidden = false; });
-          alert(err.message);
+          window.sbNote(err instanceof TypeError ? window.sbFail(0) : err.message);
         });
         return;
       }
-      ids = ids.map(function (id) { var r = document.getElementById("rec-" + id); return r && r.dataset.review; }).filter(Boolean);
-      if (!ids.length) return;
-      b.disabled = true;
-      Promise.all(ids.map(function (id) {
-        var f = new FormData(); if (what === "local") f.append("ai", "0"); if (what === "ai") { f.append("ai", "1"); f.append("confirm", "1"); }
-        return fetch("/review/" + id + (what === "skip" ? "/dismiss" : "/approve"), { method: "POST", body: f, credentials: "same-origin" });
-      })).then(function () { location.reload(); });
+      // R5-24: Summarize shows the total cost first (it used to spend straight away)
+      if (what === "ai") { location.href = "/inbox-bulk/ai?ids=" + ids.join(","); return; }
+      // one request for the lot; older recordings are got ready on the way (2026-11-22: they used to be skipped silently)
+      b.disabled = true; var bl = b.querySelector(".pk-l"); if (bl) bl.textContent = "Working.";
+      var bf = new FormData(); bf.append("ids", ids.join(",")); bf.append("what", what);
+      fetch("/inbox/bulk", { method: "POST", body: bf, credentials: "same-origin" }).then(function (r) {
+        if (!r.ok) throw new Error("bulk " + r.status);
+        location.reload();
+      }).catch(function () { b.disabled = false; if (bl) bl.textContent = "Try again"; });
       return;
     }
-    var row = picking && e.target.closest("#inbox-list .in-row > summary");
+    var row = picking && !matchMedia("(hover: hover) and (pointer: fine) and (min-width: 960px)").matches && e.target.closest("#inbox-list .in-row > summary");
     if (row && Date.now() - heldAt < 700) { e.preventDefault(); e.stopPropagation(); return; }   // the long-press's own lift
     if (row) { e.preventDefault(); e.stopPropagation(); var id = row.parentElement.dataset.pickId; if (id) { if (picked[id]) delete picked[id]; else picked[id] = 1; } paint(); return; }
     // Brian, 2026-11-21: easy way out: a tap anywhere that isn't a row or the bar stops picking
@@ -1344,9 +1639,12 @@
   document.addEventListener("pointerdown", function (e) {
     var r = e.target.closest && e.target.closest("#inbox-list .in-row > summary");
     if (!r || picking || e.pointerType === "mouse") return;
-    held = setTimeout(function () { held = null; heldAt = Date.now(); start(); var id = r.parentElement.dataset.pickId; if (id) picked[id] = 1; paint(); if (navigator.vibrate) navigator.vibrate(15); }, 480);
+    held = setTimeout(function () { held = null; heldAt = Date.now(); start(); var id = r.parentElement.dataset.pickId; if (id) picked[id] = 1; paint(); }, 480);
+    held0 = [e.clientX, e.clientY];
   });
-  ["pointerup", "pointercancel", "pointermove"].forEach(function (ev) { document.addEventListener(ev, function (e) { if (held && (ev !== "pointermove" || Math.abs(e.movementY) > 4)) { clearTimeout(held); held = null; } }); });
+  // a finger that moves 8px any way (scroll OR a sideways swipe) is not a long-press (2026-11-22: a slow swipe selected)
+  var held0 = [0, 0];
+  ["pointerup", "pointercancel", "pointermove"].forEach(function (ev) { document.addEventListener(ev, function (e) { if (held && (ev !== "pointermove" || Math.hypot(e.clientX - held0[0], e.clientY - held0[1]) > 8)) { clearTimeout(held); held = null; } }); });
   document.addEventListener("contextmenu", function (e) { if (e.target.closest && e.target.closest("#inbox-list .in-row")) e.preventDefault(); });
   document.addEventListener("htmx:afterSettle", function () { if (!bar()) { picking = false; picked = {}; } });
 })();
@@ -1394,13 +1692,17 @@ document.addEventListener("change", function (e) {
    anywhere that isn't a row or the bar. Bar buttons: data-pk-post=<url> (POSTs ids=1,2,3, optional data-pk-confirm) or
    data-pk-go=<url> (opens url?ids=1,2,3); data-pk-min = how many it needs. */
 (function () {
-  var on = null, picked = {}, held = null, heldAt = 0;
+  var on = null, picked = {}, held = null, heldAt = 0, lastCb = null;
+  function desk() { return matchMedia("(hover: hover) and (pointer: fine) and (min-width: 960px)").matches; }
   function list() { return on && document.getElementById(on); }
   function bar() { return on && document.querySelector('[data-pk-bar="' + on + '"]'); }
   function paint() {
     document.querySelectorAll("[data-picker]").forEach(function (l) {
       var me = l.id === on; l.classList.toggle("picking", me);
-      l.querySelectorAll("[data-pick-id]").forEach(function (r) { r.classList.toggle("picked", me && !!picked[r.dataset.pickId]); });
+      l.querySelectorAll("[data-pick-id]").forEach(function (r) { var y = me && !!picked[r.dataset.pickId]; r.classList.toggle("picked", y);
+        var c = r.querySelector("[data-pk-cb]"); if (c) c.setAttribute("aria-checked", y); });
+      var all = document.querySelector('[data-pk-bar="' + l.id + '"] [data-pk-all]'), n = me ? Object.keys(picked).length : 0, t = l.querySelectorAll("[data-pick-id]").length;
+      if (all) all.setAttribute("aria-checked", n && n >= t ? "true" : n ? "mixed" : "false");
     });
     document.querySelectorAll("[data-pk-bar]").forEach(function (b) {
       b.hidden = b.dataset.pkBar !== on;
@@ -1415,9 +1717,23 @@ document.addEventListener("change", function (e) {
     if (!e.target.closest) return;
     var s = e.target.closest("[data-pk-start]");
     if (s) { e.preventDefault(); if (on === s.dataset.pkStart) stop(); else start(s.dataset.pkStart); return; }
+    // Computers (Brian, 2026-11-23): a checkbox on each row, like Talks and Inbox. The first tick starts picking, the last
+    // untick stops it, Shift-click ticks the rows in between; clicking the row itself still opens it.
+    var cb = e.target.closest("[data-pk-cb]");
+    if (cb) {
+      e.preventDefault(); e.stopPropagation();
+      var r0 = cb.closest("[data-pick-id]"), L0 = cb.closest("[data-picker]"); if (!r0 || !L0) return;
+      if (on !== L0.id) { on = L0.id; picked = {}; }
+      var id0 = r0.dataset.pickId, rows = [].slice.call(L0.querySelectorAll("[data-pick-id]"));
+      if (e.shiftKey && lastCb && picked[lastCb]) { var i = rows.findIndex(function (r) { return r.dataset.pickId === lastCb; }), j = rows.indexOf(r0);
+        if (i >= 0) rows.slice(Math.min(i, j), Math.max(i, j) + 1).forEach(function (r) { picked[r.dataset.pickId] = 1; }); }
+      else if (picked[id0]) delete picked[id0]; else picked[id0] = 1;
+      lastCb = id0; if (!Object.keys(picked).length) on = null; paint(); return;
+    }
     if (!on) return;
     if (e.target.closest("[data-pk-done]")) { stop(); return; }
-    if (e.target.closest("[data-pk-all]")) { var L = list(); if (L) L.querySelectorAll("[data-pick-id]").forEach(function (r) { picked[r.dataset.pickId] = 1; }); paint(); return; }
+    if (e.target.closest("[data-pk-all]")) { var L = list(); if (L) { var rs = L.querySelectorAll("[data-pick-id]");
+      if (rs.length && Object.keys(picked).length >= rs.length) { picked = {}; if (desk()) on = null; } else rs.forEach(function (r) { picked[r.dataset.pickId] = 1; }); } paint(); return; }
     var b = e.target.closest("[data-pk-bar] button");
     if (b) {
       var ids = Object.keys(picked), min = parseInt(b.dataset.pkMin || "1", 10);
@@ -1425,13 +1741,20 @@ document.addEventListener("change", function (e) {
       if (ids.length < min) { var t = lb.textContent; lb.textContent = "Pick " + min + "+"; setTimeout(function () { lb.textContent = t; }, 1400); return; }
       if (b.dataset.pkGo) { location.href = b.dataset.pkGo + "?ids=" + ids.join(","); return; }
       if (b.dataset.pkPost) {
-        if (b.dataset.pkConfirm && !confirm(b.dataset.pkConfirm)) return;
-        b.disabled = true; var f = new FormData(); f.append("ids", ids.join(","));
-        fetch(b.dataset.pkPost, { method: "POST", body: f, credentials: "same-origin" }).then(function (r) { location.href = r.url || location.href; });
+        var send = function () {
+          b.disabled = true; var f = new FormData(); f.append("ids", ids.join(","));
+          fetch(b.dataset.pkPost, { method: "POST", body: f, credentials: "same-origin" }).then(function (r) {
+            if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.detail || window.sbFail(r.status)); });
+            location.href = r.url || location.href;
+          }).catch(function (err) { b.disabled = false; window.sbNote(err instanceof TypeError ? window.sbFail(0) : err.message); });   // R5-13
+        };
+        if (b.dataset.pkConfirm) window.sbConfirm(b.dataset.pkConfirm, (b.querySelector(".pk-l") || b).textContent.trim()).then(function (ok) { if (ok) send(); });
+        else send();
       }
       return;
     }
     var row = e.target.closest("#" + on + " [data-pick-id]");
+    if (row && desk()) return;   // computers: the row opens; only its checkbox picks
     if (row) {
       e.preventDefault(); e.stopPropagation();
       if (Date.now() - heldAt < 700) return;   // the long-press's own lift
@@ -1444,33 +1767,33 @@ document.addEventListener("change", function (e) {
     var r = e.target.closest && e.target.closest("[data-picker] [data-pick-id]");
     if (!r || on || e.pointerType === "mouse") return;
     var l = r.closest("[data-picker]");
-    held = setTimeout(function () { held = null; heldAt = Date.now(); start(l.id); picked[r.dataset.pickId] = 1; paint(); if (navigator.vibrate) navigator.vibrate(15); }, 480);
+    held = setTimeout(function () { held = null; heldAt = Date.now(); start(l.id); picked[r.dataset.pickId] = 1; paint(); }, 480);
   });
   ["pointerup", "pointercancel", "pointermove"].forEach(function (ev) { document.addEventListener(ev, function (e) { if (held && (ev !== "pointermove" || Math.abs(e.movementY) > 4)) { clearTimeout(held); held = null; } }); });
   document.addEventListener("contextmenu", function (e) { if (e.target.closest && e.target.closest("[data-picker] [data-pick-id]")) e.preventDefault(); });
   document.addEventListener("htmx:afterSettle", function () { if (on && !list()) { on = null; picked = {}; } paint(); });
 })();
 
-/* Inbox sheet: See more / See less on the preview (Brian, 2026-11-21). */
+/* Inbox sheet: See more / Hide on the preview (Brian, 2026-11-21; R5-26: fold labels say Hide, never "less"). */
 document.addEventListener("click", function (e) {
   var b = e.target.closest && e.target.closest("[data-prev-toggle]"); if (!b) return;
   var w = b.closest(".sh-prev-wrap"), more = w.querySelector("[data-more]"), less = w.querySelector("[data-less]");
   var open = more.hidden; more.hidden = !open; less.hidden = open;
-  b.textContent = open ? "See less" : "See more" + (b.dataset.peek || "");
+  b.textContent = open ? "Hide" : "See more" + (b.dataset.peek || "");
 });
 
 /* Tap a task's title: open its sheet (Brian, 2026-11-21). */
 document.addEventListener("click", function (e) {
   var t = e.target.closest && e.target.closest("[data-open-sheet]"); if (!t || e.target.closest("a, button, form")) return;
-  if (window.ScribePick && window.ScribePick.active()) return;
+  if (window.ScribePick && window.ScribePick.active() && !matchMedia("(hover: hover) and (pointer: fine) and (min-width: 960px)").matches) return;   // phones: a tap picks
   var d = document.getElementById(t.dataset.openSheet); if (d) { e.preventDefault(); d.open = true; }
 });
 
-/* "+N more" / "See less" speakers on a talk (2026-11-21). */
+/* "+N more" / "Hide" speakers on a talk (2026-11-21). */
 document.addEventListener("click", function (e) {
   var b = e.target.closest && e.target.closest("[data-sp-more]"); if (!b) return;
   var on = b.closest(".legend").classList.toggle("show-all");
-  b.textContent = on ? "See less" : "+" + b.dataset.n + " more";
+  b.textContent = on ? "Hide" : "+" + b.dataset.n + " more";
 });
 
 /* Tasks (Brian, 2026-11-21): long-press a task also opens its sheet (the ⋯ is gone). */
@@ -1478,9 +1801,10 @@ document.addEventListener("click", function (e) {
   var held = null, at = 0, x0 = 0, y0 = 0;
   document.addEventListener("pointerdown", function (e) {
     var r = e.target.closest && e.target.closest(".task-row [data-open-sheet]");
-    if (!r || e.pointerType === "mouse" || (window.ScribePick && window.ScribePick.active())) return;
+    // N4 (2026-11-25): in a list you can pick from, a long-press starts picking (like Inbox and People); a tap opens it
+    if (!r || e.pointerType === "mouse" || r.closest("[data-picker]") || (window.ScribePick && window.ScribePick.active())) return;
     x0 = e.clientX; y0 = e.clientY;
-    held = setTimeout(function () { held = null; at = Date.now(); var d = document.getElementById(r.dataset.openSheet); if (d) d.open = true; if (navigator.vibrate) navigator.vibrate(15); }, 480);
+    held = setTimeout(function () { held = null; at = Date.now(); var d = document.getElementById(r.dataset.openSheet); if (d) d.open = true; }, 480);
   });
   document.addEventListener("pointermove", function (e) { if (held && (Math.abs(e.clientX - x0) > 8 || Math.abs(e.clientY - y0) > 8)) { clearTimeout(held); held = null; } });
   ["pointerup", "pointercancel"].forEach(function (ev) { document.addEventListener(ev, function () { if (held) { clearTimeout(held); held = null; } }); });
@@ -1508,6 +1832,9 @@ document.addEventListener("click", function (e) {
   b.parentNode.querySelectorAll("[data-notes]").forEach(function (x) { x.classList.toggle("on", x === b); });
   var s = card.querySelector(".notes-short"), dt = card.querySelector(".notes-detailed");
   if (s) s.hidden = d; if (dt) dt.hidden = !d;
+  // Scrolled down inside the summary (tabs pinned)? Start the other one at its top (Brian, 2026-11-23)
+  var head = b.closest(".sum-head"), pin = head ? parseFloat(getComputedStyle(head).top) || 0 : 0;
+  if (head && card.getBoundingClientRect().top < pin - 2) scrollTo({ top: card.getBoundingClientRect().top + scrollY - pin, behavior: "instant" });
 });
 
 /* One-tap pickers (Brian, 2026-11-21: "too many extra clicks"). A row marked data-quick-pick opens its date / date-and-time
@@ -1546,19 +1873,28 @@ document.addEventListener("click", function (e) {
       var n = t.form.querySelector(".qp-new"); if (n) { n.hidden = false; n.focus(); }
       return;
     }
+    if (t.tagName === "SELECT" && (t.value === "__not" || t.value === "__idk" || t.value === "__idk_rest")) {   // "Not X" / "Don't know" (2026-11-22) / "...or the rest" (B11)
+      var sp = t.form.querySelector('input[name="special"]'); if (sp) sp.value = t.value.slice(2);
+      t.value = ""; save(t.form); return;
+    }
     if (t.tagName === "SELECT" && !t.value) return;
     var n2 = t.form.querySelector(".qp-new"); if (n2) n2.value = "";
     save(t.form);
   });
   document.addEventListener("focusout", function (e) {   // a typed new name saves when you tap away
     var n = e.target; if (!n.matches || !n.matches(".qp-new") || !n.value.trim()) return;
-    var s = n.form.querySelector("select[data-people]"); if (s) s.value = "";
+    if (!n.isConnected || !n.form || n.form.dataset.saving || n.form.classList.contains("htmx-request")) return;   // Enter already saved it
+    var s = n.form.querySelector("select[data-people], select[data-autosave]"); if (s && s.value === "__new") s.value = "";
     save(n.form);
   });
   document.addEventListener("submit", function (e) {   // a new name wins over the list
     var n = e.target.querySelector && e.target.querySelector(".qp-new");
-    if (n && n.value.trim()) { var s = e.target.querySelector("select[data-people]"); if (s && s.value === "__new") s.value = ""; }
-    else if (n) { var s2 = e.target.querySelector("select[data-people]"); if (s2 && s2.value === "__new") { e.preventDefault(); e.stopImmediatePropagation(); } }
+    // any person list (not only [data-people] ones: a talk's speaker list sent "__new" and got error 422, 2026-11-22)
+    var sel = e.target.querySelector && e.target.querySelector('select[data-people], select[data-autosave]');
+    if (n && n.value.trim()) { var f0 = e.target; f0.dataset.saving = "1"; setTimeout(function () { delete f0.dataset.saving; }, 800); }
+    if (sel && sel.value !== "__new") sel = null;
+    if (n && n.value.trim()) { if (sel) sel.value = ""; }
+    else if (sel) { e.preventDefault(); e.stopImmediatePropagation(); n.hidden = false; n.focus(); }
   }, true);
   var reopen = null;
   document.addEventListener("htmx:beforeRequest", function (e) {
@@ -1597,7 +1933,11 @@ document.addEventListener("click", function (e) {
 (function () {
   var OPEN = "details.fx-sheet[open], details.row-menu[open], details.chip-menu[open], dialog[open]";
   var POP = ".chip-pop, .menu-panel, .fx-body";
+  // R4-04 (Brian, 2026-11-25): a sheet nudged in as a pop-up kept that nudge (and its height cap) after the layout
+  // was switched to Right or Below, so the pane opened mid-screen. In the pane, nothing of the pop-up's fit is kept.
+  function unfit(p) { p.style.translate = ""; p.style.maxHeight = ""; p.style.overflowY = ""; delete p.dataset.fitY; p.classList.remove("flip-up", "flip-down"); }
   function fit(d) {
+    if (inPane(d)) { [].forEach.call(d.querySelectorAll(POP), unfit); return; }
     [].forEach.call(d.querySelectorAll(POP), function (p) {
       if (p.closest("details:not([open])")) return;
       p.style.translate = "";
@@ -1625,10 +1965,19 @@ document.addEventListener("click", function (e) {
     if (b.bottom > lo && sr && sr.top - 8 > lo - sr.bottom && b.height < sr.top - 8) p.classList.add("flip-up");
     else if (b.bottom > lo) { p.style.maxHeight = Math.max(160, lo - b.top) + "px"; p.style.overflowY = "auto"; }
   }
+  // T8: a recording or task shown in the computer's reading pane isn't a pop-up: the list beside it keeps scrolling
+  function inPane(d) { return window.ScribeDp && window.ScribeDp.on() && d.matches(window.ScribeDp.SHEETS); }
+  // U16P: a phone's sheet is fixed and full width, so it's never off screen: it isn't measured (that read, while the
+  // sheet was rising, made the tap feel slow). Nothing open and nothing locked: there's nothing to do.
+  var phone = matchMedia("(max-width: 959px)");
+  // after the layout changes (Pop up · Right · Below), every open pop-up is measured again from scratch
+  window.ScribeRefit = function () { [].forEach.call(document.querySelectorAll("details[open] " + POP.split(", ").join(", details[open] ")), unfit); sync(); };
   function sync() {
-    var lock = !!document.querySelector(OPEN);
-    document.documentElement.classList.toggle("pop-lock", lock);
-    document.querySelectorAll("details[open]").forEach(fit);
+    var html = document.documentElement, open = document.querySelectorAll(OPEN), any = document.querySelectorAll("details[open]");
+    if (!open.length && !any.length && !html.classList.contains("pop-lock")) return;
+    var lock = [].some.call(open, function (d) { return !inPane(d); });
+    html.classList.toggle("pop-lock", lock);
+    [].forEach.call(any, function (d) { if (!(phone.matches && d.matches(".fx-sheet"))) fit(d); });
   }
   document.addEventListener("toggle", function (e) {
     var d = e.target;
@@ -1652,69 +2001,133 @@ document.addEventListener("click", function (e) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync); else sync();
 })();
 
-/* Swipe to show buttons (Brian picked B, 2026-11-21; like iPhone Mail). A row with data-sw='{"l":[...],"r":[...]}'
-   slides when swiped: left shows its "l" buttons on the right edge, right shows its "r" buttons on the left edge.
-   Each button {t: label, c: color, f: CSS selector} submits that form inside the row (the same form its own button or
-   pop-up uses), so every action behaves exactly as before. Tap anywhere else (or the row) to slide it back. */
+/* Swipe rows (rebuilt 2026-11-22, Brian: "text overlapping, not smooth, low res"; like iPhone Mail / Gmail).
+   A row with data-sw='{"l":[...],"r":[...]}' follows your finger as one solid piece over a colored layer behind it:
+   "l" = swipe right-to-left, "r" = left-to-right. Each action {t: label, i: icon, c: color, f: form selector} submits
+   that form in the row, so it behaves exactly like its own button. A short swipe shows the buttons; a long swipe (past
+   55% of the row) does the FIRST action straight away (a small buzz marks the point); letting go early springs back. */
 (function () {
-  var W = 84, st = null, open = null;
+  var BW = 88, FULL = 0.55, st = null, open = null;
   function host(row) { return row.tagName === "DETAILS" ? row.querySelector(":scope > summary") : row; }
-  function spec(row) { try { return JSON.parse(row.dataset.sw); } catch (e) { return {}; } }
-  function layer(row, side) {
-    var h = host(row), L = h.querySelector(":scope > .sw-layer");
-    if (L && L.dataset.side === side) return L;
+  function acts(row, side) { try { return JSON.parse(row.dataset.sw)[side] || []; } catch (e) { return []; } }
+  function build(row, side) {
+    // the layer sits beside the row, not inside it (a closed Inbox <details> hides everything but its summary).
+    // 2026-11-22 night (Brian: "low res", text touching the color, overlap on Notifications): the color now spans the
+    // whole card width (the card's own rounded corners clip it, no scaling = sharp text), and the moving row carries
+    // its card's background out to the card edges, so its text always keeps its normal gap from the color.
+    var h = host(row), box = row.parentElement, L = box.querySelector(":scope > .sw-layer"), a = acts(row, side);
+    if (L && L._row === row && L.dataset.side === side) return L;
     if (L) L.remove();
-    L = document.createElement("div"); L.className = "sw-layer sw-" + side; L.dataset.side = side;
-    (spec(row)[side] || []).forEach(function (a) {
-      var b = document.createElement("button"); b.type = "button"; b.className = "sw-b sw-" + (a.c || "ink");
-      b.textContent = a.t; b.dataset.sel = a.f; L.appendChild(b);
+    if (getComputedStyle(box).position === "static") box.style.position = "relative";
+    L = document.createElement("div"); L._row = row; L.dataset.side = side;
+    L.className = "sw-layer sw-" + side + " sw-c-" + (a[0].c || "ink");
+    box.classList.add("sw-box");                               // nothing slides the page sideways
+    var top = row.offsetTop + (h === row ? 0 : h.offsetTop), left = row.offsetLeft + (h === row ? 0 : h.offsetLeft);
+    var pl = Math.max(0, left), pr = Math.max(0, box.clientWidth - left - h.offsetWidth);
+    L.style.cssText = "inset:auto;top:" + (top + 1) + "px;left:0;width:" + box.clientWidth + "px;height:" + (h.offsetHeight - 2) + "px";
+    var bg = getComputedStyle(box).backgroundColor;
+    h.style.setProperty("--sw-bg", bg && bg !== "rgba(0, 0, 0, 0)" ? bg : "var(--surface)");
+    h.style.boxShadow = "-" + pl + "px 0 0 var(--sw-bg), " + pr + "px 0 0 var(--sw-bg)";
+    a.forEach(function (x) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "sw-b sw-c-" + (x.c || "ink"); b.dataset.sel = x.f;
+      if (x.i) b.insertAdjacentHTML("beforeend", '<svg class="sw-i" aria-hidden="true"><use href="#i-' + x.i.replace(/\W/g, "") + '"/></svg>');
+      var t = document.createElement("span"); t.className = "sw-t"; t.textContent = x.t; b.appendChild(t);
+      L.appendChild(b);
     });
-    h.classList.add("sw-host"); h.insertBefore(L, h.firstChild);
+    box.insertBefore(L, row); h.classList.add("sw-host");
     return L;
   }
-  function move(row, dx, animate) {
-    var h = host(row); h.classList.toggle("sw-anim", !!animate);
-    h.style.setProperty("--sw-dx", dx + "px"); h.classList.toggle("sw-on", dx !== 0);
+  var frame = 0, want = null;
+  // B37/N11 (Brian, 2026-11-25: smoother swiping): a row let go with speed settles at that speed (a quick flick snaps,
+  // a slow release glides), the way native lists do; ms = how long the settle takes (default .3 s).
+  function move(row, dx, anim, ms) {
+    var h = host(row);
+    if (anim) { cancelAnimationFrame(frame); frame = 0; want = null; h.style.transitionDuration = ms ? ms + "ms" : ""; h.classList.add("sw-anim"); h.style.transform = dx ? "translate3d(" + dx + "px,0,0)" : ""; return; }
+    h.classList.remove("sw-anim"); want = [h, dx];   // follow the finger once per screen frame
+    if (!frame) frame = requestAnimationFrame(function () { frame = 0; if (want) want[0].style.transform = "translate3d(" + want[1] + "px,0,0)"; want = null; });
   }
-  function close(row) { if (!row) return; move(row, 0, true); if (open === row) open = null; }
+  function cleanup(row) {
+    var h = host(row);
+    h.classList.remove("sw-host", "sw-anim"); h.style.boxShadow = "";
+    var L = row.parentElement && row.parentElement.querySelector(":scope > .sw-layer"); if (L && L._row === row) L.remove();
+    if (row.parentElement && !row.parentElement.querySelector(":scope > .sw-layer")) row.parentElement.classList.remove("sw-box");
+  }
+  function reset(row) {   // back to normal: no layer, no transform left behind
+    var h = host(row); move(row, 0, true); if (open === row) open = null;
+    setTimeout(function () { if (!h.style.transform) cleanup(row); }, 320);
+  }
+  function fold(row) {   // a row that's leaving (Delete, Done, Dismiss…) folds shut smoothly, like Gmail
+    var L = row.parentElement && row.parentElement.querySelector(":scope > .sw-layer");
+    [row, L].forEach(function (el) { if (!el) return; el.style.height = el.offsetHeight + "px"; el.style.overflow = "hidden"; });
+    void row.offsetHeight;
+    [row, L].forEach(function (el) { if (!el) return; el.classList.add("sw-fold"); el.style.height = "0px"; });
+  }
+  function fire(row, sel) {
+    var f = row.querySelector(sel);
+    if (f && f.hasAttribute("data-sw-keep")) { move(row, 0, true); setTimeout(function () { f.requestSubmit(); }, 150); return; }   // Summarize: the row stays, its cost page opens
+    fold(row);
+    setTimeout(function () { if (f) f.requestSubmit(); }, 200);
+    setTimeout(function () { if (row.isConnected) { row.classList.remove("sw-fold"); row.style.height = row.style.overflow = ""; cleanup(row); move(row, 0, true); } }, 1500);   // a row that stays comes back
+  }
   document.addEventListener("touchstart", function (e) {
     var t = e.target;
-    if (open && !(t.closest && t.closest(".sw-layer"))) { var o = open; close(o); if (t.closest && t.closest("[data-sw]") === o) { st = { eat: true }; return; } }
+    if (open && !(t.closest && t.closest(".sw-layer"))) { var o = open; reset(o); if (t.closest && t.closest("[data-sw]") === o) { st = { eat: true }; return; } }
     var row = t.closest && t.closest("[data-sw]");
-    if (!row || e.touches.length !== 1 || (row.tagName === "DETAILS" && row.open) || t.closest(".sw-layer, input, textarea, select")) { st = null; return; }
-    st = { row: row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, on: false };
+    if (!row || e.touches.length !== 1 || (row.tagName === "DETAILS" && row.open) || t.closest(".sw-layer, input, textarea, select")
+        || (row.closest(".picking"))) { st = null; return; }
+    // a finger that starts at the left edge opens the drawer (ui.js), never a row swipe (Brian, 2026-11-23: an edge swipe
+    // sent rows to Trash)
+    if (e.touches[0].clientX <= 28 && innerWidth < 960 && document.getElementById("drawer")) { st = null; return; }
+    st = { row: row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, on: false, w: host(row).offsetWidth, v: 0, lx: e.touches[0].clientX, lt: e.timeStamp };
   }, { passive: true });
   document.addEventListener("touchmove", function (e) {
     if (!st || st.eat) return;
-    var dx = e.touches[0].clientX - st.x, dy = e.touches[0].clientY - st.y;
-    if (!st.on && Math.abs(dy) > Math.abs(dx)) { st = null; return; }   // scrolling, not swiping
-    if (!st.on && Math.abs(dx) < 10) return;
-    var side = dx < 0 ? "l" : "r", n = (spec(st.row)[side] || []).length;
-    if (!n) { move(st.row, dx / 6); st.on = true; st.max = 0; return; }   // nothing that way: a small rubber band
-    st.on = true; st.side = side; st.max = n * W; layer(st.row, side);
-    st.dx = Math.max(-st.max * 1.15, Math.min(st.max * 1.15, dx)); move(st.row, st.dx);
+    var x = e.touches[0].clientX, dx = x - st.x, dy = e.touches[0].clientY - st.y;
+    if (!st.on) {
+      if (Math.hypot(dx, dy) < 7) return;                          // decide only after a real move: early jitter no longer cancels
+      if (Math.abs(dy) > Math.abs(dx) * 0.8) { st = null; return; }   // scrolling, not swiping
+      st.x = x - (dx > 0 ? 1 : -1); dx = x - st.x;                    // no jump: the row starts right under the finger
+    }
+    var dt = e.timeStamp - st.lt; if (dt > 0) { st.v = 0.6 * ((x - st.lx) / dt) + 0.4 * st.v; st.lx = x; st.lt = e.timeStamp; }
+    var side = dx < 0 ? "l" : "r", a = acts(st.row, side);
+    st.on = true;
+    if (!a.length) { st.side = null; move(st.row, dx / 6); return; }   // nothing that way: a small rubber band
+    if (st.side !== side) { st.side = side; st.L = build(st.row, side); st.full = false; }
+    st.dx = dx;
+    var full = Math.abs(dx) > st.w * FULL;
+    if (full !== st.full) { st.full = full; st.L.classList.toggle("sw-full", full); }
+    move(st.row, dx);
   }, { passive: true });
+  function settle(dist, v) {   // ms to cover dist px at the finger's speed v (px/ms), kept between 140 and 320 ms
+    var sp = Math.abs(v); return sp > 0.2 ? Math.round(Math.max(140, Math.min(320, Math.abs(dist) / sp))) : 0;
+  }
   document.addEventListener("touchend", function () {
     if (!st) return;
     var s = st; st = null;
     if (s.eat || !s.on) return;
-    if (s.max && Math.abs(s.dx) > s.max * 0.4) { move(s.row, s.dx < 0 ? -s.max : s.max, true); open = s.row; s.row.dataset.swJust = Date.now(); }
-    else move(s.row, 0, true);
+    if (!s.side) { move(s.row, 0, true); return; }
+    var a = acts(s.row, s.side), sign = s.dx < 0 ? -1 : 1, shown = a.length * BW;
+    var fling = s.v * sign > 0.5;                                      // a quick flick counts, like native lists
+    var back = s.v * sign < -0.3;                                      // flicked back toward the start: close
+    if (s.full && !back) { var to = sign * (s.w + 40), ms = settle(to - s.dx, s.v) || 200; move(s.row, to, true, ms); s.row.dataset.swJust = Date.now(); setTimeout(function () { fire(s.row, a[0].f); }, ms); }
+    else if (!back && (Math.abs(s.dx) > shown * 0.45 || (fling && Math.abs(s.dx) > 24))) { move(s.row, sign * shown, true, settle(sign * shown - s.dx, s.v)); open = s.row; s.row.dataset.swJust = Date.now(); }
+    else { move(s.row, 0, true, settle(s.dx, s.v)); if (open === s.row) open = null; var r = s.row; setTimeout(function () { if (!host(r).style.transform) cleanup(r); }, 340); }
   });
-  // a tap right after a swipe, or on the row while it's open, must not open the row
+  // The browser took the touch over (it started scrolling, or a call came in): the row goes back instead of staying
+  // half-swiped (B37: rows were left stuck partway).
+  document.addEventListener("touchcancel", function () { if (st && st.on && st.row) reset(st.row); st = null; });
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".sw-b");
     if (b) {
       e.preventDefault(); e.stopPropagation();
-      var row = b.closest("[data-sw]"), f = row && row.querySelector(b.dataset.sel);
-      if (row) close(row);
-      if (f) setTimeout(function () { f.requestSubmit(); }, 120);
+      var row = b.closest(".sw-layer")._row;
+      if (row) { open = null; move(row, (b.parentElement.dataset.side === "l" ? -1 : 1) * (host(row).offsetWidth + 40), true); setTimeout(function () { fire(row, b.dataset.sel); }, 200); }
       return;
     }
-    var r = e.target.closest && e.target.closest("[data-sw]");
+    var r = e.target.closest && e.target.closest("[data-sw]");   // the lift right after a swipe must not open the row
     if (r && r.dataset.swJust && Date.now() - r.dataset.swJust < 400) { e.preventDefault(); e.stopPropagation(); }
   }, true);
-  document.addEventListener("htmx:beforeRequest", function () { if (open) close(open); });
+  document.addEventListener("htmx:beforeRequest", function () { if (open) reset(open); });
 })();
 
 /* Tap outside to get out (Brian, 2026-11-22): every small pop-up panel (a speaker's "Who is it?", ＋ Tag, a line's
@@ -1728,6 +2141,7 @@ document.addEventListener("click", function (e) {
   window.addEventListener("click", function (e) {
     var t = e.target;
     if (!t || !t.isConnected || !t.closest) return;
+    if (t.closest(".pp-sheet")) return;   // the person picker belongs to the panel that opened it
     if (t.tagName === "DIALOG" && t.open) {   // a tap on the dialog's dimmed backdrop (outside its box)
       var b = t.getBoundingClientRect();
       if (e.clientX < b.left || e.clientX > b.right || e.clientY < b.top || e.clientY > b.bottom) { e.preventDefault(); t.close(); return; }
@@ -1735,6 +2149,7 @@ document.addEventListener("click", function (e) {
     var open = [].filter.call(document.querySelectorAll(OPEN), function (d) { return !d.contains(t); });
     // A bottom sheet whose dimmed backdrop sits under the top bar (Status): a tap on the dimmed top bar closes it too.
     [].forEach.call(document.querySelectorAll("details.fx-sheet[open]"), function (d) {
+      if (window.ScribeDp && window.ScribeDp.on() && d.matches(window.ScribeDp.SHEETS)) return;   // T8: the reading pane stays open
       var body = d.querySelector(":scope > .fx-body");
       if (body && !d.contains(t) && !t.closest("details.fx-sheet[open] > .fx-body")) open.push(d);
     });
@@ -1768,4 +2183,447 @@ document.addEventListener("click", function (e) {
   ["DOMContentLoaded", "htmx:afterSettle", "pageshow"].forEach(function (ev) { document.addEventListener(ev, all); });
   window.addEventListener("resize", all);
   if (document.readyState !== "loading") all();
+})();
+
+/* The transcript loads when its section opens (2026-11-22), so a talk page is ~5x smaller. Desktop opens it at once. */
+/* Brian, 2026-11-25 (B16): "/conversations/59#L6" never loaded the transcript. A link to a line opens the section while
+   the page is still starting, before htmx has wired up the hx-trigger, so the "load-tx" event went to nobody and the
+   one-time flag stopped any retry. Now nothing is asked of htmx until it has started (DOMContentLoaded). */
+(function () {
+  var ready = document.readyState === "complete";
+  function load() {
+    var b = document.getElementById("tx-body"), d = document.getElementById("transcript");
+    if (!ready || !window.htmx) return;
+    if (b && d && d.open && b.hasAttribute("hx-get") && !b.dataset.req) { b.dataset.req = "1"; htmx.trigger(b, "load-tx"); }
+  }
+  document.addEventListener("toggle", function (e) { if (e.target.id === "transcript") load(); }, true);
+  document.addEventListener("DOMContentLoaded", function () { ready = true; load(); });
+  if (ready) load();
+  document.addEventListener("htmx:afterSettle", load);
+  // Once the lines arrive, show the line the link asked for (#L6) and mark it.
+  document.addEventListener("htmx:afterSettle", function (e) {
+    if (!e.target || !e.target.querySelector || !/^#L\d+$/.test(location.hash)) return;
+    var ln = e.target.querySelector(location.hash) || (e.target.id === location.hash.slice(1) ? e.target : null);
+    if (ln) { ln.classList.add("cursor"); ln.scrollIntoView({ block: "center" }); }
+  });
+})();
+
+
+/* Typing on a phone (Brian, 2026-11-22: the keyboard covered the "Someone new" name box). The page now shrinks when the
+   keyboard opens (viewport interactive-widget=resizes-content); as a backup, a focused text box that is still behind
+   the keyboard or under the bottom tab bar is scrolled to the middle of what's visible. Works for every text box. */
+(function () {
+  if (!window.visualViewport) return;
+  var el = null;
+  function check() {
+    if (!el || document.activeElement !== el) return;
+    var vv = window.visualViewport, r = el.getBoundingClientRect(), bar = document.querySelector(".tabbar");
+    var bottom = vv.offsetTop + vv.height - (bar && bar.offsetParent && getComputedStyle(bar).position === "fixed" && vv.height > innerHeight * 0.8 ? bar.offsetHeight : 0);
+    if (r.bottom > bottom - 8 || r.top < vv.offsetTop) {
+      var box = el.closest(".fx-body, .chip-panel, .menu-panel");
+      // 2026-11-22 night (Brian: still covered on the Pixel): instant, not smooth; the keyboard's slide-up cancelled
+      // the smooth scroll. Checked again as the keyboard settles.
+      if (box && box.scrollHeight > box.clientHeight) el.scrollIntoView({ block: "center" });
+      window.scrollBy(0, el.getBoundingClientRect().top - (vv.offsetTop + vv.height * 0.35));
+    }
+  }
+  var TXT = "input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=date]):not([type=time]):not([type=datetime-local]), textarea, [contenteditable=true]";
+  var touch = matchMedia("(pointer: coarse)").matches;
+  document.addEventListener("focusin", function (e) {
+    var t = e.target;
+    if (!t.matches || !t.matches(TXT)) return;
+    // tab bar and + hide while typing (like native apps). U17P (Brian, 2026-11-25): not in a search box: those sit at the
+    // top, the bar doesn't cover them, and losing it while searching left no way to another tab.
+    var search = t.matches('input[type="search"], input[name="q"], [role="searchbox"], [data-search]');
+    el = t; document.documentElement.classList.toggle("typing", touch && !search);
+    [150, 400, 800, 1200].forEach(function (ms) { setTimeout(check, ms); });
+  });
+  document.addEventListener("focusout", function () {
+    setTimeout(function () { var a = document.activeElement; if (!(a && a.matches && a.matches(TXT))) document.documentElement.classList.remove("typing"); }, 50);
+  });
+  window.visualViewport.addEventListener("resize", function () { setTimeout(check, 50); setTimeout(check, 300); });
+})();
+
+/* Speed log (Brian, 2026-11-22: "still not loading quickly; how do we find the right problem?"). After each page and
+   each part loaded in the background (a transcript, Show more), the phone sends Scribe Bot how long it took, split into:
+   m14 = the M14 building the page, net = the trip over Tailscale, dl = downloading it, draw = the phone showing it.
+   Numbers and page addresses only. Read on the M14 in logs/speed.log. */
+(function () {
+  if (!window.performance || !performance.getEntriesByType || !navigator.sendBeacon) return;
+  var q = [], timer = null;
+  function app(e) { var s = (e.serverTiming || []).filter(function (x) { return x.name === "app"; })[0]; return s ? s.duration : null; }
+  function row(e, k) {
+    var m14 = app(e), wait = e.responseStart - e.requestStart, u = new URL(e.name, location.href);
+    if (u.origin !== location.origin || /^\/(perf|ping|status\/ring|progress|static|audio)/.test(u.pathname) || !(e.responseStart > 0)) return;
+    var r = { k: k, p: u.pathname + u.search, total: (k !== "part" ? (e.domContentLoadedEventEnd || e.responseEnd) : e.responseEnd) - e.startTime,
+              dl: e.responseEnd - e.responseStart, net: m14 == null ? wait : Math.max(0, wait - m14) };
+    if (m14 != null) r.m14 = m14;
+    if (k !== "part" && e.domContentLoadedEventEnd) r.draw = e.domContentLoadedEventEnd - e.responseEnd;
+    if (k === "page" || k === "back") {   // 2026-11-22 night: also the tap itself and the setup before the request goes out
+      r.pre = e.requestStart - e.startTime;                                  // worker wake-up + finding/opening the connection
+      var fcp = (performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime; if (fcp) r.fcp = fcp;   // first time anything shows
+      try { var t = JSON.parse(sessionStorage.getItem("sbTap") || "null"); sessionStorage.removeItem("sbTap");
+        if (t && t.p === u.pathname + u.search && performance.timeOrigin - t.at < 120000) r.tap = performance.timeOrigin - t.at; } catch (_) {}
+    }
+    q.push(r); clearTimeout(timer); timer = setTimeout(send, 1500);
+  }
+  function send() { if (!q.length) return; var b = q.splice(0, 50); try { navigator.sendBeacon("/perf", new Blob([JSON.stringify(b)], { type: "text/plain" })); } catch (_) {} }
+  // B18 (2026-11-25): a Back load is logged as "back", and a page the browser shows again from memory (no request at all)
+  // as "bfc" with the time from the press of Back to the page showing, so the log tells a slow Back from a slow page.
+  addEventListener("load", function () { setTimeout(function () { var n = performance.getEntriesByType("navigation")[0]; if (n) row(n, n.type === "back_forward" ? "back" : "page"); }, 0); });
+  addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    try { var t = JSON.parse(sessionStorage.getItem("sbTap") || "null"), p = location.pathname + location.search; sessionStorage.removeItem("sbTap");
+      if (t && t.p === p && Date.now() - t.wall < 120000) { q.push({ k: "bfc", p: p, total: Date.now() - t.wall }); clearTimeout(timer); timer = setTimeout(send, 1500); } } catch (_) {}
+  });
+  if (window.PerformanceObserver) try {
+    new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { if (e.initiatorType === "xmlhttprequest" || e.initiatorType === "fetch") row(e, "part"); }); })
+      .observe({ type: "resource", buffered: true });
+  } catch (_) {}
+  addEventListener("pagehide", send);
+  var stuck = [];
+  document.addEventListener("click", function (e) {   // when a link was tapped (the next page measures tap -> start)
+    var a = e.target.closest && e.target.closest("a[href]"); if (!a || e.defaultPrevented || a.target || a.hasAttribute("download") || a.matches("[hx-get], [hx-post], [hx-delete], [hx-put], [hx-patch]")) return;
+    var u = new URL(a.href, location.href); if (u.origin !== location.origin || u.hash && u.pathname === location.pathname) return;
+    try { sessionStorage.setItem("sbTap", JSON.stringify({ p: u.pathname + u.search, at: performance.timeOrigin + e.timeStamp, wall: Date.now() })); } catch (_) {}
+    // Stuck-tap recorder (2026-11-22 night): still on this page 3 s after tapping a link = logged; at 10 s, one retry.
+    stuck.forEach(clearTimeout);
+    var p = u.pathname + u.search;
+    stuck = [setTimeout(function () { q.push({ k: "stuck", p: p, after: 3000 }); send(); }, 3000),
+             setTimeout(function () { q.push({ k: "stuck", p: p, after: 10000 }); send(); location.assign(u.href); }, 10000)];
+  });
+  addEventListener("pagehide", function () { stuck.forEach(clearTimeout); });
+})();
+
+/* Keep-alive (2026-11-22 night): the M14 is on a public Wi-Fi hotspot, which drops quiet connections. Then the first
+   tap waited 1-2 s to reconnect, or hung on the dead connection. While the app is open, a tiny check every 25 s keeps
+   the connection alive, and one goes out the moment the app comes back to the screen. */
+/* B7 (Brian, 2026-11-25: delete on the phone, the computer should update): the same check asks the M14 what was removed
+   since this page was drawn, on any device, and takes those rows off the screen. On the page of a talk or person that
+   was removed, a note says so. Kinds and ids only; nothing else comes back. */
+(function () {
+  var meta = document.querySelector('meta[name="sb-gone"]'), mark = meta && meta.content !== "" ? +meta.content : null;
+  function drop(el) {
+    if (!el || !el.parentNode) return;
+    el.querySelectorAll("details[open]").forEach(function (d) { d.open = false; });   // an open sheet closes (and unlocks the page)
+    el.classList.add("gone-out"); setTimeout(function () { el.remove(); }, 220);
+  }
+  function note(text, href, label) {
+    if (document.querySelector(".gone-note")) return;
+    var n = document.createElement("div"); n.className = "gone-note"; n.setAttribute("role", "status");
+    n.textContent = text + " ";
+    var a = document.createElement("a"); a.href = href; a.textContent = label; n.appendChild(a);
+    var c = document.getElementById("content") || document.body; c.insertBefore(n, c.firstChild);
+  }
+  function apply(g) {
+    var id = String(g.id | 0), path = location.pathname;
+    if (g.k === "talk" || g.k === "talk_purged") {
+      document.querySelectorAll('.conv-row[data-id="' + id + '"], a.row1[href="/conversations/' + id + '"]').forEach(drop);
+      if (g.k === "talk_purged") document.querySelectorAll('.tr-row[data-pick-id="c' + id + '"]').forEach(drop);
+      if (path === "/conversations/" + id) note(g.k === "talk" ? "This talk was moved to Trash on another device." : "This talk was deleted on another device.",
+        g.k === "talk" ? "/conversations?trash=1" : "/conversations", g.k === "talk" ? "Open Trash" : "Back to Talks");
+    } else if (g.k === "task") {
+      drop(document.getElementById("task-" + id));
+    } else if (g.k === "person") {
+      document.querySelectorAll('#people-list [data-pick-id="' + id + '"]').forEach(drop);
+      if (path === "/people/" + id) note("This person was deleted on another device.", "/people", "Back to People");
+    }
+  }
+  function ping() {
+    if (document.visibilityState !== "visible") return;
+    var u = mark === null ? "/ping" : "/gone?since=" + mark;
+    try {
+      fetch(u, { cache: "no-store", credentials: "same-origin" }).then(function (r) { return mark !== null && r.ok ? r.json() : null; })
+        .then(function (d) { if (!d || mark === null) return; (d.gone || []).forEach(apply); if (d.last > mark) mark = d.last; }).catch(function () {});
+    } catch (_) {}
+  }
+  setInterval(ping, 25000);
+  addEventListener("focus", ping);   // B7: back to this window: catch up at once
+  document.addEventListener("visibilitychange", ping);
+  addEventListener("online", ping);   // R4-01: the computer's network changed (Wi-Fi switch, wake): warm the new connection before the next tap
+  addEventListener("pageshow", function (e) { if (e.persisted) ping(); });
+})();
+
+/* A tapped row keeps its rounded "pressed" look until the next page shows (Brian, 2026-11-22: it flashed back to a square
+   box between letting go and the page changing). Cleared if the page comes back from the back button. */
+(function () {
+  var SEL = ".tap-row, .row1, .in-row > summary, .sp-row > summary, .mention-row, a.ts-row";
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href]"); if (!a || e.defaultPrevented || a.target || a.hasAttribute("download")) return;
+    var row = a.matches(SEL) ? a : a.closest(SEL); if (!row) return;
+    document.querySelectorAll(".tap-go").forEach(function (x) { x.classList.remove("tap-go"); });
+    row.classList.add("tap-go");
+    setTimeout(function () { row.classList.remove("tap-go"); }, 8000);   // never stuck lit if the page doesn't change
+  });
+  addEventListener("pageshow", function () { document.querySelectorAll(".tap-go").forEach(function (x) { x.classList.remove("tap-go"); }); });
+})();
+
+/* Person picker (Brian picked A, 2026-11-22 night: "the list is getting long"). Any person list (a speaker's "Who is
+   it?", task Who, People pickers) opens a sheet instead of the phone's long native list: a search box, "Suggested"
+   (voice match, people from talks that week, people named most), then everyone A-Z with a letter strip. Typing
+   narrows it; "＋ Add … as a new person" appears for a name not on the list. The list's own extra choices
+   ("✕ Not X", "Don't know") show at the bottom. Picking sets the list and saves exactly as before. */
+(function () {
+  var COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#db2777", "#ea580c", "#16a34a", "#ca8a04", "#4f46e5", "#0891b2", "#be123c"];
+  function isPicker(s) { return s && s.tagName === "SELECT" && (s.hasAttribute("data-people") || !!s.querySelector('option[value="__new"]')); }
+  var TITLE = /^(?:(?:dr|doctor|mr|mrs|ms|mx|miss|prof|professor|rev|reverend|pastor|rabbi|fr|sir|dame|hon|judge|coach|capt|captain|sgt|lt|col|gen|officer|nurse|dean)\.?\s+)+(?=\S+\s+\S)/i;   // B8: titles in general
+  function initials(n) { return n.replace(/^Me \(Brian\)$/, "Brian").replace(TITLE, "").split(/\s+/).map(function (w) { return w[0] || ""; }).join("").slice(0, 2).toUpperCase(); }
+  function color(n) { var h = 0; for (var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0; return COLORS[h % COLORS.length]; }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }   // R5-06: quotes too (used in attributes)
+  var sheet = null, sel = null, data = null, cache = {};
+  function row(p, cls) {
+    return '<button type="button" class="pp-row ' + (cls || "") + '" data-id="' + p.id + '"><span class="pp-av" style="background:' + color(p.name) + '">' + esc(initials(p.name)) +
+      '</span><span class="pp-tx"><b>' + esc(p.name) + '</b>' + (p.sub ? '<small>' + esc(p.sub) + '</small>' : "") + '</span></button>';
+  }
+  function render(q) {
+    var list = sheet.querySelector(".pp-list"), rail = sheet.querySelector(".pp-rail"), h = "", letters = [];
+    q = (q || "").trim().toLowerCase();
+    var extras = [].filter.call(sel.options, function (o) { return /^__(?!new)/.test(o.value); });
+    var canNew = !!sel.querySelector('option[value="__new"]');
+    if (!data) { list.innerHTML = '<p class="pp-msg">Loading…</p>'; return; }
+    if (q) {
+      var hits = data.all.filter(function (p) { return p.name.toLowerCase().indexOf(q) >= 0; })
+        .sort(function (a, b) { return (a.name.toLowerCase().indexOf(q) === 0 ? 0 : 1) - (b.name.toLowerCase().indexOf(q) === 0 ? 0 : 1); });
+      h = hits.slice(0, 40).map(function (p) { return row(p); }).join("");
+      if (canNew && !data.all.some(function (p) { return p.name.toLowerCase() === q; }))
+        h += '<button type="button" class="pp-row pp-new" data-new="1"><span class="pp-av pp-plus">＋</span><span class="pp-tx"><b>Add “' + esc(sheet.querySelector(".pp-q").value.trim()) + '” as a new person</b></span></button>';
+      if (!hits.length && !canNew) h += '<p class="pp-msg">No one by that name</p>';
+      rail.hidden = true;
+    } else {
+      if (data.suggested.length) h += '<h4 class="pp-sec">Suggested</h4>' + data.suggested.map(function (p) { return row(p); }).join("");
+      h += '<h4 class="pp-sec">Everyone · A–Z</h4>';
+      var last = "";
+      data.all.forEach(function (p) { var L = (p.name.replace(TITLE, "")[0] || "#").toUpperCase(); if (L !== last) { last = L; letters.push(L); L = esc(L); h += '<span class="pp-l" id="pp-l-' + L + '"></span>'; } h += row(p); });
+      if (canNew) h += '<button type="button" class="pp-row pp-new" data-new="1"><span class="pp-av pp-plus">＋</span><span class="pp-tx"><b>Someone new…</b></span></button>';
+      rail.innerHTML = letters.length > 6 ? letters.map(function (L) { L = esc(L); return '<button type="button" data-l="' + L + '">' + L + '</button>'; }).join("") : "";
+      rail.hidden = letters.length <= 6;
+    }
+    // B9 (2026-11-25): "Don't know" (and "Not X") sit at the top, above Suggested, where they're quick to reach;
+    // while searching they stay at the bottom, under the names that match.
+    var ex = extras.map(function (o) { return '<button type="button" class="pp-row pp-extra" data-val="' + esc(o.value) + '"><span class="pp-tx"><b>' + esc(o.textContent) + '</b></span></button>'; }).join("");
+    list.innerHTML = q ? h + ex : (ex ? '<div class="pp-extras">' + ex + '</div>' : "") + h;
+  }
+  function build() {
+    sheet = document.createElement("div"); sheet.className = "pp-sheet"; sheet.hidden = true;
+    sheet.innerHTML = '<div class="pp-back"></div><div class="pp-body" role="dialog" aria-label="Pick a person"><div class="pp-grab"></div>' +
+      '<div class="pp-head"><b class="pp-title">Who is it?</b><button type="button" class="pp-x" aria-label="Close">✕</button></div>' +
+      '<label class="pp-search"><svg class="icon"><use href="#i-search"/></svg><input class="pp-q" type="search" autocomplete="off" placeholder="Search or type a new name"></label>' +
+      '<div class="pp-scroll"><div class="pp-list"></div></div><div class="pp-rail" hidden></div></div>';
+    document.body.appendChild(sheet);
+    sheet.querySelector(".pp-q").addEventListener("input", function (e) { render(e.target.value); });
+    sheet.querySelector(".pp-q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); var f = sheet.querySelector(".pp-list .pp-row"); if (f) f.click(); } });
+    sheet.addEventListener("click", function (e) {
+      if (e.target.closest(".pp-back, .pp-x")) return close();
+      var L = e.target.closest(".pp-rail button"); if (L) { jump(L); return; }
+      var r = e.target.closest(".pp-row"); if (!r) return;
+      var s = sel; close();
+      if (r.dataset.new) {   // a new person: use the list's own "new name" box and save
+        var name = sheet.querySelector(".pp-q").value.trim(), box = s.form && s.form.querySelector(".qp-new, [name=new_name]");
+        s.value = "__new"; s.dispatchEvent(new Event("change", { bubbles: true }));
+        if (box && name) { box.hidden = false; box.value = name; s.value = ""; s.form.requestSubmit(); }
+        return;
+      }
+      var v = r.dataset.val || r.dataset.id;
+      if (![].some.call(s.options, function (o) { return o.value === v; })) { var o = document.createElement("option"); o.value = v; o.textContent = r.querySelector("b").textContent; s.appendChild(o); }
+      s.value = v; s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    // Letter strip (2026-11-22 night, Brian: "the letters don't scroll"): tap a letter or drag along the strip
+    function jump(L) {
+      var t = document.getElementById("pp-l-" + L.dataset.l), sc = sheet.querySelector(".pp-scroll"); if (!t) return;
+      sc.scrollTop = t.offsetTop - 4;
+      sheet.querySelectorAll(".pp-rail .on").forEach(function (x) { x.classList.remove("on"); }); L.classList.add("on");
+    }
+    var rail = sheet.querySelector(".pp-rail"), lastL = null;
+    function railAt(e) { var c = e.touches ? e.touches[0] : e, el = document.elementFromPoint(rail.getBoundingClientRect().left + rail.offsetWidth / 2, c.clientY);
+      var b = el && el.closest && el.closest(".pp-rail button"); if (b && b !== lastL) { lastL = b; jump(b); } }
+    rail.addEventListener("touchstart", function (e) { lastL = null; railAt(e); e.preventDefault(); }, { passive: false });
+    rail.addEventListener("touchmove", function (e) { railAt(e); e.preventDefault(); }, { passive: false });
+    var y0 = null;   // swipe the sheet down to close, like every other sheet
+    sheet.addEventListener("touchstart", function (e) { if (e.target.closest(".pp-grab, .pp-head")) y0 = e.touches[0].clientY; }, { passive: true });
+    sheet.addEventListener("touchend", function (e) { if (y0 != null && e.changedTouches[0].clientY - y0 > 60) close(); y0 = null; });
+  }
+  function close() { if (sheet) { sheet.hidden = true; document.documentElement.classList.remove("pop-lock"); } sel = null; }
+  function open(s) {
+    if (!sheet) build();
+    sel = s; data = null;
+    var m = s.form && /\/speakers\/(\d+)\//.exec(s.form.getAttribute("action") || s.form.getAttribute("hx-post") || ""), c = /\/conversations\/(\d+)/.exec(location.pathname);
+    var key = (m ? m[1] : 0) + ":" + (c ? c[1] : 0);
+    sheet.querySelector(".pp-title").textContent = s.getAttribute("aria-label") || "Who is it?";
+    sheet.querySelector(".pp-q").value = ""; sheet.querySelector(".pp-scroll").scrollTop = 0;
+    sheet.hidden = false; document.documentElement.classList.add("pop-lock"); render("");
+    if (cache[key]) { data = cache[key]; render(""); return; }
+    fetch("/people/pick?sid=" + (m ? m[1] : 0) + "&cid=" + (c ? c[1] : 0), { credentials: "same-origin" }).then(function (r) { return r.json(); })
+      .then(function (j) { cache[key] = j; if (sel === s) { data = j; render(sheet.querySelector(".pp-q").value); } })
+      .catch(function () { close(); s.focus(); if (window.sbNote) window.sbNote("Couldn't load the list of people. Check the connection, then try again."); });
+  }
+  function grab(e) { var s = e.target.closest && e.target.closest("select"); if (!isPicker(s) || s.disabled) return; e.preventDefault(); open(s); }
+  document.addEventListener("mousedown", grab, true);
+  var t0 = null;   // a scroll that happens to start on the list must not open it
+  document.addEventListener("touchstart", function (e) { t0 = [e.touches[0].clientX, e.touches[0].clientY]; }, { capture: true, passive: true });
+  document.addEventListener("touchend", function (e) {
+    var s = e.target.closest && e.target.closest("select"); if (!isPicker(s)) return;
+    var c = e.changedTouches[0]; if (t0 && Math.hypot(c.clientX - t0[0], c.clientY - t0[1]) > 10) return;
+    e.preventDefault(); open(s);
+  }, { capture: true, passive: false });
+  document.addEventListener("keydown", function (e) {
+    if (sheet && !sheet.hidden && e.key === "Escape") { close(); return; }
+    var s = e.target; if (isPicker(s) && (e.key === "Enter" || e.key === " " || e.key === "ArrowDown")) { e.preventDefault(); open(s); }
+  }, true);
+  document.addEventListener("htmx:afterSettle", function () { cache = {}; });   // a new person may have been added
+  // A button that opens a picker in the same pop-up ("Move to someone else" on a note, 2026-11-22)
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-pick-for]"); if (!b) return;
+    var s = document.getElementById(b.dataset.pickFor); if (!s) return;
+    e.preventDefault(); s.dispatchEvent(new Event("pointerdown", { bubbles: true })); open(s);
+  });
+})();
+
+/* Phone: mark the audio player while it's pinned under the top bar, so CSS can cover everything behind it (2026-11-23) */
+(function () {
+  var raf = 0;
+  function check() {
+    raf = 0;
+    var pl = document.querySelector(".player"); if (!pl) return;
+    var bar = document.querySelector(".topbar"), t = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().bottom : 0;
+    pl.classList.toggle("stuck", scrollY > 0 && pl.getBoundingClientRect().top <= t + 1.5);
+  }
+  addEventListener("scroll", function () { if (!raf) raf = requestAnimationFrame(check); }, { passive: true });
+})();
+
+/* Hold for a label (Brian, 2026-11-23, like Google's apps): press and hold an icon or button that has no hold action of
+   its own and a small label says what it does ("Move to Trash"), then fades. Rows with their own long-press (select,
+   sheets, swipes) are left alone. Phones/touch only; desktop has hover titles. */
+(function () {
+  var t = 0, tip = null, sx = 0, sy = 0, shown = false;
+  var OWN = ".tap-row, .sw-host, [data-open-sheet], [data-pick-id], .line, .item-main";
+  function label(el) {
+    var s = el.getAttribute("aria-label") || el.getAttribute("title") || el.dataset.tip || "";
+    if (!s && el.textContent.trim().length <= 2) s = "";   // icon with no words and no label: nothing to say
+    return s.trim();
+  }
+  function hide() { clearTimeout(t); t = 0; if (tip) { var x = tip; tip = null; x.classList.remove("on"); setTimeout(function () { x.remove(); }, 200); } }
+  document.addEventListener("touchstart", function (e) {
+    hide(); shown = false;
+    var el = e.target.closest && e.target.closest("button, a, summary, [role=button], .icon-btn");
+    if (!el || el.closest(OWN) && !el.matches(".icon-btn, .btn-icon, [aria-label]")) return;
+    var s = label(el); if (!s) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    t = setTimeout(function () {
+      shown = true;
+      tip = document.createElement("div"); tip.className = "hold-tip"; tip.textContent = s; document.body.appendChild(tip);
+      var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+      var x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)), y = r.top - h - 8;
+      if (y < 8) y = r.bottom + 8;
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+      requestAnimationFrame(function () { if (tip) tip.classList.add("on"); });
+      setTimeout(hide, 1800);
+    }, 450);
+  }, { passive: true });
+  document.addEventListener("touchmove", function (e) { if (t && !shown && Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 10) hide(); }, { passive: true });
+  document.addEventListener("touchend", function (e) { if (!shown) { clearTimeout(t); t = 0; } else { e.preventDefault(); } }, { passive: false });
+  document.addEventListener("contextmenu", function (e) { if (shown) e.preventDefault(); });
+  document.addEventListener("click", function (e) { if (shown) { e.preventDefault(); e.stopPropagation(); shown = false; } }, true);
+})();
+
+/* A menu item that opens something on the page (e.g. ⋯ › Summarize opens "Summarize this talk?") closes its menu first,
+   so the menu doesn't sit on top of what it opened (Brian, 2026-11-23: the cost and Confirm were hidden behind it). */
+document.addEventListener("click", function (e) {
+  var it = e.target.closest && e.target.closest("details .menu-item[hx-get], details .menu-item[data-open-sheet]");
+  if (!it) return;
+  var d = it.closest("details[open]"); if (d) d.open = false;
+  var slot = it.getAttribute("hx-target"); if (slot) setTimeout(function () { var s = document.querySelector(slot); if (s) s.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 250);
+});
+
+/* Talks "See more" (Brian, 2026-11-23): a date group with lots of talks (19 memos in one week) shows the first 5 and
+   "See 14 more"; tapping it shows the rest ("Hide" folds them again). */
+(function () {
+  var KEEP = 5;
+  function fold(list) {
+    if (!list || !list.hasAttribute("data-fold-groups")) return;
+    list.querySelectorAll(".grp-toggle").forEach(function (b) { b.remove(); });
+    var groups = [], cur = null;
+    Array.prototype.forEach.call(list.children, function (el) {
+      if (el.classList.contains("list-head")) { cur = { head: el, rows: [] }; groups.push(cur); }
+      else if (cur && el.classList.contains("item") && !el.classList.contains("show-more")) cur.rows.push(el);
+    });
+    groups.forEach(function (g) {
+      if (g.rows.length <= KEEP + 1) return;
+      var extra = g.rows.slice(KEEP), open = false;
+      var b = document.createElement("button"); b.type = "button"; b.className = "item show-more grp-toggle";
+      function paint() { extra.forEach(function (r) { r.hidden = !open; }); b.textContent = open ? "Hide" : "See " + extra.length + " more"; }
+      b.addEventListener("click", function () { open = !open; paint(); if (!open) g.head.scrollIntoView({ block: "nearest" }); });
+      extra[extra.length - 1].after(b); paint();
+    });
+  }
+  function run() { fold(document.getElementById("conv-list")); }
+  if (document.readyState !== "loading") run(); else document.addEventListener("DOMContentLoaded", run);
+  document.addEventListener("htmx:afterSettle", run);
+})();
+
+/* U11 (Brian, 2026-11-25): confirm questions use the app's own themed box (base.html #ask), never the browser's.
+   sbConfirm(question, okLabel) -> Promise<boolean>. Forms with hx-confirm or data-confirm ask before they're sent
+   (forms are plain posts since 2026-11-22, so htmx's own hx-confirm never ran on them), and so do htmx requests. */
+(function () {
+  window.sbConfirm = function (text, ok) {
+    var d = document.getElementById("ask");
+    if (!d || !d.showModal) return Promise.resolve(window.confirm(text));
+    document.getElementById("ask-text").textContent = text;
+    var yes = d.querySelector('[data-ask="yes"]'), no = d.querySelector('[data-ask="no"]');
+    yes.textContent = ok || "OK";
+    return new Promise(function (resolve) {
+      function done(v) { yes.onclick = no.onclick = d.onclose = d.onclick = null; if (d.open) d.close(); resolve(v); }
+      yes.onclick = function () { done(true); };
+      no.onclick = function () { done(false); };
+      d.onclose = function () { done(false); };                                  // Escape
+      d.onclick = function (e) { if (e.target === d) done(false); };            // a tap on the backdrop
+      d.showModal(); no.focus();
+    });
+  };
+  document.addEventListener("submit", function (e) {
+    var f = e.target, q = f.getAttribute && (f.getAttribute("data-confirm") || f.getAttribute("hx-confirm"));
+    if (!q || f.dataset.asked) return;
+    e.preventDefault();
+    var by = e.submitter;
+    window.sbConfirm(q, by && by.textContent.trim().length < 24 ? by.textContent.trim() : "OK").then(function (ok) {
+      if (!ok) return;
+      f.dataset.asked = "1";
+      if (f.requestSubmit) f.requestSubmit(by || undefined); else f.submit();
+      delete f.dataset.asked;
+    });
+  }, true);
+  document.addEventListener("htmx:confirm", function (e) {
+    if (!e.detail.question || e.target.tagName === "FORM") return;
+    e.preventDefault();
+    window.sbConfirm(e.detail.question).then(function (ok) { if (ok) e.detail.issueRequest(true); });
+  });
+})();
+
+/* R4-18: a speaker's Voice button (macros.voice). One shared player: tap to play, tap again to stop; the button fills
+   as it plays. Starting it pauses the talk's own player, and the talk's player stops it. */
+(function () {
+  var au = null, btn = null;
+  function label(b, on) { b.classList.toggle("playing", on); b.querySelector(".vb-t").textContent = on ? "Stop" : "Voice";
+    b.setAttribute("aria-label", on ? "Stop their voice" : "Play their voice"); if (!on) b.style.removeProperty("--vp"); }
+  function stop() { if (au) au.pause(); if (btn) { btn.classList.remove("loading"); label(btn, false); } btn = null; }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-voice]");
+    if (!b) { if (btn && e.target.closest && e.target.closest("[data-sp-close], [data-fx-close]")) stop(); return; }
+    e.preventDefault(); e.stopPropagation();
+    if (btn === b) { stop(); return; }
+    stop();
+    if (!au) {
+      au = new Audio(); au.preload = "none";
+      au.addEventListener("timeupdate", function () { if (btn && au.duration) btn.style.setProperty("--vp", (au.currentTime / au.duration * 100).toFixed(1) + "%"); });
+      au.addEventListener("playing", function () { if (btn) btn.classList.remove("loading"); });
+      au.addEventListener("ended", stop);
+      au.addEventListener("error", function () { if (btn) { stop(); if (window.sbNote) window.sbNote("Couldn't play this voice sample. Its file may be gone."); } });   // R5-15: never a silent tap
+    }
+    var main = document.getElementById("player"); if (main && !main.paused) main.pause();
+    btn = b; label(b, true); b.classList.add("loading");
+    au.src = b.dataset.voice; au.currentTime = 0;
+    var p = au.play(); if (p && p.catch) p.catch(function () { stop(); });
+  }, true);
+  document.addEventListener("play", function (e) { if (e.target && e.target.id === "player") stop(); }, true);
+  document.addEventListener("htmx:beforeSwap", stop);
+  document.addEventListener("toggle", function (e) { if (btn && e.target.tagName === "DETAILS" && !e.target.open && e.target.contains(btn)) stop(); }, true);
 })();

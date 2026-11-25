@@ -1,0 +1,12 @@
+{# Advanced search fields (see macros.adv_search). Gmail's layout: label column, one field per row, Search at the bottom right. #}
+<form class="adv-form" method="get" action="/search">
+  <label class="adv-r"><span>Words</span><input type="search" name="q" value="{{ q }}" placeholder="What was said or written" required></label>
+  <label class="adv-r"><span>Look in</span><select name="type">{% for k, l in search_tabs.items() %}<option value="{{ k }}" {{ 'selected' if tab == k }}>{{ 'Everything' if k == 'all' else l }}</option>{% endfor %}</select></label>
+  <label class="adv-r"><span>With</span><select name="person"><option value="">Anyone</option>
+    {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if f.person == p.id }}>{{ p.name }}</option>{% endfor %}</select></label>
+  <label class="adv-r"><span>Said by</span><select name="said"><option value="">Anyone</option>
+    {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if f.said == p.id }}>{{ 'Me' if p.id == 1 else p.name }}</option>{% endfor %}</select></label>
+  <div class="adv-r"><span>Date</span><div class="adv-dates"><input type="date" name="start" value="{{ f.start }}" aria-label="From"><i>to</i><input type="date" name="end" value="{{ f.end }}" aria-label="To"></div></div>
+  <label class="adv-r"><span>Sort</span><select name="sort">{% for k, l in [("best", "Best match"), ("new", "Newest first"), ("old", "Oldest first")] %}<option value="{{ k }}" {{ 'selected' if f.sort == k }}>{{ l }}</option>{% endfor %}</select></label>
+  <div class="adv-foot"><button type="reset" class="btn btn-ghost">Clear</button><button class="btn btn-primary">Search</button></div>
+</form>

@@ -2,9 +2,15 @@
 {% import "macros.html" as m with context %}
 {% block title %}Tasks · Scribe Bot{% endblock %}
 {% block body %}
-<div class="page-head"><h1>Tasks</h1>
+{# Brian picked A (2026-11-22 night): Open | Closed beside the title, Sort + Person on one line, a red + like Talks #}
+{% set sq = ('&sort=' ~ sort) if sort != 'due' else '' %}{% set pq = ('&person=' ~ person) if person else '' %}
+<div class="page-head tk-head"><h1>Tasks</h1>
+  {% if tab not in ('inbox', 'decisions') %}<span class="seg tk-open" role="group" aria-label="Open or done">
+    <a href="/tasks?tab={{ tab }}{{ pq }}{{ sq }}&show=open" class="{{ 'on' if show == 'open' }}">Open</a>
+    <a href="/tasks?tab={{ tab }}{{ pq }}&show=closed" class="{{ 'on' if show in ('done', 'closed', 'not_needed') }}">Closed</a>
+    {% if show == 'old' %}<a href="/tasks?show=old" class="on">Old</a>{% endif %}</span>{% endif %}
   {% if tab in ('mine', 'waiting') %}{# redesign 2026-11-21: adding a task is a + that opens a small sheet, not a form on top of the list #}
-  <details class="fx-sheet add-sheet"><summary class="icon-btn add-btn" aria-label="Add a task" title="Add a task">{{ m.icon("plus") }}</summary>
+  <details class="fx-sheet add-sheet"><summary class="fab" aria-label="Add a task" title="Add a task">{{ m.icon("plus") }}</summary>
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
     <form class="fx-body" method="post" action="/tasks"><div class="fx-grab" aria-hidden="true"></div>
       <div class="fx-head"><b>{{ 'Add a task for me' if tab == 'mine' else 'Add something someone owes you' }}</b></div>
@@ -35,15 +41,15 @@
 
 
 
-<form class="toolbar fx-row" method="get" action="/tasks" {{ m.live("/tasks") }}>
+<form class="toolbar fx-row tk-bar lbar" method="get" action="/tasks" {{ m.live("/tasks") }}>
   <input type="hidden" name="tab" value="{{ tab }}">
+  {{ m.list_search("/tasks", q, "Search tasks", "tasks-q", live=False) }}
+  {% if tab != 'inbox' and show == 'open' %}<select name="sort" aria-label="Sort" class="fx-sort">{# Brian, 2026-11-22: the rail jumps between these groups #}
+    <option value="due" {{ 'selected' if sort == 'due' }}>↕ Due date</option><option value="added" {{ 'selected' if sort == 'added' }}>↕ Recently added</option>
+    <option value="talk" {{ 'selected' if sort == 'talk' }}>↕ Talk</option><option value="tag" {{ 'selected' if sort == 'tag' }}>↕ Tag</option></select>{% endif %}
   <select name="person" aria-label="Person" class="fx-sort"><option value="">Anyone</option>
     {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if person == p.id }}>{{ p.name }}</option>{% endfor %}</select>
-  {% if tab != 'inbox' %}<span class="seg" role="group" aria-label="Open or done">
-    <a href="/tasks?tab={{ tab }}{% if person %}&person={{ person }}{% endif %}&show=open" class="{{ 'on' if show == 'open' }}">Open</a>
-    <a href="/tasks?tab={{ tab }}{% if person %}&person={{ person }}{% endif %}&show=closed" class="{{ 'on' if show in ('done', 'closed', 'not_needed') }}">Closed</a>
-    {% if show == 'old' %}<a href="/tasks?show=old" class="on">Old</a>{% endif %}
-  </span>{% endif %}
+  {% if show != 'open' %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
   <noscript><button class="btn">Filter</button></noscript>
 </form>
 {% if show in ('done', 'closed', 'not_needed') %}<nav class="seg seg-sub" aria-label="Which closed tasks">
@@ -52,20 +58,32 @@
 {% if show == 'old' %}<h2 class="section-head">Old tasks to check</h2>
 <p class="section-help">Open tasks untouched for a month.</p>
 {% elif tab == 'inbox' %}<p class="section-help">✓ keeps it (tap the tag to change the area first), ✕ removes it.</p>{% endif %}
-<div class="card" id="task-list">
+{# N4 / A3.2 (Brian, 2026-11-25): pick several, the same way as Inbox and People #}
+<div class="pk2" data-pk-bar="task-list" hidden role="region" aria-label="Selected tasks">
+  <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
+    <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-pk-all aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
+  <div class="pk-bot">
+    <button type="button" data-pk-post="/tasks-bulk/done"><i aria-hidden="true">✓</i><span class="pk-l">Done</span></button>
+    <button type="button" data-pk-post="/tasks-bulk/not-needed"><i aria-hidden="true">✕</i><span class="pk-l">Not needed</span></button>
+    <button type="button" data-pk-post="/tasks-bulk/delete" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete</span></button>
+  </div></div>
+<div class="card" id="task-list"{% if tab != 'inbox' %} data-picker{% endif %}>
   {% set gs = namespace(g="") %}
   {% for t in rows %}
-    {% if show in ('done', 'closed', 'not_needed') %}{{ m.list_head(t.updated_at|date_group, gs) }}{% elif tab != 'inbox' and show != 'old' %}{{ m.list_head(t.due|due_group if t.due else t.created_at|date_group|group_phrase("Added"), gs) }}{% endif %}
+    {% if show in ('done', 'closed', 'not_needed') %}{{ m.list_head(t.updated_at|date_group, gs) }}{% elif tab != 'inbox' and show != 'old' and sort in ('talk', 'tag') %}{% set key = 'k' ~ ((t.conversation_id or 0)|string if sort == 'talk' else (t.first_tag or '')) %}
+      {% if key != gs.g %}{% set gs.g = key %}<h3 class="list-head lh-group">{% if sort == 'talk' %}<span class="cut">{{ t.conv_title or 'Not from a talk' }}</span>{% if t.conversation_id %}<a href="/conversations/{{ t.conversation_id }}">Open ›</a>{% endif %}
+        {% else %}<span class="cut">{{ '# ' ~ t.first_tag if t.first_tag else 'No tag' }}</span>{% endif %}</h3>{% endif %}
+    {% elif tab != 'inbox' and show != 'old' %}{{ m.list_head(t.created_at|date_group|group_phrase("Added") if sort == 'added' else t.due|due_group, gs) }}{% endif %}
     {% if tab == 'inbox' %}{{ m.unsure_row(t, "task-list") }}
     {% elif show == 'old' %}{{ m.task_row(t, people, show_owner=True, show_conv=True, tgt="task-list", keep=True) }}
-    {% else %}{{ m.task_row(t, people, show_owner=(tab == 'waiting'), show_conv=True, tgt="task-list") }}{% endif %}
+    {% else %}{{ m.task_row(t, people, show_owner=(tab == 'waiting'), show_conv=(sort != 'talk' or show != 'open'), tgt="task-list") }}{% endif %}
   {% else %}
     {% if tab == 'inbox' %}{{ m.empty("inbox", "Nothing unsure", "Tasks the AI isn't sure about wait here for a quick yes or no.") }}
     {% elif show == 'old' %}{{ m.empty("check-circle", "Nothing old to check", "Every open task has had some activity in the last month.") }}
     {% elif show == 'not_needed' %}{{ m.empty("check-circle", "Nothing closed as not needed") }}
     {% elif show in ('done', 'closed') %}{{ m.empty("check-circle", "Nothing done yet") }}
     {% elif tab == 'waiting' %}{{ m.empty("clock", "Nobody owes you anything") }}
-    {% else %}{{ m.empty("check-circle", "All clear", "Add a task above, or they'll arrive from your conversations.") }}{% endif %}
+    {% else %}{{ m.empty("check-circle", "All clear", "Tap + to add one, or they'll arrive from your conversations.") }}{% endif %}
   {% endfor %}
   {{ m.more("task-list", rows|length, total, 100) }}
 </div>

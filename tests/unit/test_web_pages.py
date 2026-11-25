@@ -128,10 +128,10 @@ def test_demo_mode_hides_the_worker_warning(env):
 
 
 def test_conversation_page_follows_output_design(env):
-    page = env[0].get("/conversations/1").text
+    page = env[0].get("/conversations/1?tx=1").text
     order = [page.index(f"<h2>{h}</h2>") for h in ("Summary", "You owe", "They owe you", "Decisions", "People notes", "Transcript")]
     assert order == sorted(order)
-    a, b = "Alex Example</span> 50%", "Brian</span> 25%"                # talk share from the lines, first speaker first
+    a, b = "Alex Example 50%", "Brian 25%"                              # talk share from the lines, first speaker first (bar label)
     assert a in page and b in page
     assert page.index(a) < page.index(b)
     assert "Sent to Claude" in page                                  # privacy badge
@@ -344,16 +344,17 @@ def test_trash_hides_everything_from_it_and_restores(env):
     page = client.post("/conversations/1/delete").text
     assert one(conn, "SELECT deleted_at IS NOT NULL FROM conversation WHERE id = 1") == 1
     assert 'href="/conversations/1"' not in page                                              # gone from the list
-    assert "Moved “Weekly sync with Alex” to Trash" in page and 'action="/undo/' in page      # Undo bar
+    assert "Moved to Trash ›" in page and 'action="/undo/' in page      # Undo bar (short; Brian 2026-11-22)
+    assert 'class="undo-label undo-go" href="/conversations?trash=1"' in page                # tap it to open Trash
     for path, gone in (("/tasks", "Review the launch deck"), ("/tasks?tab=waiting", "Send the budget"),
                        ("/people/2", "Has a dog named Biscuit"), ("/", "Speakers to name")):
         assert gone not in client.get(path).text, path
     assert 'Mine <span class="n">0</span>' in client.get("/tasks").text and 'aria-label="1 need you"' in client.get("/tasks").text
     assert "owes you" not in client.get("/people").text
     trash = client.get("/conversations?trash=1").text
-    assert "Weekly sync with Alex" in trash and 'action="/conversations/1/restore"' in trash and "removed for good" in trash
+    assert "Weekly sync with Alex" in trash and 'action="/conversations/1/restore"' in trash and "kept until" in trash
     assert "This conversation is in Trash" in client.get("/conversations/1").text
-    assert "Trash · 1" in client.get("/conversations").text
+    assert 'aria-label="Trash, 1 items"' in client.get("/conversations").text   # count for screen readers only (no badge)
     client.post("/conversations/1/restore")
     assert "Review the launch deck" in client.get("/tasks").text and "Trash · " not in client.get("/conversations").text
     client.post("/conversations/1/delete")
@@ -385,7 +386,7 @@ def test_design_basics(env):
     assert 'class="sidebar"' in page and 'class="tabbar"' in page and 'href="#content"' in page
     assert 'aria-label="3 need you"' in page   # speaker + inbox + glossary in the seed, counted on the Today tab
     assert page.count('class="tabbar"') == 1 and ">Talks" in page and "/more" not in page.split('class="tabbar"')[1]
-    assert 'class="side-search"' in page and 'class="fx-sheet st-sheet"' in page and "Dark mode" not in page
+    assert 'class="dsearch"' in page and 'class="fx-sheet st-sheet"' in page and "Dark mode" not in page
     for path, tab in (("/people/2", "/people"), ("/decisions", "/tasks"), ("/review", "/")):   # sub-pages light up their tab
         assert f'<a href="{tab}" class="on"' in client.get(path).text
     talks = client.get("/conversations").text
@@ -439,14 +440,14 @@ def test_sharing_an_older_recording_puts_it_in_review(env, tmp_path):
                  "VALUES (50, 'recorder', ?, ?, 1026, '2026-10-19T18:58:35+00:00', 'backlog', 'Recording 2')",
                  (str(orig), hashlib.sha256(audio).hexdigest()))
     inbox = client.get("/inbox").text                                              # older recordings live in the Inbox
-    assert ">older<" in inbox and 'action="/recordings/50/review"' in inbox   # in the row's sheet
+    assert ">older<" in inbox and 'name="ids" value="50"' in inbox            # AI notes / Transcript only in the row's sheet
     r = client.post("/capture/share", files={"files": ("Recording 2.m4a", audio, "audio/mp4")})
     assert "never processed" in r.text and "now in the Inbox" in r.text
     assert one(conn, "SELECT status FROM recording WHERE id = 50") == "awaiting_approval"
     assert one(conn, "SELECT count(*) FROM review_item WHERE kind = 'approval' AND ref_id = 50 AND status = 'open'") == 1
     assert list((cfg.data_dir / "uploads").iterdir()) == []                       # our duplicate copy is removed
     inbox = client.get("/inbox").text                                              # now waiting for its OK, same page
-    assert 'action="/recordings/50/review"' not in inbox and ">AI notes<" in inbox
+    assert 'name="ids" value="50"' not in inbox and ">Summarize<" in inbox
     again = client.post("/capture/share", files={"files": ("Recording 2.m4a", audio, "audio/mp4")})
     assert "already has this recording" in again.text                              # shared twice: said plainly
     assert client.post("/recordings/50/review").status_code == 404                  # no longer an older recording
@@ -455,10 +456,10 @@ def test_sharing_an_older_recording_puts_it_in_review(env, tmp_path):
 def test_talk_time_follows_reassigned_lines_and_shows_on_person_page(env):
     client, conn, _ = env
     page = client.get("/conversations/1").text
-    assert "Alex Example</span> 50%" in page and "8 s · 2 turns" in page       # lines 0 and 2, 4 s each
+    assert "Alex Example 50%" in page and "50% · 8 s" in page and "2 turns" in page       # lines 0 and 2, 4 s each
     conn.execute("UPDATE segment SET speaker_id = 1 WHERE idx = 1")             # move Brian's line to Alex
     page = client.get("/conversations/1").text
-    assert "Alex Example</span> 75%" in page and "12 s · 1 turn" in page
+    assert "Alex Example 75%" in page and "75% · 12 s" in page and "1 turn" in page
     person = client.get("/people/2").text
     assert 'id="talk-time"' in person and "Alex 75% · you 0%" in person
     assert 'id="talk-time"' not in client.get("/people/1").text                 # not on Brian's own page
@@ -689,7 +690,7 @@ def test_due_dates_read_like_words(env):
 def test_search_results_open_the_exact_line(env):
     client, conn, _ = env
     page = client.get("/search?q=budget").text
-    assert 'class="item tap-row hit"' in page and 'href="/conversations/1#L2"' in page      # "I'll send the budget by Friday."
+    assert 'class="item tap-row hit"' in page and 'href="/conversations/1?tx=1#L2"' in page      # "I'll send the budget by Friday."
     assert 'href="/conversations/1#sec-summary"' in client.get("/search?q=plan").text
 
 
@@ -701,15 +702,15 @@ def test_search_groups_by_conversation_with_tabs_filters_and_one_conversation(en
     said = conn.execute("SELECT sp.person_id FROM segment g JOIN speaker sp ON sp.id = g.speaker_id "
                         "WHERE g.text LIKE '%budget%'").fetchone()[0]
     other = conn.execute("SELECT id FROM person WHERE id != ?", (said,)).fetchone()[0]
-    assert 'href="/conversations/1#L2"' in client.get(f"/search?q=budget&said={said}").text
-    assert 'href="/conversations/1#L2"' not in client.get(f"/search?q=budget&said={other}").text   # someone else said it? no
-    assert 'href="/conversations/1#L2"' not in client.get("/search?q=budget&start=2999-01-01").text
+    assert 'href="/conversations/1?tx=1#L2"' in client.get(f"/search?q=budget&said={said}").text
+    assert 'href="/conversations/1?tx=1#L2"' not in client.get(f"/search?q=budget&said={other}").text   # someone else said it? no
+    assert 'href="/conversations/1?tx=1#L2"' not in client.get("/search?q=budget&start=2999-01-01").text
     one = client.get("/search?q=budget&conv=1").text
-    assert "← All results" in one and 'href="/conversations/1#L2"' in one
+    assert "← All results" in one and 'href="/conversations/1?tx=1#L2"' in one
     from scribe_bot.web import routes
     monkeypatch.setattr(routes, "COMMON_HITS", 0)   # a word this common isn't grouped: newest hits, with a hint
     common = client.get("/search?q=budget").text
-    assert "just the newest 100" in common and 'href="/conversations/1#L2"' in common and "result-group" not in common
+    assert "just the newest 100" in common and 'href="/conversations/1?tx=1#L2"' in common and "result-group" not in common
 
 
 def test_boxes_are_clickable_like_conversation_rows(env):
@@ -719,7 +720,7 @@ def test_boxes_are_clickable_like_conversation_rows(env):
     assert '<a class="item-link" href="/people/2"' in people and 'class="item tap-row person-row"' in people
     assert 'class="item tap-row"' in client.get("/help").text
     conn.execute("UPDATE task SET due = '2020-01-01' WHERE id = 2")                   # a late promise to Brian
-    assert 'class="item-link" href="/conversations/1#L2">Send the budget' in client.get("/").text
+    assert 'class="item-link" href="/conversations/1?tx=1#L2">Send the budget' in client.get("/").text
     assert 'class="item-link" href="/conversations/1">Weekly sync with Alex' in client.get("/costs").text
     conn.execute("INSERT INTO person (id, name, created_at) VALUES (8, 'Alex Other', ?)", (db.now(),))
     assert 'class="item-link" href="/people/8/merge?into=2"' in client.get("/people").text
@@ -753,18 +754,33 @@ def test_older_recordings_are_test_meetings(env, tmp_path):
     conn.execute("INSERT INTO recording (id, source, original_path, sha256, duration_s, received_at, status, title) "
                  "VALUES (60, 'recorder', ?, 'old60', 600, ?, 'backlog', 'Oct 2 at 10_15')", (str(orig), db.now()))
     page = client.get("/inbox").text
-    assert "Get it ready" in page and "Oct 2 at 10:15" in page and ">older<" in page
-    assert "Get it ready" in client.get("/help").text
-    client.post("/recordings/60/review")
+    assert "Get it ready" not in page and "Oct 2 at 10:15" in page and ">older<" in page   # no extra step (2026-11-22)
+    assert "Transcribe" in page.split('id="rec-60"')[1].split("</details>")[0]
+    client.post("/recordings/60/review")                               # the old one-step route still works
     assert one(conn, "SELECT status FROM recording WHERE id = 60") == "awaiting_approval"
-    assert ">AI notes<" in client.get("/inbox").text                 # like one that just arrived
+    assert ">Summarize<" in client.get("/inbox").text                 # like one that just arrived
+
+
+def test_bulk_inbox_handles_older_recordings_in_one_go(env, tmp_path):
+    """Brian, 2026-11-22: picking older recordings and tapping Transcript did nothing (they needed Get it ready first)."""
+    client, conn, _ = env
+    for i in (61, 62):
+        orig = tmp_path / f"Oct 3 at 10_{i}.m4a"; orig.write_bytes(b"synthetic older audio %d" % i)
+        conn.execute("INSERT INTO recording (id, source, original_path, sha256, duration_s, received_at, status, title) "
+                     "VALUES (?, 'recorder', ?, ?, 600, ?, 'backlog', ?)", (i, str(orig), f"old{i}", db.now(), orig.stem))
+    r = client.post("/inbox/bulk", data={"ids": "61,62", "what": "local"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert {one(conn, "SELECT status FROM recording WHERE id = ?", i) for i in (61, 62)} != {"backlog"}
+    assert one(conn, "SELECT count(*) FROM job WHERE kind = 'recording' AND recording_id IN (61, 62)") == 2
+    assert one(conn, "SELECT count(*) FROM review_item WHERE kind = 'approval' AND ref_id IN (61, 62) AND status = 'open'") == 0
+    assert client.post("/inbox/bulk", data={"ids": "61", "what": "nope"}).status_code == 400
 
 
 def test_history_is_one_tap_from_today_and_explained_in_help(env):
     client = env[0]
     assert 'href="/review?tab=done"' in client.get("/").text
     help_page = client.get("/help").text
-    assert "Snoozed" in help_page and "Trash (at the bottom of Talks)" in help_page and "Restore" in help_page
+    assert "Snoozed" in help_page and "Trash (the bin next to Select on Talks)" in help_page and "Restore" in help_page
 
 
 def test_search_history_lives_in_search(env):
@@ -1245,3 +1261,281 @@ def test_status_ring_shows_processing_and_paused(env):
     assert "Processing ·" in client.get("/status/sheet").text
     conn.execute("INSERT INTO setting (key, value) VALUES ('pipeline_paused', '1') ON CONFLICT(key) DO UPDATE SET value = '1'")
     assert "❚❚" in client.get("/status/ring").text and "Processing · Paused" in client.get("/status/sheet").text
+
+
+def test_talks_select_can_delete_and_make_ai_notes(env):
+    """Brian, 2026-11-22: Talks › Select only exported. Delete (one Undo) and AI notes (cost first) for several."""
+    client, conn, _ = env
+    page = client.get("/conversations").text
+    assert 'data-pick-act="ai"' in page and 'data-pick-act="trash"' in page
+    conf = client.get("/talks-bulk/ai?ids=1").text
+    assert "Summarize 1 talk" in conf and 'name="what" value="ai"' in conf or "already" in conf
+    r = client.post("/talks-bulk", data={"ids": "1", "what": "ai"}, follow_redirects=False)
+    assert r.status_code == 303 and "/talks-bulk/ai" in r.headers["location"]      # never spends without the confirm
+    client.post("/talks-bulk", data={"ids": "1", "what": "trash"})
+    assert one(conn, "SELECT deleted_at IS NOT NULL FROM conversation WHERE id = 1") == 1
+    assert client.post("/talks-bulk", data={"ids": "1", "what": "nope"}).status_code == 400
+
+
+def test_a_failed_recording_can_be_tried_again_from_the_failed_step(env):
+    """Brian, 2026-11-22: "Recognizing voices failed" 3 times and the only way out was Cancel (transcript thrown away)."""
+    client, conn, _ = env
+    conn.execute("INSERT INTO job (id, kind, recording_id, payload, status, created_at, updated_at, error) "
+                 "VALUES (900, 'recording', NULL, '{}', 'failed', 'x', 'x', 'identify: boom')")
+    conn.execute("INSERT INTO stage_run (job_id, stage, status, attempts) VALUES (900, 'transcribe', 'done', 1), (900, 'identify', 'failed', 3)")
+    assert client.post("/processing/900/retry", follow_redirects=False).status_code == 303
+    assert one(conn, "SELECT status FROM job WHERE id = 900") == "pending"
+    assert one(conn, "SELECT attempts FROM stage_run WHERE job_id = 900 AND stage = 'identify'") == 0
+    assert one(conn, "SELECT status FROM stage_run WHERE job_id = 900 AND stage = 'transcribe'") == "done"   # kept
+    assert client.post("/processing/900/retry").status_code == 409                                          # not failed now
+
+
+def test_merging_two_finished_talks_makes_one_talk(env):
+    """Brian, 2026-11-22: two talks transcribed overnight were one conversation; merge them, then Summarize."""
+    client, conn, _ = env
+    src = conn.execute("SELECT id FROM conversation WHERE deleted_at IS NULL ORDER BY id LIMIT 1").fetchone()[0]
+    t = "2026-11-21T10:00:00+00:00"
+    other = conn.execute("INSERT INTO conversation (title, started_at, status, created_at, updated_at) "
+                         "VALUES ('Part two', '2099-01-01T00:00:00+00:00', 'transcribed', ?, ?)", (t, t)).lastrowid
+    sp = conn.execute("INSERT INTO speaker (conversation_id, cluster, person_id, talk_seconds) VALUES (?, 0, 1, 30)", (other,)).lastrowid
+    conn.execute("INSERT INTO segment (conversation_id, idx, start_s, end_s, speaker_id, text) VALUES (?, 0, 1, 4, ?, 'second part words')", (other, sp))
+    n_src = one(conn, "SELECT count(*) FROM segment WHERE conversation_id = ?", src)
+    r = client.post("/talks-bulk", data={"ids": f"{src},{other}", "what": "merge"}, follow_redirects=False)
+    assert r.status_code == 303 and "merged=2" in r.headers["location"]
+    new = int(r.headers["location"].split("/conversations/")[1].split("?")[0])
+    assert one(conn, "SELECT count(*) FROM segment WHERE conversation_id = ?", new) == n_src + 1
+    last = conn.execute("SELECT text, start_s FROM segment WHERE conversation_id = ? ORDER BY idx DESC LIMIT 1", (new,)).fetchone()
+    assert last[0] == "second part words" and last[1] >= 1           # later talk comes after, times shifted
+    assert one(conn, "SELECT count(*) FROM conversation WHERE id IN (?, ?) AND deleted_at IS NOT NULL", src, other) == 2
+    assert one(conn, "SELECT summary FROM conversation WHERE id = ?", new) is None   # Summarize it next
+    assert "Merged 2 talks" in client.get(f"/conversations/{new}?merged=2").text
+    assert one(conn, "SELECT count(*) FROM search_index WHERE conversation_id = ? AND kind = 'segment'", new) == n_src + 1
+    assert client.post("/talks-bulk", data={"ids": str(new), "what": "merge"}).status_code == 400   # needs 2+
+
+
+def test_overnight_card_shows_last_night_and_dismisses(env):
+    """S1 (Brian picked A, 2026-11-22): a card at the top of Today; swipe or ✕ dismisses it for the day."""
+    from datetime import datetime, timezone
+    from scribe_bot.web import routes
+    client, conn, _ = env
+    night = datetime.now().astimezone().replace(hour=2, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat(timespec="seconds")
+    conn.execute("INSERT INTO job (kind, payload, status, created_at, updated_at) VALUES ('recording', '{}', 'done', ?, ?)", (night, night))
+    later = datetime.now().astimezone().replace(hour=8, minute=0)
+    card = routes.overnight_card(conn, later)
+    assert card and card["n"] == 1
+    client.post("/overnight/dismiss")
+    assert routes.overnight_card(conn, later) is None
+    # Brian, 2026-11-22: a copy stays in Notifications › Dismissed (app only, never Discord) and opens that night's list
+    if datetime.now().hour < 1:   # before 1 AM there's no "last night" yet
+        return
+    n = conn.execute("SELECT * FROM notification WHERE title LIKE 'Overnight:%'").fetchall()
+    assert len(n) == 1 and n[0]["dismissed_at"] and n[0]["status"] == "sent" and "night=" in n[0]["link"]
+    assert "Overnight:" in client.get("/notifications?tab=dismissed").text
+    assert client.get(n[0]["link"]).status_code == 200
+    client.post("/overnight/dismiss")
+    assert conn.execute("SELECT count(*) FROM notification WHERE title LIKE 'Overnight:%'").fetchone()[0] == 1   # once a day
+
+
+def test_overnight_counts_talks_by_when_they_finished(env):
+    """2026-11-23: 19 memos queued at 12:04 AM (before the old 1-7 AM window) and done by 5:13 AM showed as "nothing".
+    A talk belongs to the night it finished in (9 PM to 7 AM); one finished the evening before 9 PM doesn't count."""
+    from datetime import datetime, time, timedelta, timezone
+    from scribe_bot.web import routes
+    _, conn, _ = env
+    today = datetime.now().astimezone().date()
+    at = lambda d, h, m=0: datetime.combine(d, time(h, m)).astimezone().astimezone(timezone.utc).isoformat(timespec="seconds")
+    ins = "INSERT INTO job (kind, payload, status, created_at, updated_at) VALUES ('recording', '{}', ?, ?, ?)"
+    conn.execute(ins, ("done", at(today, 0, 4), at(today, 3)))                        # queued 12:04 AM, done 3 AM: counts
+    conn.execute(ins, ("failed", at(today - timedelta(days=1), 22), at(today, 1)))     # queued 10 PM, failed 1 AM: counts
+    conn.execute(ins, ("done", at(today - timedelta(days=1), 18), at(today - timedelta(days=1), 20)))   # 8 PM: no
+    conn.execute(ins, ("done", at(today, 8), at(today, 8, 30)))                       # this morning after 7: no
+    card = routes.overnight_card(conn, datetime.combine(today, time(9)).astimezone())
+    assert card and card["n"] == 2 and card["bad"] == 1
+    s, e = routes.night_window_utc(datetime.combine(today, time(0, 30)).astimezone())   # 12:30 AM = the night before
+    assert s == at(today - timedelta(days=2), 21) and e == at(today - timedelta(days=1), 7)
+
+
+def test_transcript_loads_when_opened(env):
+    """2026-11-22: the transcript was 80% of a talk page; it now comes in only when its section opens."""
+    client = env[0]
+    page = client.get("/conversations/1").text
+    assert 'hx-get="/conversations/1?part=lines"' in page and 'class="line' not in page
+    part = client.get("/conversations/1?part=lines").text
+    assert part.startswith('\n<div id="tx-body">') or '<div id="tx-body">' in part[:80]
+    assert 'class="line' in part and "<html" not in part
+
+
+def test_talks_list_names_each_person_once(env):
+    """Brian, 2026-11-22: two voices in one talk linked to the same person showed her name twice on Talks and Search."""
+    client, conn, _ = env
+    conn.execute("INSERT INTO speaker (id, conversation_id, cluster, person_id, talk_seconds) VALUES (99, 1, 7, 2, 300)")
+    page = client.get("/conversations").text
+    assert page.count("Alex Example, Alex Example") == 0 and "Alex Example" in page
+
+
+def test_speed_log_records_numbers_only(env, tmp_path):
+    """Brian, 2026-11-22: the phone reports how long each page took (M14 / network / download / drawing)."""
+    client = env[0]
+    r = client.get("/conversations")
+    assert r.headers["server-timing"].startswith("app;dur=")
+    body = '[{"k":"page","p":"/conversations/3<script>","total":812.4,"m14":40,"net":700,"dl":20,"draw":52},"junk"]'
+    assert client.post("/perf", content=body, headers={"sec-fetch-site": "same-origin"}).status_code == 204
+    log = (client.app.state.cfg.data_dir / "logs" / "speed.log").read_text()
+    assert "page /conversations/3script total=812 m14=40 net=700 dl=20 draw=52" in log and "<" not in log
+
+
+def test_dont_know_and_not_x_for_speakers(env, monkeypatch):
+    """Brian, 2026-11-22: "Don't know" stops the asking (events with hundreds of people); "Not X" puts the voice back
+    as its own Speaker N and takes it out of X's voiceprint; "Don't know the rest" for a whole talk."""
+    client, conn, _ = env
+    h = {"sec-fetch-site": "same-origin"}
+    conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('speaker', 1, 3, '{}', '2026-01-01')")
+    page = client.get("/conversations/1").text
+    assert "Don't know (stop asking)" in page and "✕ Not Alex Example" in page
+    client.post("/speakers/3/name", data={"person_id": "", "special": "idk"}, headers=h)
+    assert one(conn, "SELECT unknown FROM speaker WHERE id = 3") == 1
+    assert one(conn, "SELECT status FROM review_item WHERE kind = 'speaker' AND ref_id = 3") == "dismissed"
+    assert 'sp-idk-q' in client.get("/conversations/1").text
+    assert "to name" not in client.get("/conversations").text.split('id="conv-list"')[1]
+    # Not X: back to unnamed (asked again), voiceprint sample removed
+    conn.execute("UPDATE speaker SET confirmed = 1 WHERE id = 1")
+    conn.execute("INSERT OR REPLACE INTO voiceprint (person_id, embedding, sample_count, updated_at) VALUES (2, x'00', 1, '2026-01-01')")
+    from scribe_bot.pipeline import identify
+    monkeypatch.setattr(identify, "speaker_embedding", lambda *a, **k: [1.0, 0.0])
+    client.post("/speakers/1/name", data={"person_id": "", "special": "not"}, headers=h)
+    assert one(conn, "SELECT person_id FROM speaker WHERE id = 1") is None
+    assert one(conn, "SELECT count(*) FROM voiceprint WHERE person_id = 2") == 0
+    # Don't know the rest
+    client.post("/conversations/1/speakers-unknown", headers=h)
+    assert one(conn, "SELECT count(*) FROM speaker WHERE conversation_id = 1 AND person_id IS NULL AND unknown = 0") == 0
+    # naming later clears it
+    client.post("/speakers/3/name", data={"person_id": "2"}, headers=h)
+    assert one(conn, "SELECT unknown FROM speaker WHERE id = 3") == 0
+
+
+def test_big_talk_quiet_voices_not_asked(env):
+    """Brian, 2026-11-22: in talks with 6+ voices, unnamed voices under 2 minutes stop being asked about."""
+    from pathlib import Path
+    client, conn, _ = env
+    for k in range(10, 15):
+        conn.execute("INSERT INTO speaker (conversation_id, cluster, talk_seconds) VALUES (1, ?, ?)", (k, 30 if k < 14 else 300))
+    long_sid = one(conn, "SELECT id FROM speaker WHERE conversation_id = 1 AND cluster = 14")
+    import scribe_bot.core as core
+    sql = (Path(core.__file__).parent / "migrations" / "0035_big_talk_quiet_voices.sql").read_text()
+    conn.executescript(sql)
+    assert one(conn, "SELECT count(*) FROM speaker WHERE conversation_id = 1 AND cluster BETWEEN 10 AND 13 AND unknown = 1") == 4
+    assert one(conn, "SELECT unknown FROM speaker WHERE id = ?", long_sid) == 0
+
+
+def test_tappable_rows_have_no_dead_spots_and_keepalive(env):
+    """Brian, 2026-11-22: ~18% of each Talks row (date line, New badge, AI notes line) lit up but didn't open. Labels in
+    a tappable row must let the tap through to the row's link (checked in a real browser with scripts/dev audit too)."""
+    client = env[0]
+    css = client.get("/static/app.css").text
+    assert ".tap-row :is(.item-sub, .cr-line, .cr-ic, .badge, .item-actions, .tag-mini, .meta) { pointer-events: none }" in css
+    assert client.get("/ping").status_code == 204
+    assert "addEventListener(\"fetch\"" not in client.get("/sw.js").text   # no worker wake-up before each page
+
+
+def test_tap_highlight_is_rounded_and_chrome_flash_off(env):
+    """Brian, 2026-11-22 night: a tap showed Chrome's hard-cornered box with text touching its edge."""
+    css = env[0].get("/static/app.css").text
+    assert "html { -webkit-tap-highlight-color: transparent }" in css and "clip-path: inset(0 -10px round 12px)" in css
+
+
+def test_pinned_player_covers_any_screen_size(env):
+    """Brian, 2026-11-23: no transcript may show above or through the pinned player on ANY device, not just his Pixel.
+    The cover reaches the screen edges by itself (no fixed pixel sizes) and the pinned speaker strip is solid."""
+    css = env[0].get("/static/app.css").text
+    assert ".player.stuck { box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(-100vmax -100vmax 0 -100vmax) }" in css
+    assert "right: -22px" not in css and "top: -64px" not in css
+    pin = css.split(".who-pin-btn { position: absolute;", 1)[1].split("}", 1)[0]
+    assert "background: var(--surface);" in pin and "color-mix" not in pin
+
+
+def test_inbox_delete_shows_first_in_trash(env):
+    """2026-11-23: an older recording deleted from the Inbox sat in a 2nd group under the deleted talks, off screen on
+    the phone; Brian thought it never reached Trash. Trash is one list, newest first."""
+    from pathlib import Path
+    from scribe_bot.core import db
+    client, conn, cfg = env
+    client.post("/conversations/1/delete")
+    conn.execute("UPDATE conversation SET deleted_at = '2026-01-01T00:00:00+00:00' WHERE id = 1")   # deleted earlier
+    src = Path(cfg.data_dir) / "old.m4a"; src.write_bytes(b"x")
+    rid = conn.execute("INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title) "
+                       "VALUES ('recorder', ?, 'zz9zz', 60, ?, 'backlog', 'Zebra memo')", (str(src), db.now())).lastrowid
+    assert "Moved to Trash" in client.post("/inbox/bulk", data={"ids": str(rid), "what": "skip"}).text
+    trash = client.get("/conversations?trash=1").text
+    assert "Zebra memo" in trash and trash.index("Zebra memo") < trash.index("Weekly sync with Alex") and "From Inbox" in trash
+    client.post(f"/recordings/{rid}/unskip")
+    assert "Zebra memo" not in client.get("/conversations?trash=1").text
+
+
+def test_summarize_and_detailed_send_a_ready_notification(env, monkeypatch):
+    """Brian, 2026-11-23: Summarize on an older talk finished silently and the talk was lost among the others."""
+    from types import SimpleNamespace
+    from scribe_bot.ai import jobs
+    _, conn, _ = env
+    monkeypatch.setattr(jobs, "extract_conversation", lambda c, cid, approved=False: {"status": "done"})
+    jobs.rerun_stage(SimpleNamespace(conn=conn, payload={"conversation_id": 1, "approved": True}))
+    monkeypatch.setattr("scribe_bot.ai.extract.detail_conversation", lambda c, cid, approved=False: {"status": "done"})
+    jobs.detail_stage(SimpleNamespace(conn=conn, payload={"conversation_id": 1}))
+    monkeypatch.setattr(jobs, "extract_conversation", lambda c, cid, approved=False: {"status": "failed"})
+    jobs.rerun_stage(SimpleNamespace(conn=conn, payload={"conversation_id": 1, "approved": True}))
+    titles = [r[0] for r in conn.execute("SELECT title FROM notification WHERE link = '/conversations/1' ORDER BY id")]
+    assert titles == ["AI notes ready: Weekly sync with Alex", "Detailed notes ready: Weekly sync with Alex"]
+
+
+def test_person_picker_data(env):
+    """Brian picked A (2026-11-22 night): search + Suggested + everyone A-Z, with how often each person appears."""
+    client = env[0]
+    j = client.get("/people/pick?sid=3&cid=1").json()
+    names = [p["name"] for p in j["all"]]
+    assert "Me (Brian)" in names and "Alex Example" in names and names == sorted(names, key=str.lower)
+    alex = next(p for p in j["all"] if p["name"] == "Alex Example")
+    assert alex["sub"].startswith("In 1 talk")
+    assert any(p["name"] == "Alex Example" for p in j["suggested"]) and len(j["suggested"]) <= 5
+    css = client.get("/static/app.css").text
+    assert "--chev-r:" in css and "@media (hover: hover) { .tap-row:hover" in css   # crisp arrows; no sticky square hover on phones
+
+
+def test_prefetch_does_not_mark_a_talk_opened(env):
+    """Premium pass (b), 2026-11-22: a talk loaded early on press isn't "opened" until the page is really shown."""
+    client, conn, _ = env
+    h = {"sec-fetch-site": "same-origin"}
+    conn.execute("UPDATE conversation SET status = 'done', opened_at = NULL WHERE id = 1")
+    page = client.get("/conversations/1", headers={"sec-purpose": "prefetch"}).text
+    assert 'id="mark-opened"' in page and one(conn, "SELECT opened_at FROM conversation WHERE id = 1") is None
+    assert client.post("/conversations/1/opened", headers=h).status_code == 204
+    assert one(conn, "SELECT opened_at FROM conversation WHERE id = 1") is not None
+    assert 'type="speculationrules"' in client.get("/conversations").text
+    assert 'haptics' not in client.get("/settings?group=appearance").text   # vibration removed (Brian, 2026-11-23)
+
+
+def test_short_titles_follow_speaker_names(env):
+    """Brian, 2026-11-22: "You owe" still said "Speaker 1" after he named her; short titles now follow (first name)."""
+    from scribe_bot.ai import extract
+    client, conn, _ = env
+    nums = extract.speaker_numbers(conn, 1)
+    n = nums[1]   # speaker id 1 is Alex Example
+    conn.execute("UPDATE task SET short_title = ? WHERE conversation_id = 1", (f"Follow up with Speaker {n} on plans",))
+    extract.relabel_speakers(conn, 1)
+    assert one(conn, "SELECT count(*) FROM task WHERE conversation_id = 1 AND short_title = 'Follow up with Alex on plans'") >= 1
+
+
+def test_detailed_notes_follow_speaker_names(env):
+    """Brian, 2026-11-23: Detailed still said "Speaker 1" after he named Morgan. Naming patches detailed notes too,
+    and "This isn't X" puts "Speaker N" back in them."""
+    from scribe_bot.ai import extract
+    client, conn, _ = env
+    n = extract.speaker_numbers(conn, 1)[1]   # speaker id 1 is Alex Example
+    conn.execute("UPDATE conversation SET detailed = ? WHERE id = 1", (f"## Plans\n- Speaker {n} will book the table",))
+    extract.relabel_speakers(conn, 1)
+    det = one(conn, "SELECT detailed FROM conversation WHERE id = 1")
+    assert f"Speaker {n}" not in det and "will book the table" in det
+    name = one(conn, "SELECT p.name FROM speaker s JOIN person p ON p.id = s.person_id WHERE s.id = 1")
+    assert name in det
+    pid = one(conn, "SELECT person_id FROM speaker WHERE id = 1")
+    conn.execute("UPDATE speaker SET person_id = NULL WHERE id = 1")
+    extract.unname_in_text(conn, 1, pid)
+    assert f"Speaker {n}" in one(conn, "SELECT detailed FROM conversation WHERE id = 1")

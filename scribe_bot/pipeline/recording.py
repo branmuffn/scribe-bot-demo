@@ -219,6 +219,11 @@ def identify_stage(ctx: StageContext) -> str:
         clip = clip_dir / f"speaker{cluster}.wav"
         eng.write_clip(samples, longest["start"], min(longest["end"], longest["start"] + CLIP_SECONDS), clip)
         ctx.conn.execute("UPDATE speaker SET clip_path = ? WHERE id = ?", (str(clip), sid))  # the Review page plays it
+        if guess is None and len(talk) >= BIG_TALK_SPEAKERS and talk[cluster] < BIG_TALK_MIN_S:
+            # Big events (Brian, 2026-11-22): only voices that talked 2+ minutes are asked about; the rest are
+            # "Don't know" from the start (still nameable on the talk page)
+            ctx.conn.execute("UPDATE speaker SET unknown = 1 WHERE id = ?", (sid,))
+            continue
         ctx.conn.execute(
             "INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('speaker', ?, ?, ?, ?)",
             (conv_id, sid, json.dumps({"clip": str(clip), "talk_seconds": round(talk[cluster], 1),
@@ -330,6 +335,10 @@ PIPELINE: queue.Pipeline = [
     ("ai_extract", ai_extract),
     ("notify", notify_stage),
 ]
+
+
+BIG_TALK_SPEAKERS = 6     # a talk with this many voices or more counts as a big event
+BIG_TALK_MIN_S = 120      # there, only voices that talked this long are asked about
 
 
 def rerun(conn: sqlite3.Connection, conversation_id: int, speakers: int | None = None) -> int:

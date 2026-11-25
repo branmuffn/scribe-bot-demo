@@ -24,8 +24,11 @@ class KeychainStore:
         self._run = run
 
     def get(self, provider: str, account: str = DEFAULT_ACCOUNT) -> str:
-        p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}", "-w"],
-                      capture_output=True, text=True)
+        try:
+            p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}", "-w"],
+                          capture_output=True, text=True)
+        except FileNotFoundError:   # no macOS Keychain on this machine (Linux, the public demo on Vercel): no keys
+            raise SecretMissing(f"no Keychain on this machine for scribe-bot.{provider}") from None
         if p.returncode != 0 or not p.stdout.strip():
             # Don't pass on security's stderr: keep the message predictable and value-free.
             raise SecretMissing(f"no Keychain entry for scribe-bot.{provider} ({account}), or the Keychain is locked")
@@ -34,8 +37,11 @@ class KeychainStore:
         return value
 
     def exists(self, provider: str, account: str = DEFAULT_ACCOUNT) -> bool:
-        p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}"],
-                      capture_output=True, text=True)
+        try:
+            p = self._run(["security", "find-generic-password", "-a", account, "-s", f"scribe-bot.{provider}"],
+                          capture_output=True, text=True)
+        except FileNotFoundError:   # no macOS Keychain on this machine: nothing is stored
+            return False
         return p.returncode == 0
 
 

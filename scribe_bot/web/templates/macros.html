@@ -13,9 +13,13 @@
 {%- endmacro %}
 
 {# A round initial for a person (redesign, Brian picked #10 ideas, 2026-11-21); color from the name, same every time. #}
+{# R4-18 (Brian, 2026-11-25: the speaker panel "could be re-designed to be more compact"): a speaker's voice sample is
+   one small button beside "Who is it?", not a full-width player that read 0:00 / 0:00 until played. app.js plays it. #}
+{% macro voice(src) -%}<button type="button" class="voice-btn" data-voice="{{ src }}" aria-label="Play their voice" title="Play a short sample of their voice"><span class="vb-ic" aria-hidden="true"></span><span class="vb-t">Voice</span></button>{%- endmacro %}
+
 {% macro avatar(name, cls="") -%}{% set n = (name or "?")|trim %}{% set parts = n.split(" ") %}
 {% set pal = ["#2563eb", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#dc2626", "#4d7c0f"] %}
-<span class="av {{ cls }}" style="background:{{ pal[(n|sum_chars) % 8] }}" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>
+<span class="av {{ cls }}" style="--av:{{ pal[(n|sum_chars) % 8] }};background:var(--av)" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>
 {%- endmacro %}
 
 {# Needs you "Remind me" menu (clock button): pick when the item comes back. Until then it waits under Snoozed on Today
@@ -27,7 +31,7 @@
 {% macro snooze_forms(later, now=None) -%}
     {% if now %}<form method="post" action="{{ now }}"><button class="menu-item">{{ icon("sun") }} Bring back now</button></form>{% endif %}
     <div class="menu-label">Remind me</div>
-    {% for value, text in snooze_options() %}<form method="post" action="{{ later }}"{% if loop.first %} data-swipe="right" data-swipe-label="{{ text }}"{% endif %}><input type="hidden" name="until" value="{{ value }}">
+    {% for value, text in snooze_options() %}<form method="post" action="{{ later }}"><input type="hidden" name="until" value="{{ value }}">
       <button class="menu-item">{{ text }}</button></form>{% endfor %}
     {# Brian, 2026-11-21: one tap opens the date-and-time picker; picking saves (no extra Remind me button). #}
     <form method="post" action="{{ later }}" class="menu-item qp-row" data-quick-pick><input type="hidden" name="until" value="pick">
@@ -117,7 +121,7 @@
 {%- endmacro %}
 
 {% macro status_badge(s) -%}
-  {%- if s and s not in ('done', 'extracted') %}<span class="badge badge-warn">{{ {'transcribing': 'Transcribing…', 'transcribed': 'Transcribed', 'failed': 'Failed'}.get(s, s|capitalize) }}</span>{% endif -%}
+  {%- if s and s not in ('done', 'extracted') %}<span class="badge badge-warn">{{ {'transcribing': 'Transcribing.', 'transcribed': 'Transcribed', 'failed': 'Failed'}.get(s, s|capitalize) }}</span>{% endif -%}
 {%- endmacro %}
 
 {% macro empty(ic, title, hint=None) %}
@@ -178,12 +182,12 @@ method="post" action="{{ action }}"{% if tgt %} hx-post="{{ action }}" hx-target
 
 {% macro line_link(item, conversation_id=None) -%}
   {%- if item.line is not none -%}
-    <a class="lnk" href="{% if conversation_id %}/conversations/{{ conversation_id }}{% endif %}#L{{ item.line }}">line {{ item.line + 1 }}</a>
+    <a class="lnk" href="{% if conversation_id %}/conversations/{{ conversation_id }}?tx=1{% endif %}#L{{ item.line }}">line {{ item.line + 1 }}</a>
   {%- endif -%}
 {%- endmacro %}
 
 {% macro due(t) -%}
-  {%- if t.due %}<span class="{{ 'bad' if t.status == 'open' and t.due < today else '' }}" title="{{ t.due }}">{{ 'Overdue · ' if t.status == 'open' and t.due < today }}{{ t.due|short_due }}</span>{% endif -%}
+  {%- if t.due and t.due|short_due %}<span class="{{ 'bad' if t.status == 'open' and t.due < today else '' }}" title="{{ t.due }}">{{ 'Overdue · ' if t.status == 'open' and t.due < today }}{{ t.due|short_due }}</span>{% endif -%}
 {%- endmacro %}
 
 {# Edit in place: ✎ next to the text, or double-tap the text itself; it becomes an edit box right there (app.js).
@@ -204,25 +208,34 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   <div class="menu-panel">{{ caller() }}</div></details>
 {%- endmacro %}
 
+{# Long task text A (Brian, 2026-11-22): a short bold title, then the full task in grey underneath (only when the
+   short title leaves something out). The pop-up stays as it is. #}
+{% macro task_full(t) -%}
+{% if t.short_title and t.title and t.short_title|trim != t.title|trim %}<div class="item-full">{{ t.title }}</div>{% endif %}
+{%- endmacro %}
+
 {% macro task_row(t, people, show_owner=False, show_conv=False, tgt=None, oob=None, keep=False, reminder=False) %}
 {# Redesign (Brian, 2026-11-21): one line. Tap the circle = Done; everything else (not needed, remind me, person, edit,
    remove) is under ⋯, or swipe: right = remind me later, left = remove. Tap the task for its sheet (whole title + actions). #}
-{% set swl = [{"t": "Not needed", "c": "ink", "f": 'form[action$="/not-needed"]'}, {"t": "🗑 Delete", "c": "red", "f": 'form[action$="/delete"]'}] %}
-{% set swr = [{"t": "✓ Done", "c": "green", "f": "form.tick-f"}, {"t": "☾ Tomorrow", "c": "ink", "f": 'form:has(input[value="tomorrow"])'}] %}
-<div class="item task-row{{ ' not-needed' if t.closed_as }}" id="task-{{ t.id }}"{% if t.status != 'done' %} data-sw='{{ {"l": swl, "r": swr}|tojson }}'{% endif %}>
+{# Swipe (Brian, 2026-11-22): right-to-left = Delete or Not needed; left-to-right = Done or Remind. First = long swipe. #}
+{% set swl = [{"t": "Delete", "i": "trash", "c": "red", "f": 'form[action$="/delete"]'}, {"t": "Not needed", "i": "x", "c": "ink", "f": 'form[action$="/not-needed"]'}] %}
+{% set swr = [{"t": "Done", "i": "check", "c": "green", "f": "form.tick-f"}, {"t": "Tomorrow", "i": "clock", "c": "amber", "f": 'form:has(input[value="tomorrow"])'}] %}
+<div class="item task-row{{ ' not-needed' if t.closed_as and t.status == 'done' }}" id="task-{{ t.id }}" data-pick-id="{{ t.id }}"{% if t.status != 'done' %} data-sw='{{ {"l": swl, "r": swr}|tojson }}'{% endif %}>
+  <span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick: {{ t.title }}"></span>
   {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="tick-f"><button class="tick on" aria-label="Reopen: {{ t.title }}" title="Done. Tap to reopen"></button></form>
   {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="tick-f"><button class="tick" aria-label="Done: {{ t.title }}" title="Done"></button></form>{% endif %}
   {# Brian, 2026-11-21: no ⋯ (it took a column); tap or long-press the task opens its sheet #}
   <div class="item-main" data-open-sheet="ts-{{ t.id }}">
     <div class="item-title{{ ' done-text' if t.status == 'done' and not t.closed_as }}">{{ t.short_title or t.title }}</div>
+    {{ task_full(t) }}
     <div class="item-sub">
-      {% if t.closed_as %}<span class="badge badge-outline" title="Closed without being done">Not needed{{ ': ' ~ t.closed_note if t.closed_note }}</span>{% endif %}
+      {% if t.closed_as and t.status == 'done' %}<span class="badge badge-outline" title="Closed without being done">Not needed{{ ': ' ~ t.closed_note if t.closed_note }}</span>{% endif %}
       {% if show_owner and t.owner_person_id != 1 %}<b>{{ t.owner_name|who }}</b>{% endif %}
       {{ due(t) }}
       {% if t.confidence is not none and t.confidence < 0.6 %}<form class="inline-form" {{ hx("/tasks/" ~ t.id ~ "/sure", tgt, oob) }}>
         <button class="badge badge-warn" title="The AI wasn't sure about this task. Tap if it looks right; ⋯ to fix or remove it.">Unsure {{ icon("check") }}</button></form>{% endif %}
       {% if t.remind_at and t.status == 'open' %}<span class="badge badge-outline" title="Reminder">{{ icon("clock") }}{{ 'now' if t.remind_at <= now_iso else t.remind_at|when_back }}</span>{% endif %}
-      {% if show_conv and t.conv_title %}<a href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.conv_title }}</a>
+      {% if show_conv and t.conv_title %}<a href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.conv_title }}</a>
       {% elif t.conversation_id %}{{ line_link(t) }}{% endif %}
     </div>
   </div>
@@ -240,23 +253,23 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
       <div class="ts-rows">
         {# Brian, 2026-11-21: "too many clicks". Tapping Due opens the calendar at once and the date saves when you pick it;
            tapping Who opens the list of people at once and saves on pick (＋ Someone new… asks for the name right there). #}
-        {% if people %}<form {{ hx("/tasks/" ~ t.id ~ "/edit", tgt, oob) }} class="ts-row ts-pick" data-quick-pick data-keep-open><span class="ts-ic" aria-hidden="true">📅</span><span class="grow">Due</span><span class="ts-v">{{ t.due|short_due|replace('due ', '') if t.due else 'None' }} ›</span>
+        {% if people %}<form {{ hx("/tasks/" ~ t.id ~ "/edit", tgt, oob) }} class="ts-row ts-pick" data-quick-pick data-keep-open><span class="ts-ic" aria-hidden="true">{{ icon("calendar") }}</span><span class="grow">Due</span><span class="ts-v">{{ t.due|short_due|replace('due ', '') if t.due else 'None' }} ›</span>
           <input type="hidden" name="title" value="{{ t.title }}"><input type="hidden" name="owner" value="{{ t.owner_person_id }}">
           <input type="date" name="due" value="{{ t.due if t.due and t.due[:4]|int > 2000 and t.due[4:5] == '-' else '' }}" aria-label="Due date" class="qp-native" data-autosave></form>
-        <form {{ hx("/tasks/" ~ t.id ~ "/owner", tgt, oob) }} class="ts-row ts-pick" data-keep-open><span class="ts-ic" aria-hidden="true">👤</span><span class="grow">Who</span><span class="ts-v">{{ 'You' if t.owner_person_id == 1 else (t.owner_name|who or 'Someone') }} ›</span>
+        <form {{ hx("/tasks/" ~ t.id ~ "/owner", tgt, oob) }} class="ts-row ts-pick" data-keep-open><span class="ts-ic" aria-hidden="true">{{ icon("users") }}</span><span class="grow">Who</span><span class="ts-v">{{ 'You' if t.owner_person_id == 1 else (t.owner_name|who or 'Someone') }} ›</span>
           <select name="person_id" data-people data-selected="{{ t.owner_person_id or '' }}" aria-label="Who" class="qp-native qp-select" data-autosave><option value="">Who?</option></select>
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits></form>{% endif %}
-        {% if t.status == 'open' %}<details class="ts-row"><summary><span class="ts-ic" aria-hidden="true">⏰</span><span class="grow">Remind me</span><span class="ts-v">{{ ('now' if t.remind_at <= now_iso else t.remind_at|when_back) if t.remind_at else 'Off' }} ›</span></summary>
+        {% if t.status == 'open' %}<details class="ts-row"><summary><span class="ts-ic" aria-hidden="true">{{ icon("clock") }}</span><span class="grow">Remind me</span><span class="ts-v">{{ ('now' if t.remind_at <= now_iso else t.remind_at|when_back) if t.remind_at else 'Off' }} ›</span></summary>
           <div class="ts-in">{{ snooze_forms("/tasks/" ~ t.id ~ "/remind", "/tasks/" ~ t.id ~ "/remind/now" if t.remind_at and t.remind_at > now_iso else None) }}
             {% if t.remind_at %}<form method="post" action="/tasks/{{ t.id }}/remind/clear"><button class="menu-item">Stop reminding</button></form>{% endif %}</div></details>{% endif %}
-        {% if t.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">💬</span><span class="grow cut">{{ t.conv_title or 'Open the talk' }}</span><span class="ts-v">›</span></a>{% endif %}
+        {% if t.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow cut">{{ t.conv_title or 'Open the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
       </div>
       <div class="ts-btns">
         {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="grow"><button class="btn btn-block">↺ Reopen</button></form>
         {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="grow"><button class="btn btn-primary btn-block">✓ Done</button></form>{% endif %}
         {# Brian picked A (2026-11-21): no ⋯; Not needed and Remove are one tap each #}
         {% if t.status == 'open' %}<form {{ hx("/tasks/" ~ t.id ~ "/not-needed", tgt, oob) }} class="grow"><button class="btn btn-block" aria-label="Not needed: {{ t.title }}">Not needed</button></form>{% endif %}
-        <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt, oob) }} data-swipe="left" data-swipe-label="Remove" class="ts-del"><button class="btn ts-del-btn" aria-label="Remove: {{ t.title }}" title="Remove">🗑</button></form>
+        <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt, oob) }} class="ts-del"><button class="btn ts-del-btn" aria-label="Remove: {{ t.title }}" title="Remove"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button></form>
       </div>
     </div></details>
   </div>
@@ -267,7 +280,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
    area tag is a small picker (the AI's guess, else Work), ✓ keeps it in that area, ✕ removes it. #}
 {% macro unsure_row(t, tgt=None) %}
 <div class="item unsure-row" id="task-{{ t.id }}">
-  <div class="item-main">{% if t.conversation_id %}<a class="item-title plain" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}
+  <div class="item-main">{% if t.conversation_id %}<a class="item-title plain" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ task_full(t) }}
     <div class="item-sub">{% if t.owner_person_id and t.owner_person_id != 1 %}<b>{{ t.owner_name }}</b>{% endif %}{% if t.conv_title %}<span>{{ t.conv_title }}</span>{% endif %}</div></div>
   <div class="item-actions">
     <form {{ hx("/tasks/" ~ t.id ~ "/file", tgt) }} class="keep-f">
@@ -280,20 +293,37 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 
 {# People notes are kept unless removed (no ✓ needed). #}
 {% macro fact_row(f, people=None, show_source=False, tgt=None, oob=None) %}
-<div class="item" id="fact-{{ f.id }}">
-  <div class="item-main">
-    <div class="editable-row"><div {{ editable("/facts/" ~ f.id ~ "/edit", "value", f.value, "note", tgt, single=True) }}>{{ f.value }}</div>{{ pencil("note") }}</div>
+{# Notes A (Brian, 2026-11-22): no ⋯. Tap a note = a pop-up like tasks: the whole note (tap it to edit), About / Kind /
+   From rows, then "Move to someone else" and "Delete". #}
+<div class="item fact-row" id="fact-{{ f.id }}">
+  <div class="item-main" data-open-sheet="fs-{{ f.id }}">
+    <div class="item-title fact-t">{{ f.value }}</div>
     <div class="item-sub">
       {% if f.type and f.type != 'other' %}<span class="badge badge-outline">{{ f.type|capitalize }}</span>{% endif %}
       {% if f.date %}<span>{{ f.date|day }}</span>{% endif %}
-      {% if show_source and f.conv_title %}<a href="/conversations/{{ f.conversation_id }}">{{ f.conv_title }}</a>{% else %}{{ line_link(f) }}{% endif %}
+      {% if show_source and f.conv_title %}<span>{{ f.conv_title }}</span>{% endif %}
     </div>
   </div>
-  <div class="item-actions">{% call menu(f.value) %}
-    {% if people %}{{ person_picker("/facts/" ~ f.id ~ "/person", people, "Change person", f.person_id, tgt, oob) }}{% endif %}
-    <form {{ hx("/facts/" ~ f.id ~ "/confirm", tgt, oob) }}><input type="hidden" name="ok" value="0">
-      <button class="menu-item danger" aria-label="Wrong, remove note: {{ f.value }}">{{ icon("x") }} Wrong, remove</button></form>
-  {% endcall %}</div>
+  <div class="item-actions">
+    <details class="fx-sheet task-sheet" id="fs-{{ f.id }}"><summary class="sr-only">Note: {{ f.value }}</summary>
+    <div class="fx-back" data-fx-close aria-hidden="true"></div>
+    <div class="fx-body" role="dialog" aria-label="Note"><div class="fx-grab" aria-hidden="true"></div>
+      <div class="sh-head"><b class="ts-title" {{ editable("/facts/" ~ f.id ~ "/edit", "value", f.value, "note", tgt, single=True) }} data-edit-tap>{{ f.value }}</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ icon("x") }}</button></div>
+      <div class="ts-rows">
+        {% if people %}<form {{ hx("/facts/" ~ f.id ~ "/person", tgt, oob) }} class="ts-row ts-pick" data-keep-open><span class="ts-ic" aria-hidden="true">{{ icon("users") }}</span><span class="grow">About</span><span class="ts-v">{{ f.person_name or 'Someone' }} ›</span>
+          <select name="person_id" id="fp-{{ f.id }}" data-people data-selected="{{ f.person_id or '' }}" aria-label="Who is this note about?" class="qp-native qp-select" data-autosave><option value="">Who?</option></select>
+          <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits></form>{% endif %}
+        <form {{ hx("/facts/" ~ f.id ~ "/kind", tgt, oob) }} class="ts-row ts-pick" data-keep-open><span class="ts-ic" aria-hidden="true">{{ icon("tag") }}</span><span class="grow">Kind</span><span class="ts-v">{{ (f.type or 'other')|capitalize }} ›</span>
+          <select name="kind" aria-label="Kind of note" class="qp-native qp-select" data-autosave>{% for k in ["birthday", "family", "event", "preference", "work", "other"] %}<option value="{{ k }}" {{ 'selected' if (f.type or 'other') == k }}>{{ k|capitalize }}</option>{% endfor %}</select></form>
+        {% if show_source and f.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ f.conversation_id }}{% if f.line is not none %}?tx=1#L{{ f.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow">From</span><span class="ts-v cut">{{ f.conv_title or 'the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+      </div>
+      <div class="ts-btns">
+        {% if people %}<button type="button" class="btn btn-block grow" data-pick-for="fp-{{ f.id }}">Move to someone else</button>{% endif %}
+        <form {{ hx("/facts/" ~ f.id ~ "/confirm", tgt, oob) }} class="grow"><input type="hidden" name="ok" value="0">
+          <button class="btn btn-block danger-text" aria-label="Delete note: {{ f.value }}">Delete</button></form>
+      </div>
+    </div></details>
+  </div>
 </div>
 {% endmacro %}
 
@@ -301,7 +331,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 <div class="item" id="decision-{{ d.id }}">
   <div class="item-main"><div class="editable-row"><div {{ editable("/decisions/" ~ d.id ~ "/edit", "text", d.text, "decision", tgt, single=True) }}>{{ d.text }}</div>{{ pencil("decision") }}</div>
     <div class="item-sub">
-      {% if show_conv %}<span>{{ d.at|local_date }}</span><a href="/conversations/{{ d.conversation_id }}{% if d.line is not none %}#L{{ d.line }}{% endif %}">{{ d.conv_title }}</a>
+      {% if show_conv %}<span>{{ d.at|local_date }}</span><a href="/conversations/{{ d.conversation_id }}{% if d.line is not none %}?tx=1#L{{ d.line }}{% endif %}">{{ d.conv_title }}</a>
       {% else %}{{ line_link(d) }}{% endif %}</div></div>
   <div class="item-actions">{% call menu(d.text) %}
     <details class="edit"><summary>Edit</summary>
@@ -321,23 +351,41 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {% macro list_head(label, ns) %}{% if label != ns.g %}{% set ns.g = label %}<h3 class="list-head" id="g-{{ label|lower|replace(' ', '-') }}">{{ label }}</h3>{% endif %}{% endmacro %}
 
 {% macro conv_row(c, sort=False) %}
-<div class="item tap-row conv-row" data-sw='{{ {"l": [{"t": "🗑 Trash", "c": "red", "f": "form.sw-trash"}]}|tojson }}'>
+{# Brian picked A (2026-11-22): an icon says at a glance if AI notes exist (blue ✦) or it's a transcript (grey ≡); the
+   title gets the full width (2 lines at most, never covered by pills); one small line says AI notes / Transcript,
+   the area and how many speakers to name. #}
+{% set ai = c.summary %}
+{# G1 (Brian, 2026-11-23): on a talk without AI notes, swipe right = Summarize (the cost shows first); swipe left = Delete.
+   Transcript-only talks are 'transcribed' (it only worked for 'done', so Brian never saw it). #}
+{% set del = {"t": "Delete", "i": "trash", "c": "red", "f": "form.sw-trash"} %}
+{% set summ = {"t": "Summarize", "i": "sparkle", "c": "blue", "f": "form.sw-sum"} %}
+<div class="item tap-row conv-row" data-id="{{ c.id }}" data-ai="{{ 1 if ai else 0 }}" data-sw='{{ {"l": [del], "r": [del] if ai or c.id in (ai_busy or ()) or c.status not in ('done', 'transcribed', 'extracted') else [summ]}|tojson }}'>
   <form method="post" action="/conversations/{{ c.id }}/delete" class="sw-trash" hidden></form>{# the title link stretches over the whole card, so a tap anywhere opens it #}
+  {% if not ai %}<form method="get" action="/talks-bulk/ai" class="sw-sum" data-sw-keep hidden><input type="hidden" name="ids" value="{{ c.id }}"></form>{% endif %}
+  {# B1: a checkbox on computers; B3: tap the round icon to pick (phones and computers) #}
+  <span class="row-cb" data-row-cb role="checkbox" aria-checked="false" aria-label="Select"></span>
+  <span class="cr-ic {{ 'cr-ai' if ai else 'cr-tx' }}" data-pick-ic title="{{ 'AI notes' if ai else 'Transcript only' }}: tap to select">{{ icon("sparkle" if ai else "lines") }}</span>
   <div class="item-main">
     <a class="item-link" href="/conversations/{{ c.id }}" title="{{ c.title }}">{{ c.short_title or c.title }}</a>
     <div class="item-sub">
-      {% if c.opened_at is none and c.status == 'done' %}<span class="badge badge-new">New</span>{% endif %}
+      {% if c.id in (ai_busy or ()) %}<span class="badge badge-warn">Summarizing.</span>{% endif %}
+      {% if c.opened_at is none and c.status in ('done', 'transcribed') %}<span class="badge badge-new">New</span>{% endif %}
       <span>{{ (c.started_at or c.created_at)|local_date }}</span>
       {% if c.duration_s %}<span>{{ (c.duration_s / 60)|round|int }} min</span>{% endif %}
-      {% if c.people %}<span>{{ c.people }}</span>{% elif c.type in ('learning', 'personal') %}<span>{{ 'Learning' if c.type == 'learning' else 'Personal' }}</span>{% endif %}
+      {% if c.people %}<span class="cr-people">{{ c.people }}</span>{% elif c.type in ('learning', 'personal') %}<span>{{ 'Learning' if c.type == 'learning' else 'Personal' }}</span>{% endif %}
       {% if sort and c.area_guess %}<span>AI guess: <b>{{ c.area_guess|area_label }}</b></span>{% endif %}
-      {% if c.tags %}<span class="tag-mini">{% for t in c.tags.split('|')[:3] %}#{{ t }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}
+    </div>
+    <div class="cr-line">
+      {% if c.status in ('transcribing', 'failed') %}{{ status_badge(c.status) }}
+      {% endif %}{# Brian, 2026-11-22: no "AI notes" / "Transcript" words; the ✦ / ≡ icon already says it #}
+      {% if c.area %}<span class="cr-area cr-{{ c.area }}">{{ {'work': 'Work', 'personal': 'Home', 'school': 'School', 'other': 'Other'}[c.area] }}</span>{% endif %}
+      {% if c.n_unnamed %}<span class="cr-name" title="Speakers to name">{{ c.n_unnamed }} to name</span>{% endif %}
+      {% if c.tags %}<span class="tag-mini">{% for t in c.tags.split('|')[:2] %}#{{ t }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}
     </div>
   </div>
   {% if sort %}<div class="item-actions">{% for a, label in [("work", "Work"), ("personal", "Home"), ("school", "School"), ("other", "Other")] %}
     <form method="post" action="/conversations/{{ c.id }}/area"><input type="hidden" name="area" value="{{ a }}">
-      <button class="btn{{ ' btn-primary' if c.area_guess == a }}">{{ label }}</button></form>{% endfor %}</div>
-  {% else %}<div class="item-actions badges">{{ status_badge(c.status) }}{% if c.n_unnamed %}<span class="badge badge-warn" title="Speakers to name">name {{ c.n_unnamed }}</span>{% endif %}{{ area_badge(c.area) }}</div>{% endif %}
+      <button class="btn{{ ' btn-primary' if c.area_guess == a }}">{{ label }}</button></form>{% endfor %}</div>{% endif %}
 </div>
 {% endmacro %}
 
@@ -358,8 +406,10 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {%- endmacro %}
 
 {# Your speaking over the last 7 and 30 days (the Speaking page and Brian's own person page). #}
-{% macro my_speaking(speaking) %}
-{{ section("Your speaking", help="Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.") }}
+{% macro my_speaking(speaking, head=True) %}
+{# B17: on the Your speaking page the page title already says it, so no second "Your speaking" heading there #}
+{% if head %}{{ section("Your speaking", help="Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.") }}
+{% else %}<p class="section-help">Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.</p>{% endif %}
 {% for d in (7, 30) %}{% set s = speaking[d] %}{% if s %}
   <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} conversation{{ 's' if s.conversations != 1 }} · {{ s.seconds|hours }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
   {{ speak_tiles(s) }}{% endif %}{% else %}{% endfor %}
@@ -387,7 +437,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   {% if j.preview %}<p class="inbox-preview prog-preview">“{{ j.preview }}”</p>{% endif %}
   <div class="item-sub">{% if j.paused and not j.pausing %}<span><b>Paused</b>{% if j.resume_label %} · resumes {{ j.resume_label }}{% endif %}</span>{% elif j.pausing %}<span><b>Pausing…</b> stops within about 30 s</span>{% else %}<span><b>Step {{ j.step }} of {{ j.steps }}</b> · {{ j.current.label if j.current else 'Finishing' }}</span>{% endif %}<span>{{ j.minutes|round|int }} min</span></div>
   <div class="progress-bar"><div class="meter" role="progressbar" aria-label="Processing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ j.percent }}"><span style="width:{{ j.percent }}%"></span></div><b>{{ j.percent }}%</b></div>
-  {% if not j.paused %}<div class="item-sub">{% if j.started %}<span>started {{ j.started }}</span>{% else %}<span>waiting its turn</span>{% endif %}
+  {% if not j.paused %}<div class="item-sub">{% if j.started %}<span>started {{ j.started }}</span>{% elif j.starts %}<span>starts ~{{ j.starts }}</span>{% else %}<span>waiting its turn</span>{% endif %}
     {% if j.current %}<span>about {{ j.remaining_s|duration }} left</span>{% endif %}<span><b>ready ~{{ j.eta }}</b></span></div>{% endif %}
   {% if not j.done %}<div class="prog-ctl">
     {% if not j.paused %}<form method="post" action="/processing/pause"><button class="chip" title="Stops at the next safe point; nothing is lost">❚❚ Pause</button></form>
@@ -401,6 +451,19 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
         <span>{% if s.took %}{{ s.took }}{% elif s.status == 'running' %}est. {{ s.estimate_s|duration }}{% elif s.status == 'failed' %}failed{% else %}est. {{ s.estimate_s|duration }}{% endif %}{% if s.ends and s.status != 'failed' %} · {{ 'done ' if s.took }}{{ s.ends }}{% endif %}</span></li>{% endfor %}
     </ol></details>
 </div></div>
+{% endmacro %}
+
+{# B39 (Brian, 2026-11-25): the processing list shows the running recording (and the next one) in full; the rest of
+   the queue folds into one line with its own compact rows, each with its turn's start and ready times. #}
+{% macro progress_list(jobs, show=2) %}
+{% for j in jobs[:show] %}{{ progress_item(j) }}{% endfor %}
+{% if jobs|length > show %}{% set rest = jobs[show:] %}
+<details class="q-more" data-remember="q-more"><summary class="item"><span>{{ rest|length }} more waiting</span><span class="meta">all done ~{{ rest[-1].eta }}</span></summary>
+  {% for j in rest %}<div class="item q-row"><div class="item-main">
+    {% if j.conversation_id %}<a class="item-link" href="/conversations/{{ j.conversation_id }}">{{ j.title|recorder_title }}</a>{% else %}<div class="item-title">{{ j.title|recorder_title }}</div>{% endif %}
+    <div class="item-sub"><span>{{ j.minutes|round|int }} min</span>{% if j.starts %}<span>starts ~{{ j.starts }}</span>{% endif %}<span><b>ready ~{{ j.eta }}</b></span></div>
+  </div></div>{% endfor %}
+</details>{% endif %}
 {% endmacro %}
 
 {# Jump bar (conversation, person pages): pinned under the top bar; ↑ Top first. Tapping a chip opens its section if
@@ -426,8 +489,14 @@ hx-get="{{ action }}" hx-trigger="change, keyup changed delay:350ms from:find in
 {# FX-A filters (Brian, 2026-11-20): one "Filter" button opens a panel of dropdowns from the bottom (phones) or under the
    button (computers). Put the <label class="fx-f"> dropdowns between filter_sheet() and filter_sheet_end(), inside a
    GET form; "Show" submits it. n = filters on now. #}
+{# N9 (Brian picked ⭐, 2026-11-25): one row above every list: a search box, then the Filter and Sort pills. live=False
+   when the form already reloads the list as you type (Tasks, People). #}
+{% macro list_search(action, q, label, id, live=True) -%}
+<label class="lb-q">{{ icon("search") }}<input type="search" id="{{ id }}" name="q" value="{{ q or '' }}" placeholder="{{ label }}" aria-label="{{ label }}" autocomplete="off" enterkeyhint="search"
+  {%- if live %} hx-get="{{ action }}" hx-include="closest form" hx-trigger="keyup changed delay:350ms, search" hx-target="#content" hx-select="#content" hx-swap="outerHTML" hx-push-url="true"{% endif %}></label>
+{%- endmacro %}
 {% macro filter_sheet(n, clear_url, showing="") -%}
-<details class="fx-sheet"><summary class="btn{{ ' fx-on' if n }}">⚙ Filter{% if n %} · {{ n }}{% endif %}</summary>
+<details class="fx-sheet"><summary class="btn{{ ' fx-on' if n }}">{{ icon("filter") }} Filter{% if n %} · {{ n }}{% endif %}</summary>
   <div class="fx-back" data-fx-close aria-hidden="true"></div>
   <div class="fx-body" role="group" aria-label="Filters">
     <div class="fx-grab" aria-hidden="true"></div>
@@ -437,4 +506,36 @@ hx-get="{{ action }}" hx-trigger="change, keyup changed delay:350ms from:find in
     <div class="fx-foot"><button type="button" class="btn btn-ghost" data-fx-close>Cancel</button><button class="btn btn-primary">{{ label }}</button></div>
   </div>
 </details>
+{%- endmacro %}
+
+{# Advanced search (Brian picked A4, 2026-11-23): ☷ at the right end of the desktop search bar. Its fields load when it
+   opens (every page stays light). Laid out like Gmail's: a label column, then the field, one row each. #}
+{% macro adv_search() -%}
+<details class="fx-sheet adv-sheet"><summary class="icon-btn adv-btn" aria-label="Advanced search" title="Advanced search">{{ icon("tune") }}</summary>
+  <div class="fx-back" data-fx-close aria-hidden="true"></div>
+  <div class="fx-body adv-body" role="group" aria-label="Advanced search">
+    <div hx-get="/search/advanced{{ '?' ~ request.query_params if request.url.path == '/search' and request.query_params else '' }}" hx-trigger="intersect once" hx-swap="outerHTML"><p class="meta">Loading…</p></div></div></details>
+{%- endmacro %}
+
+{# ⚙ Quick settings (Brian picked A3, 2026-11-23): density, reading pane (computers) and theme; All settings at the bottom #}
+{# Round 2 (Brian, 2026-11-23): Quick settings only where they change something. List pages get Density (+ Reading
+   pane on computers where something opens beside the list); other pages' ⚙ opens Settings itself. #}
+{% macro quick_settings(theme, density, rpane, phone=False) -%}
+{% set qp = request.url.path %}
+{% if qp not in ('/', '/inbox', '/conversations', '/people', '/tasks', '/search', '/notifications') %}
+<a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ icon("gear") }}</a>
+{% else %}{% set pane_ok = qp in ('/', '/inbox', '/conversations', '/people', '/tasks') and not request.query_params.get('trash') %}
+<details class="fx-sheet qs-sheet"><summary class="icon-btn" aria-label="Quick settings" title="Quick settings">{{ icon("gear") }}</summary>
+  <div class="fx-back" data-fx-close aria-hidden="true"></div>
+  <div class="fx-body qs-body" role="group" aria-label="Quick settings"><div class="fx-grab" aria-hidden="true"></div>
+    <div class="fx-head"><b>Quick settings</b><a class="qs-all" href="/settings">All settings</a></div>
+    <div class="qs-h">Density</div>
+    <div class="qs-opts">{% for k, label, sub in [("default", "Default", "Two lines per row"), ("comfortable", "Comfortable", "More room around each row"), ("compact", "Compact", "One line per row, more on screen")] %}
+      <button type="button" class="qs-opt{{ ' on' if density == k }}" data-density-set="{{ k }}" aria-pressed="{{ 'true' if density == k else 'false' }}"><i class="qs-radio" aria-hidden="true"></i><span><b>{{ label }}</b><small>{{ sub }}</small></span></button>{% endfor %}</div>
+    {% if not phone and pane_ok %}<div class="qs-h">Reading pane</div>
+    <div class="qs-panes">{% for k, label in [("none", "Pop up" if qp in ('/', '/inbox', '/tasks') else "None"), ("right", "Right"), ("below", "Below")] %}
+      <button type="button" class="qs-pane{{ ' on' if rpane == k }}" data-pane-set="{{ k }}" aria-pressed="{{ 'true' if rpane == k else 'false' }}"><i class="qs-thumb qs-t-{{ k }}" aria-hidden="true"><s></s><s></s></i>{{ label }}</button>{% endfor %}</div>{% endif %}
+    <div class="qs-h">Theme</div>
+    <span class="seg-switch" role="group" aria-label="Theme">{% for t in ("light", "dark", "system") %}<button type="button" class="seg-opt{{ ' on' if theme == t }}" data-theme-set="{{ t }}" aria-pressed="{{ 'true' if theme == t else 'false' }}">{{ t|capitalize }}</button>{% endfor %}</span>
+  </div></details>{% endif %}
 {%- endmacro %}

@@ -55,5 +55,5 @@ def test_merged_talk_shows_its_parts(env, tmp_path, monkeypatch):
     for i, (src, off) in enumerate(((81, 0), (82, 2))):
         conn.execute("INSERT INTO recording_part (recording_id, source_id, idx, offset_s, duration_s, title, prev_status) VALUES (?, ?, ?, ?, 2, ?, 'awaiting_approval')",
                      (rec, src, i, off, "First part" if i == 0 else "Second part"))
-    page = client.get("/conversations/1").text
+    page = client.get("/conversations/1?tx=1").text
     assert "Part 1 of 2" in page and "Part 2 of 2" in page and "2 parts" in page

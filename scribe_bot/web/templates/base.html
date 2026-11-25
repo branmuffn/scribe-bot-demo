@@ -1,23 +1,39 @@
 {% import "macros.html" as m with context %}<!doctype html>
 {% set theme = request.cookies.get('theme') if request.cookies.get('theme') in ('light', 'dark') else 'system' %}
-<html lang="en"{% if theme != 'system' %} data-theme="{{ theme }}"{% endif %}>
+{# Quick settings (Brian picked A3, 2026-11-23): density and reading pane, saved on this device (cookie, so no flash).
+   in_pane = this page is shown inside the desktop preview pane (an iframe): no app frame around it. #}
+{% set density = request.cookies.get('density') if request.cookies.get('density') in ('comfortable', 'compact') else 'default' %}
+{% set rpane = request.cookies.get('pane') if request.cookies.get('pane') in ('none', 'below') else 'right' %}
+{% set in_pane = request.headers.get('sec-fetch-dest') == 'iframe' %}
+{% set rail = request.cookies.get('side') == 'rail' %}
+{# B13 (Brian, 2026-11-25): how people notes look (Settings › Appearance), saved on this device #}
+{% set pnotes = request.cookies.get('pnotes') if request.cookies.get('pnotes') in ('paragraph', 'lines') else 'bullets' %}
+<html lang="en"{% if theme != 'system' %} data-theme="{{ theme }}"{% endif %} data-density="{{ density }}" data-pane="{{ rpane }}" data-pnotes="{{ pnotes }}" class="{{ 'in-pane' if in_pane }}{{ ' side-rail' if rail }}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 {# Phone status-bar color: follows Brian's pick, or the system when he hasn't picked. app.js keeps it in sync on toggle. #}
 {% if theme == 'system' %}<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1c1917" media="(prefers-color-scheme: dark)">
 {%- else %}<meta name="theme-color" content="{{ '#1c1917' if theme == 'dark' else '#fafaf9' }}">{% endif %}
-<meta name="htmx-config" content='{"globalViewTransitions": true, "scrollIntoViewOnBoost": false}'>
+<meta name="sb-gone" content="{{ gone_mark if gone_mark is defined else '' }}">
+<meta name="htmx-config" content='{"globalViewTransitions": false, "historyCacheSize": 0, "refreshOnHistoryMiss": true}'>
 <title>{% block title %}Scribe Bot{% endblock %}</title>
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="icon" href="/static/icon.svg?v={{ asset_v }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-bars-192.png">
 <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
 <script src="/static/htmx.min.js?v={{ asset_v }}" defer></script>
 <script src="/static/app.js?v={{ asset_v }}" defer></script>
+<script src="/static/ui.js?v={{ asset_v }}" defer></script>
+{# Premium pass (b), Brian OK 2026-11-22: start loading a talk the moment a finger touches its row (Chrome speculation
+   rules). T7 (Brian, 2026-11-25): with menu and back links prefetched on hover, going back sometimes took ~5 s. Now
+   everything prefetches on the press only ("conservative": touch or mouse-down, never a hover), and a back link to the
+   page you came from goes back in history, which the browser restores at once with its scroll position (ui.js). #}
+<script type="speculationrules">{"prefetch": [{"where": {"href_matches": "/conversations/:id(\\d+)"}, "eagerness": "conservative"},
+  {"where": {"selector_matches": ".cv-back, .back-link, .navlist a, .tabbar a, .drawer a"}, "eagerness": "conservative"}]}</script>
 </head>
-<body hx-boost="true" hx-indicator=".progress">
+<body hx-indicator=".progress" data-nav="{{ nav }}"{% if in_pane %} data-in-pane{% endif %}>
 <div class="progress" aria-hidden="true"></div>
 <a class="skip" href="#content">Skip to content</a>
 {% include "icons.html" %}
@@ -26,50 +42,83 @@
 {% set tab_on = {"conversations": "talks", "people": "people", "decisions": "tasks", "review": "today"}.get(nav, nav) %}
 {% set tabs = [("today", "/", "sun", "Today"), ("inbox", "/inbox", "inbox", "Inbox"), ("talks", "/conversations", "chat", "Talks"), ("people", "/people", "users", "People"), ("tasks", "/tasks", "check", "Tasks")] %}
 
-{# Desktop sidebar #}
+{# Desktop sidebar, Gmail style (Brian picked A1 + A2, 2026-11-23): ☰ folds it to an icon rail (hovering the rail shows
+   it in full for a moment); every icon sits in one column and every label starts at the same left edge; rarely used
+   places fold under More. #}
+{% set more_places = [("/conversations?trash=1", "trash", "Trash"), ("/speaking", "mic2", "Your speaking"), ("/costs", "dollar", "Costs"),
+                      ("/status", "pulse", "Status"), ("/processing", "clock", "Processing history"), ("/help", "help", "Help"), ("/settings", "gear", "Settings")] %}
+{% if not in_pane %}
 <aside class="sidebar" aria-label="Main">
-  <div class="side-top"><a class="brand" href="/"><img src="/static/icon.svg" alt=""> Scribe Bot</a>
-    {{ m.bell() }}{{ m.status_ring(ring) if ring else m.more_menu(head_alert) }}<a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a></div>
-  {{ m.area_toggle(area) }}
-  <form class="side-search" method="get" action="/search" role="search">{{ m.icon("search") }}
-    <input type="search" name="q" placeholder="Search everything" aria-label="Search" value="{{ request.query_params.get('q', '') if nav == 'search' }}"></form>
+  <div class="side-top"><button type="button" class="icon-btn side-toggle" data-side-toggle aria-label="Fold the menu" title="Fold or open the menu">{{ m.icon("menu") }}</button>
+    <a class="brand" href="/"><img src="/static/icon.svg?v={{ asset_v }}" alt=""> <span class="nl">Scribe Bot</span></a></div>
+  <a class="side-add" href="/capture" title="Add recording"><span class="nv-ic">{{ m.icon("plus") }}</span><span class="nl">Add recording</span></a>
+  <div class="side-areas">{{ m.area_toggle(area) }}</div>
   <ul class="navlist">
     {% for key, href, icon, label in tabs %}
-    <li><a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }} {{ label }}
+    <li><a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }} title="{{ label }}"><span class="nv-ic">{{ m.icon(icon) }}</span><span class="nl">{{ label }}</span>
       {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>
     {% endfor %}
   </ul>
-  {# Desktop: "Add recording" lives here instead of the round + button, which covered the right edge of rows #}
-  <a class="btn side-add" href="/capture">{{ m.icon("plus") }} Add recording</a>
-  <div class="side-foot">Runs on the M14</div>
+  <details class="side-more" data-remember="side-more"><summary title="More places"><span class="nv-ic">{{ m.icon("chev-d") }}</span><span class="nl nl-more">More</span><span class="nl nl-less">Hide</span></summary>
+    <ul class="navlist">{% for href, icon, label in more_places %}<li><a href="{{ href }}" class="{{ 'on' if (href == '/conversations?trash=1' and request.query_params.get('trash')) or (href != '/conversations?trash=1' and request.url.path == href) }}" title="{{ label }}"><span class="nv-ic">{{ m.icon(icon) }}</span><span class="nl">{{ label }}</span></a></li>{% endfor %}</ul></details>
+  <div class="side-foot nl">Runs on the M14</div>
 </aside>
 
-{# Phone top bar #}
+{# Desktop top bar: search with advanced search (☷) on its right, then 🔔, status and ⚙ Quick settings #}
+<header class="dtop">
+  <div class="dsearch"><form method="get" action="/search" role="search">{{ m.icon("search") }}
+    <input type="search" name="q" placeholder="Search talks, people, tasks" aria-label="Search" autocomplete="off" value="{{ request.query_params.get('q', '') if nav == 'search' }}"></form>
+    {{ m.adv_search() }}</div>
+  <div class="dtop-r">{{ m.bell() }}{{ m.status_ring(ring) if ring else m.more_menu(head_alert) }}{{ m.quick_settings(theme, density, rpane) }}</div>
+</header>
+
+{# Phone top bar: ☰ opens the drawer (or swipe in from the left edge) #}
 <header class="topbar"><div class="topbar-in">
-  <a class="brand" href="/" aria-label="Scribe Bot home"><img src="/static/icon.svg" alt=""> <span class="brand-text">Scribe Bot</span></a>
+  <button type="button" class="icon-btn drawer-btn" data-drawer-open aria-label="Open the menu" title="Menu">{{ m.icon("menu") }}</button>
+  <a class="brand" href="/" aria-label="Scribe Bot home"><img src="/static/icon.svg?v={{ asset_v }}" alt=""> <span class="brand-text">Scribe Bot</span></a>
   {{ m.area_toggle(area, short=True) }}
   <a class="icon-btn" href="/search" aria-label="Search" title="Search">{{ m.icon("search") }}</a>
   {{ m.bell() }}
   {{ m.status_ring(ring) if ring else m.more_menu(head_alert) }}
-  <a class="icon-btn" href="/settings" aria-label="Settings" title="Settings">{{ m.icon("gear") }}</a>
+  {{ m.quick_settings(theme, density, rpane, phone=True) }}
 </div></header>
+
+{# Phone drawer (Brian picked C1, 2026-11-23): one icon column, labels on one left edge, same icons as the sidebar #}
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-back" data-drawer-close></div>
+  <nav class="drawer-body" aria-label="All places">
+    <div class="drawer-head"><img src="/static/icon.svg?v={{ asset_v }}" alt=""> <b>Scribe Bot</b></div>
+    <ul class="navlist">{% for key, href, icon, label in tabs %}<li><a href="{{ href }}" class="{{ 'on' if tab_on == key }}"><span class="nv-ic">{{ m.icon(icon) }}</span><span class="nl">{{ label }}</span>
+      {% if key == 'today' and needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>{% endfor %}
+      <li><a href="/capture"><span class="nv-ic">{{ m.icon("plus") }}</span><span class="nl">Add recording</span></a></li></ul>
+    {# Brian, 2026-11-23 (C10): More is a drop-down on the phone too (it was a fixed heading) #}
+    <details class="side-more drawer-more" data-remember="drawer-more"><summary title="More places"><span class="nv-ic">{{ m.icon("chev-d") }}</span><span class="nl nl-more">More</span><span class="nl nl-less">Hide</span></summary>
+    <ul class="navlist">{% for href, icon, label in more_places %}<li><a href="{{ href }}"><span class="nv-ic">{{ m.icon(icon) }}</span><span class="nl">{{ label }}</span></a></li>{% endfor %}</ul></details>
+  </nav>
+</div>
+{% endif %}
 
 {% if people %}<template id="people-options">{% for p in people %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</template>{% endif %}
 
 <main class="main{% block main_class %}{% endblock %}" id="content">
+{% if public_demo %}<p class="demo-note" role="note">Demo with made-up meetings. Changes reset on their own; nothing is recorded, sent or charged. <a href="https://github.com/branmuffn/scribe-bot-demo">About</a></p>{% endif %}
 {% block back %}{% endblock %}{# nested pages: "‹ Section" to their parent, no browser Back needed #}
 {% block body %}{% endblock %}
 </main>
 
-{# Undo bar: shown just after an undoable action. Undo is a plain (boosted) form post that reloads the page in place. #}
-<div id="undo-bar" class="undo-bar" role="status" aria-live="polite"{% if not undo %} hidden{% endif %}>
-  {% if undo %}<span class="undo-label">{{ undo.label }}</span>
+{# Undo bar: shown just after an undoable action. Undo is a plain form post that reloads the page. #}
+<div id="undo-bar" class="undo-bar" role="status" aria-live="polite"{% if not undo and not toast %} hidden{% endif %}>
+  {% if not undo and toast %}{# progress note after something that runs in the background (Summarize, Transcribe) #}<span class="undo-label">{{ toast }}</span>
+  <button type="button" class="icon-btn" data-dismiss-undo aria-label="Dismiss" title="Hide this bar">{{ m.icon("x") }}</button>{% endif %}
+  {% if undo %}{% if undo.label.endswith("to Trash") %}{# Brian, 2026-11-22: tap the note to open Trash #}<a class="undo-label undo-go" href="/conversations?trash=1">{{ undo.label }} ›</a>
+  {% else %}<span class="undo-label">{{ undo.label }}</span>{% endif %}
   <form method="post" action="/undo/{{ undo.id }}"><button class="btn btn-ghost undo-btn">Undo</button></form>
   <button type="button" class="icon-btn" data-dismiss-undo aria-label="Dismiss" title="Hide this bar">{{ m.icon("x") }}</button>{% endif %}
 </div>
 
 {# 5-step tour (app.js): a card pinned at the bottom; each step opens a page and outlines one spot on it. #}
 <div id="tour" class="tour" role="dialog" aria-labelledby="tour-title" aria-live="polite" hidden>
+  <button type="button" class="icon-btn tour-x" data-tour="skip" aria-label="End the tour" title="End the tour">{{ m.icon("x") }}</button>
   <div class="tour-step meta" id="tour-count"></div>
   <h2 id="tour-title"></h2>
   <p id="tour-text"></p>
@@ -79,18 +128,33 @@
     <button type="button" class="btn btn-primary" data-tour="next">Next</button></div>
 </div>
 
+{# U11 (Brian, 2026-11-25): the app's own confirm box, never the browser's. app.js sbConfirm() fills and opens it. #}
+<dialog id="ask" class="dialog ask-dialog" aria-labelledby="ask-text">
+  <p id="ask-text"></p>
+  <div class="row ask-row"><button type="button" class="btn" data-ask="no">Cancel</button>
+    <button type="button" class="btn btn-danger" data-ask="yes">OK</button></div>
+</dialog>
 <dialog id="shortcuts" class="dialog" aria-labelledby="shortcuts-title">
   <h2 id="shortcuts-title">Keyboard shortcuts</h2>
   {{ m.shortcut_list() }}
   <form method="dialog"><button class="btn btn-primary">Close</button></form>
 </dialog>
 
-{# Phone tab bar: the three daily places. Status, Costs and Help are under ⋯; Settings is ⚙. #}
-<nav class="tabbar" aria-label="Main">
+{# Phone tab bar: the daily places. Everything else is in the ☰ drawer. #}
+{% if not in_pane %}<nav class="tabbar" aria-label="Main">
   {% for key, href, icon, label in tabs %}
   <a href="{{ href }}" class="{{ 'on' if tab_on == key }}" {{ 'aria-current=page' if tab_on == key }}>{{ m.icon(icon) }}{{ label }}
     {% if key == 'today' and needs_count %}<span class="dot" aria-label="{{ needs_count }} need you">{{ needs_count }}</span>{% endif %}{% if key == 'inbox' and inbox_count %}<span class="dot" aria-label="{{ inbox_count }} waiting">{{ inbox_count }}</span>{% endif %}</a>
   {% endfor %}
-</nav>
+</nav>{% endif %}
+{% if not in_pane and request.url.path in ('/conversations', '/people') and not request.query_params.get('trash') %}
+{# Desktop reading pane (Brian picked A1, 2026-11-23): a talk or person opens beside the list; drag the line to resize #}
+<aside class="rpane" id="rpane" aria-label="Preview" hidden>
+  <div class="rpane-drag" data-rpane-drag title="Drag to resize" role="separator" aria-orientation="vertical"></div>
+  <div class="rpane-bar"><a class="btn btn-ghost btn-sm" data-rpane-full href="#">{{ m.icon("open") }} Open full page</a><span class="grow"></span>
+    <button type="button" class="icon-btn" data-rpane-close aria-label="Close the preview" title="Close the preview">{{ m.icon("x") }}</button></div>
+  <iframe name="rpane" title="Preview" data-rpane-frame></iframe>
+  <div class="rpane-empty"><span>{{ m.icon("chat") }}</span><p>Pick {{ 'a person' if request.url.path == '/people' else 'a talk' }} to read it here.</p></div>
+</aside>{% endif %}
 </body>
 </html>

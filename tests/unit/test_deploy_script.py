@@ -21,7 +21,10 @@ def test_deploy_dry_run_runs_steps_in_order():
              "127.0.0.1:8000/health", "state = running", "deploys.log"]
     positions = [joined.index(step) for step in order]
     assert positions == sorted(positions)
-    assert "deployed" in p.stdout
+    assert "health check passed" not in p.stdout and "deployed" not in p.stdout   # a dry run never looks like a deploy
+    assert p.stdout.startswith("[deploy] ==== DRY RUN: nothing will change")
+    assert "DRY RUN finished: nothing changed" in p.stdout
+    assert all("DRY RUN" in line for line in p.stdout.splitlines() if line.startswith("[deploy]"))
     assert "result=ok" in joined
 
 

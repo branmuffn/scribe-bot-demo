@@ -9,7 +9,7 @@
     <a class="item-link" href="{{ '/conversations/' ~ j.conversation_id if j.conversation_id else '/processing#now' }}">{{ j.title|recorder_title }}</a>
     <div class="item-sub">
       {% if j.paused %}<span><b>Paused</b>{% if j.resume_label %} · resumes {{ j.resume_label }}{% endif %}</span>
-      {% elif not j.started %}<span>Waiting its turn</span>
+      {% elif not j.started %}<span>{{ 'Starts ~' ~ j.starts if j.starts else 'Waiting its turn' }}</span>
       {% else %}<span>{{ j.current.label if j.current else 'Finishing' }}</span>{% endif %}
       <span>{{ j.minutes|round|int }} min</span>{% if not j.paused %}<span>ready ~{{ j.eta }}</span>{% endif %}
     </div>

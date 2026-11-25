@@ -133,6 +133,23 @@ def enroll(conn: sqlite3.Connection, speaker_id: int, person_id: int | None = No
     return person_id
 
 
+def unenroll(conn: sqlite3.Connection, speaker_id: int, person_id: int, cfg: settings.Settings | None = None) -> None:
+    """ "This isn't X": take this speaker's voice back out of X's voiceprint (the reverse of enroll's running average),
+    so a wrong naming doesn't teach Scribe Bot the wrong voice. A voiceprint made only from this voice is deleted."""
+    emb = speaker_embedding(conn, speaker_id, cfg)
+    vp = conn.execute("SELECT id, embedding, sample_count FROM voiceprint WHERE person_id = ?", (person_id,)).fetchone()
+    if emb is None or vp is None:
+        return
+    n = vp["sample_count"]
+    if n <= 1:
+        conn.execute("DELETE FROM voiceprint WHERE id = ?", (vp["id"],))
+        return
+    old = from_blob(vp["embedding"])
+    rest = normalise([(o * n - e) / (n - 1) for o, e in zip(old, normalise(emb))])
+    conn.execute("UPDATE voiceprint SET embedding = ?, sample_count = ?, updated_at = ? WHERE id = ?",
+                 (to_blob(rest), n - 1, now(), vp["id"]))
+
+
 def embeddings_file(cfg: settings.Settings, conversation_id: int) -> Path:
     """Each conversation's per-cluster voice embeddings (numbers only), used when Brian names a speaker later.
     (A speaker.embedding column would be cleaner; proposed for a later migration.)"""

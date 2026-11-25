@@ -22,42 +22,40 @@ def fake_run(outputs):
     return run
 
 
-def test_parsers():
-    assert pace.parse_hid_idle('    | |   "HIDIdleTime" = 61000000000') == 61
-    who = ("user console  Nov 11 15:24 01:08 172\n"
-           "user ttys000  Nov 14 23:30   .   13746\n"                       # local terminal: no (host)
-           "user ttys003  Nov 21 14:00   .   2222 (192.0.2.20)\n")           # SSH, typing now
-    assert pace.parse_who(who) == 1
-    assert pace.parse_who("user ttys004  Nov 21 09:00 02:10 3333 (192.0.2.20)") == 0   # idle 2 h
-    assert pace.parse_who("user ttys004  Nov 21 09:00 00:12 3333 (192.0.2.20)") == 1
-    assert pace.parse_remote("/Applications/RustDesk.app/Contents/MacOS/RustDesk --cm", "") == ["RustDesk"]
-    assert pace.parse_remote("/Applications/RustDesk.app/Contents/MacOS/RustDesk --server", "") == []
-    assert pace.parse_remote("", "tcp4  0  0  192.0.2.10.5900  192.0.2.20.50123  ESTABLISHED") == ["Screen Sharing"]
+def test_auto_judges_by_real_cpu_and_memory_use():
+    """Brian, 2026-11-22: judge by how busy the Mac actually is, not keyboard / RustDesk / open chats."""
+    calm = {"ps": "  0  12.0 /usr/bin/claude\n 10 390.0 python\n  0 300.0 com.docker.virtualization\n",
+            "memory_pressure": "System-wide memory free percentage: 84%"}
+    assert pace.in_use(fake_run(calm)) == ""                                   # Scribe Bot's own work and Docker skipped
+    busy = dict(calm, ps="  0 180.0 node\n  0  60.0 pytest\n")
+    assert pace.in_use(fake_run(busy)) == "other apps using 2.4 of 8 cores"
+    low = dict(calm, memory_pressure="System-wide memory free percentage: 12%")
+    assert pace.in_use(fake_run(low)) == "only 12% memory free"
+    assert pace.parse_mem_free("nothing") is None
 
 
-def test_in_use_sees_chats_and_input(tmp_path):
-    idle = {"ioreg": '"HIDIdleTime" = 999000000000'}
-    assert pace.in_use(fake_run(idle), home=tmp_path) == ""
-    assert pace.in_use(fake_run({"ioreg": '"HIDIdleTime" = 5000000000'}), home=tmp_path) == "keyboard or mouse"
-    chat = tmp_path / ".claude/projects/x"
-    chat.mkdir(parents=True)
-    (chat / "s.jsonl").write_text("{}")
-    busy = dict(idle, ps="  0 200.0 node")   # 2026-11-22: a chat counts only while the Mac is busy
-    assert pace.in_use(fake_run(busy), home=tmp_path) == "a busy Claude chat"
-    old = time.time() - 3600
-    os.utime(chat / "s.jsonl", (old, old))
-    assert pace.in_use(fake_run(busy), home=tmp_path) == ""
+def test_auto_pauses_when_other_apps_use_most_of_the_mac(tmp_path):
+    c = conn_(tmp_path)
+    pace._state.update(busy_seen=None, busy_calm=None)
+    t = 1_000_000.0
+    assert pace.busy_step(c, 700.0, t) is None                               # one busy check isn't enough
+    assert pace.busy_step(c, 700.0, t + 60) == "paused"
+    assert queue.hold_requested(c)                                           # stops at the next safe point
+    assert pace.busy_step(c, 300.0, t + 120) is None                         # calm, but not for 2 min yet
+    assert pace.busy_step(c, 300.0, t + 250) == "resumed"
+    assert not queue.hold_requested(c)
+    assert pace.busy_step(c, 700.0, t + 300) is None and pace.busy_step(c, 100.0, t + 360) is None   # a blip: no pause
 
 
-def test_auto_goes_gentle_while_used_and_back_after_10_min(tmp_path):
+def test_auto_goes_half_while_busy_and_back_after_3_min(tmp_path):
     c = conn_(tmp_path)
     t = 1_000_000.0
     assert pace.threads_for(c, "", t) == 4
-    assert pace.threads_for(c, "SSH", t) == 2
-    assert pace.threads_for(c, "", t + 9 * 60) == 2
-    assert pace.threads_for(c, "", t + 11 * 60) == 4
+    assert pace.threads_for(c, "other apps using 2.4 of 8 cores", t) == 2
+    assert pace.threads_for(c, "", t + 2 * 60) == 2
+    assert pace.threads_for(c, "", t + 4 * 60) == 4
     pace.set_mode(c, "full")
-    assert pace.threads_for(c, "SSH", t) == 4
+    assert pace.threads_for(c, "busy", t) == 4
     pace.set_mode(c, "gentle")
     assert pace.threads_for(c, "", t) == 2
 

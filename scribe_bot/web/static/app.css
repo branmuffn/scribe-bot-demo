@@ -69,7 +69,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: var(--fs-base)
 a { color: var(--acc); text-decoration: none; text-underline-offset: .15em } a:hover { text-decoration: underline }
 @media (hover: none) { a:hover { text-decoration: none } }   /* no underline stuck on after a tap */
 a.item:hover, a.notice:hover, a.item-link:hover, #needs-you a:hover { text-decoration: none }
-a.item:hover { background: var(--surface-2) }
+@media (hover: hover) { a.item:hover { background: var(--surface-2) } }
 h1, h2, h3 { line-height: var(--lh-tight); margin: 0; letter-spacing: -.01em }
 h1 { font-size: var(--fs-xl); font-weight: 700 }
 h2 { font-size: var(--fs-md); font-weight: 650 }
@@ -320,8 +320,8 @@ audio { width: 100%; height: 44px }
 .ok { color: var(--ok) } .bad { color: var(--bad) } .warn { color: var(--warn) }
 
 /* ---------- 6. Motion ---------- */
-@view-transition { navigation: auto }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; animation-timing-function: var(--ease) }
+/* No page-change fade (Brian, 2026-11-22): it photographed both pages (blurry on the Pixel) and a tap during it could
+   leave the new page unshown until a refresh. Pages now switch instantly. */
 .main { animation: rise .22s var(--ease) backwards }   /* not "both": a leftover transform would trap fixed panels (filter sheet) inside the page */
 @keyframes rise { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 .htmx-request .main { opacity: .7; transition: opacity .2s }
@@ -450,7 +450,7 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .tap-row .item-actions, .tap-row .item-sub a { position: relative; z-index: 1 }   /* buttons, menus and other links stay tappable above the whole-row link */
 .item.not-needed .item-title { color: var(--muted) }
 .person-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px }
-.tap-row:hover { background: color-mix(in srgb, var(--acc) 5%, transparent) }
+@media (hover: hover) { .tap-row:hover { background: color-mix(in srgb, var(--acc) 5%, transparent) } }   /* phones: no sticky square hover after a tap */
 
 /* Edit in place: a quiet ✎ beside editable text; the text becomes a box right where it is */
 .editable-row { display: flex; align-items: flex-start; gap: var(--s1) }
@@ -472,6 +472,9 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .undo-bar[hidden] { display: none }
 .net-note { padding: var(--s2) var(--s4); font-size: var(--fs-sm) }   /* a page or action that failed */
 .undo-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm) }
+/* U1 (2026-11-25): a progress note wraps (two lines at most) instead of running off a narrow screen */
+.undo-bar .undo-label { white-space: normal; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; padding: 8px var(--s3) 8px 0; line-height: 1.35 }
+.undo-bar { box-sizing: border-box; width: max-content }
 .undo-bar .undo-btn { color: var(--acc-soft); font-weight: 700 }
 .undo-bar .icon-btn { color: var(--bg) }
 @keyframes undo-in { from { opacity: 0; transform: translate(-50%, 8px) } }
@@ -591,14 +594,6 @@ details.filters form { margin-top: var(--s2) }
   padding: 2px var(--s2); white-space: nowrap }   /* the reading you point at, in place of "now" */
 .chart-tip:not([hidden]) + .now { display: none }
 
-/* Swipeable rows (Tasks, Notifications): grip lines on the left edge hint at it; the hint shows what a swipe will do */
-.swipeable { position: relative; transition: transform .15s ease, opacity .15s ease; touch-action: pan-y }
-@media (pointer: coarse) { .swipeable { padding-left: calc(var(--s3) + 6px) }
-  .swipeable::before { content: ""; position: absolute; left: 5px; top: 50%; width: 4px; height: 18px; transform: translateY(-50%);
-    border-left: 1.5px solid var(--line-strong); border-right: 1.5px solid var(--line-strong); opacity: .7 } }
-.swipeable.swipe-left::after, .swipeable.swipe-right::after { content: attr(data-swipe-hint); position: absolute; top: 50%; transform: translateY(-50%);
-  font-size: .8rem; font-weight: 600; color: var(--muted) }
-.swipeable.swipe-left::after { right: -7rem } .swipeable.swipe-right::after { left: -7rem }
 
 /* Phone: bigger targets for menus, pickers and small buttons (thumbs, not mouse pointers) */
 @media (pointer: coarse) { .menu-item { min-height: 48px } .btn, .icon-btn, select, input[type=date] { min-height: 44px }
@@ -619,7 +614,7 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
   color: var(--muted); text-decoration: none } .back-link:hover { color: var(--acc) }
 
 /* Settings: left list + right pane on wide screens */
-.settings-nav { display: none }
+.settings-nav { display: none } .settings-back-wide { display: none }
 @media (min-width: 960px) {
   .settings-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s6); align-items: start }
   .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: var(--s4) }
@@ -627,7 +622,7 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
   .settings-nav a { display: flex; align-items: center; gap: var(--s3); padding: 9px var(--s3); border-radius: var(--r-md, 10px);
     color: var(--text); text-decoration: none } .settings-nav a:hover { background: var(--surface-2) }
   .settings-nav a.on { background: var(--surface-2); font-weight: 600 }
-  .settings-back { display: none }
+  .settings-back { display: none } .settings-back-wide { display: inline-flex }
 }
 .lines .line:has([data-seek]) { cursor: pointer } .lines .line:has([data-seek]):hover { background: var(--surface-2) }
 .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 }
@@ -872,7 +867,7 @@ body:has(.fab) .rail, body:has(.fab) .rail-out { bottom: calc(150px + env(safe-a
 .who-pin[hidden] { display: none }
 .who-pin-btn { position: absolute; left: calc(-1 * var(--s4)); right: calc(-1 * var(--s4)); top: 0; display: flex; align-items: center; gap: 8px;
   min-height: 38px; padding: 6px var(--s4); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font: inherit; text-align: left;
-  background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: var(--ink); cursor: pointer }
+  background: var(--surface); color: var(--ink); cursor: pointer }   /* solid: no transcript shows through (2026-11-23) */
 .who-pin-btn i { width: 10px; height: 10px; border-radius: 50%; flex: none }
 .who-pin-btn b { font-weight: 650 }
 .who-pin-btn span { color: var(--muted); font-size: var(--fs-sm) }
@@ -916,7 +911,7 @@ h1 { font-size: 1.5rem }
 .badge { height: 20px; font-size: .7rem }
 .badges { flex-wrap: nowrap }
 .list-head { padding: 12px 2px 4px; border-bottom: 0; font-size: .7rem }
-.list-head + .item { border-top: 0 }
+.list-head + .item, .group-label + .item { border-top: 0 }   /* B34 (2026-11-25): no line under a card heading (only cards with items had one) */
 @media (max-width: 959px) { .section-help, .fx-info { display: none } }
 
 /* one-line link rows (Today, person page) */
@@ -1213,7 +1208,7 @@ form.toolbar:has(#people-q) { flex-wrap: nowrap; gap: 6px } form.toolbar:has(#pe
 .ts-row > summary, a.ts-row { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 2px; list-style: none; cursor: pointer; color: var(--ink); text-decoration: none }
 .ts-row > summary::-webkit-details-marker { display: none }
 .ts-row > summary:active, a.ts-row:active { background: var(--acc-soft) }
-.ts-ic { width: 24px; text-align: center; flex: none }
+.ts-ic { width: 24px; text-align: center; flex: none; display: grid; place-items: center; color: var(--ink-2) } .ts-ic .icon { width: 20px; height: 20px }   /* R5-27: drawn icons, not emoji */
 .ts-v { color: var(--muted); font-size: .92rem; flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ts-row[open] .ts-v { color: var(--acc) }
 .ts-in { padding: 4px 0 12px 36px } .ts-in .menu-item { min-height: 40px }
@@ -1228,10 +1223,11 @@ form.toolbar:has(#people-q) { flex-wrap: nowrap; gap: 6px } form.toolbar:has(#pe
 .pk-top { position: fixed; z-index: 40; top: 0; left: 0; right: 0; height: 56px; display: flex; align-items: center; gap: 10px;
   padding: 0 14px calc(0px) 8px; background: var(--acc-soft); color: var(--acc-soft-ink); border-bottom: 1px solid var(--line); font-weight: 700 }
 .pk-top .pick-n { flex: 1; font-size: 1.05rem } .pk-top .linkish { font-weight: 650 }
+/* the action bar takes the tab bar's place, so it is exactly as tall (4 + 52 + 4 px, like .tabbar): nothing jumps */
 .pk-bot { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around;
-  background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(0,0,0,.06) }
-.pk-bot button { flex: 1; max-width: 110px; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: 0;
-  color: var(--ink); font: inherit; font-size: .78rem; font-weight: 600; min-height: 56px; border-radius: 12px; cursor: pointer }
+  background: var(--surface); border-top: 1px solid var(--line); padding: var(--s1) 4px calc(var(--s1) + env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(0,0,0,.06) }
+.pk-bot button { flex: 1; max-width: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: none; border: 0;
+  color: var(--ink); font: inherit; font-size: .78rem; font-weight: 600; min-height: 52px; border-radius: 12px; cursor: pointer }
 .pk-bot button:active { background: var(--acc-soft) }
 .pk-bot button > i { font-style: normal; font-size: 20px; line-height: 30px; height: 30px; display: grid; place-items: center }
 .pk-bot button > i.ib { width: 30px; height: 30px; font-size: 12px }
@@ -1244,7 +1240,7 @@ body:has(.pk2:not([hidden])) .fab, body:has(.pk2:not([hidden])) .tabbar { visibi
 /* Q3-A (Brian, 2026-11-21): rows that open something look it: › at the end and a light blue flash while pressed */
 .chev-r { color: var(--muted); font-size: 1.35rem; line-height: 1; flex: none; margin-left: 2px }
 #inbox-list.picking .in-row .ib-go, #inbox-list.picking .in-row .ib-plain { display: none }
-.in-row > summary, .sp-row > summary, .mention-row, .tap-row, .acts .act, .menu-item, .ts-row > summary, a.ts-row, .row1 { -webkit-tap-highlight-color: transparent; transition: background .12s }
+.in-row > summary, .sp-row > summary, .mention-row, .tap-row, .acts .act, .menu-item, .ts-row > summary, a.ts-row, .row1 { -webkit-tap-highlight-color: transparent; transition: background .12s, box-shadow .12s }   /* edge and middle fade together: no square box in the first frame (Brian's video, 2026-11-22) */
 .in-row > summary:active, .sp-row > summary:active, .mention-row:active, .tap-row:active, .acts .act:active, .menu-item:active, .row1:active { background: var(--acc-soft) }
 @media (hover: hover) { .in-row > summary:hover, .sp-row > summary:hover, .tap-row:hover, .acts .act:hover { background: color-mix(in srgb, var(--acc-soft) 55%, transparent) } }
 .in-row > summary { border-radius: 10px; padding-left: 4px; padding-right: 4px }
@@ -1288,8 +1284,12 @@ body:has(.pk2:not([hidden])) .fab, body:has(.pk2:not([hidden])) .tabbar { visibi
    2. Selected and pressed rows are rounded, with a little tint past the content so circles never touch the edge.
    3. One-tap pickers: the native date / time / people picker opens from the row itself and saves on pick. */
 .mention-row { padding: 10px 12px; min-height: 56px }
-#conv-list.picking .item.picked, [data-picker].picking [data-pick-id].picked { border-radius: 12px;
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--acc) 7%, transparent); border-top-color: transparent }
+/* Selected rows (2026-11-22, Brian: overlapping highlight looked tacky): a tint inside the row only, no glow
+   spilling onto neighbors; picked rows next to each other join into one rounded block. */
+#conv-list.picking .item.picked, [data-picker].picking [data-pick-id].picked { border-radius: 12px; box-shadow: none;
+  background: color-mix(in srgb, var(--acc) 9%, var(--surface)); border-top-color: transparent }
+#conv-list.picking .item.picked:has(+ .item.picked), [data-picker].picking [data-pick-id].picked:has(+ [data-pick-id].picked) { border-bottom-left-radius: 0; border-bottom-right-radius: 0 }
+#conv-list.picking .item.picked + .item.picked, [data-picker].picking [data-pick-id].picked + [data-pick-id].picked { border-top-left-radius: 0; border-top-right-radius: 0 }
 #conv-list.picking .item.picked + .item, [data-picker].picking [data-pick-id].picked + [data-pick-id] { border-top-color: transparent }
 #inbox-list.picking .in-row.picked > summary { border-radius: 12px }
 /* rows without a divider line get rounded corners and a little tint past the content when pressed (rows with a
@@ -1438,16 +1438,22 @@ summary .count, .section-head .count { white-space: nowrap; overflow: hidden; te
 .cl-notice { align-items: center } .cl-notice .chev-r { margin-left: auto }
 .card + .cl-lead { margin-top: 12px }
 /* Swipe to show buttons (Brian picked B, 2026-11-21) */
-.sw-host { position: relative; overflow: hidden }
-.sw-host > :not(.sw-layer) { transform: translateX(var(--sw-dx, 0)) }
-.sw-host.sw-anim > :not(.sw-layer) { transition: transform .18s ease }
-.sw-host.sw-on { background: var(--surface) }
-.sw-layer { position: absolute; top: 0; bottom: 0; display: flex; z-index: 0 }
-.sw-layer.sw-l { right: 0 } .sw-layer.sw-r { left: 0 }
-.sw-host > :not(.sw-layer) { position: relative; z-index: 1 }
-.sw-b { width: 84px; border: 0; color: #fff; font: inherit; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 6px; text-align: center; line-height: 1.2; cursor: pointer }
-.sw-red { background: #c53030 } .sw-ink { background: #718096 } .sw-blue { background: #2b6cb0 } .sw-dark { background: #4a5568 } .sw-green { background: #2f855a }
-.sw-host:not(.sw-on) > .sw-layer { visibility: hidden }
+/* Swipe rows (2026-11-22 rebuild): the row is one solid piece sliding over a colored layer */
+.sw-host { position: relative; z-index: 1; background: var(--surface); will-change: transform; touch-action: pan-y }
+.sw-host.sw-anim { transition: transform .3s cubic-bezier(.2, .9, .25, 1) }
+.sw-fold { transition: height .2s cubic-bezier(.4, 0, .2, 1), opacity .2s; opacity: 0; padding-top: 0 !important; padding-bottom: 0 !important; border-top-color: transparent !important; min-height: 0 !important }
+.sw-layer { position: absolute; z-index: 0; display: flex; overflow: hidden }   /* full card width, 1px inset top and bottom: sharp, no color at the row edges */
+.sw-layer.sw-l { flex-direction: row-reverse }   /* the first action sits at the outer edge */
+.sw-b { flex: 0 0 88px; border: 0; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; font: 600 .74rem/1.1 system-ui, sans-serif; padding: 0 4px; cursor: pointer; transition: flex-basis .2s ease }
+.sw-i { width: 22px; height: 22px; stroke: currentColor; fill: none }
+.sw-t { white-space: nowrap }
+.sw-layer.sw-full .sw-b:first-child { flex: 1 1 auto }
+.sw-layer.sw-full .sw-b:not(:first-child) { flex-basis: 0; overflow: hidden; padding: 0 }
+.sw-layer.sw-l.sw-full .sw-b:first-child { align-items: flex-end; padding-right: 26px }
+.sw-layer.sw-r.sw-full .sw-b:first-child { align-items: flex-start; padding-left: 26px }
+.sw-c-red { background: #dc2626 } .sw-c-green { background: #16a34a } .sw-c-blue { background: #2563eb }
+.sw-c-ink { background: #64748b } .sw-c-dark { background: #475569 } .sw-c-amber { background: #d97706 }
 
 /* Desktop + every-size audit (Brian, 2026-11-22: "check all the pop-ups on desktop; nothing cut off") */
 @media (min-width: 960px) {
@@ -1492,3 +1498,1159 @@ nav.tabs.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transpare
 html.pop-lock .rail, html.pop-lock .rail-out, body:has(details.row-menu[open]) .rail, body:has(details.chip-menu[open]) .rail { visibility: hidden }
 /* Stat tiles: the number is never cut ("144 words…" on phones); a long value wraps instead */
 .tile-value, .tile-name { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere }
+
+/* "＋ Someone new…" chosen: the name box shows even if a script step is missed (Brian, 2026-11-22: no box on the Pixel) */
+form:has(select option[value="__new"]:checked) .qp-new[hidden] { display: block }
+/* Talks select bar (2026-11-22): count + Select all on top, the three actions as equal buttons below */
+.pick-bar { flex-wrap: wrap; row-gap: 4px }
+.pick-bar .pick-n { white-space: nowrap; order: -1; flex: 1 1 auto }
+.pick-bar [data-pick-all] { order: 0 }
+.pick-bar [data-pick-act], .pick-bar [data-pick-export] { order: 1; flex: 1 1 calc(25% - 8px); justify-content: center; white-space: nowrap; padding-inline: 6px }
+.pick-bar [data-pick-act]:disabled, .pick-bar [data-pick-export]:disabled { opacity: .5 }
+.pick-bar .pk-break { order: 0; flex-basis: 100%; height: 0 }
+.side-trash { display: flex; align-items: center; gap: 8px; padding: 6px 12px; margin-top: 4px; color: var(--muted); font-size: .9rem; text-decoration: none; border-radius: 8px }
+.side-trash:hover, .side-trash.on { background: var(--surface-2, rgba(127,127,127,.12)); color: inherit }
+/* S1 overnight card on Today */
+.overnight-card { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 14px; margin-bottom: var(--s3) }
+.overnight-card > .item-link { position: absolute; inset: 0; z-index: 0; font-size: 0 }
+.overnight-card .oc-ic { flex: 0 0 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: #e0e7ff; color: #3730a3; font-size: 18px }
+.overnight-card .oc-main { flex: 1; min-width: 0 }
+.overnight-card form { position: relative; z-index: 1 }
+html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (2026-11-22: swipes moved the whole page) */
+.sw-box { overflow: clip }
+
+
+/* Talks rows, design A (Brian, 2026-11-22) */
+.conv-row { align-items: flex-start }
+.conv-row .cr-ic { flex: 0 0 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 17px; margin: 2px 12px 0 0 }
+.conv-row .cr-ai { background: color-mix(in srgb, #2563eb 14%, var(--surface)); color: #2563eb }
+.conv-row .cr-tx { background: var(--surface-2); color: var(--muted) }
+.conv-row .item-main { min-width: 0; flex: 1 }
+.conv-row .item-link { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.conv-row .cr-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.cr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; font-size: .82rem; color: var(--muted) }
+.cr-k-ai { color: #2563eb; font-weight: 600 }
+.cr-area::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted) }
+.cr-work::before { background: #4f46e5 } .cr-personal::before { background: #0d9488 } .cr-school::before { background: #7c3aed }
+.cr-name { color: #b45309; font-weight: 600 }
+#conv-list.picking .conv-row .cr-ic { display: none }
+:root[data-theme="dark"] .cr-k-ai, :root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cr-k-ai, :root:not([data-theme="light"]) .conv-row .cr-ai { color: #93b4ff } :root:not([data-theme="light"]) .cr-name { color: #fbbf24 } }
+:root[data-theme="dark"] .cr-name { color: #fbbf24 }
+/* Needs you: grouped rows (B, 2026-11-22) */
+.row-group > summary { list-style: none; cursor: pointer }
+.row-group > summary::-webkit-details-marker { display: none }
+.row-group .rg-chev { transition: transform .2s ease }
+.row-group[open] .rg-chev { transform: rotate(180deg) }
+.row-group .rg-list .row1 { padding-left: 28px }
+/* Brian, 2026-11-22 night: the Talks ✓ was a text glyph that sat off centre on the Pixel; draw it as the same centred
+   SVG the Inbox uses, everywhere a picker box is drawn. The ✦ / ≡ icon sits in the middle of its row. */
+#conv-list.picking .item.picked::after, [data-picker].picking [data-pick-id].picked::after { content: none }
+#conv-list.picking .item.picked::before, [data-picker].picking [data-pick-id].picked::before { background: var(--acc) no-repeat center / 14px 14px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+.conv-row .cr-ic { align-self: center; margin: 0 12px 0 0 }
+.undo-bar .undo-go { color: var(--bg); text-decoration: none; padding: 8px 0; flex: 1 }   /* "Moved to Trash ›" opens Trash */
+/* Typing on a phone (2026-11-22 night): the bottom tab bar and the + sat on top of the keyboard and covered the box */
+html.typing .tabbar, html.typing .fab, html.typing .pick-bar { display: none !important }
+/* While a row is being swiped it keeps its normal look: the pressed tint lit the whole moving row up (Brian's video,
+   2026-11-22: a bright grey / blue box slid around). */
+.sw-host, .sw-host:active { background: var(--sw-bg, var(--surface)) !important; border-radius: 0 !important; -webkit-tap-highlight-color: transparent }
+/* Talks top bar A (Brian, 2026-11-22 night): everything on one line */
+.tb-a { flex-wrap: wrap !important; gap: 8px !important }
+.tb-a .fx-chip { order: 10 }   /* active filter chips go on their own line below */
+.tb-a:has(.fx-chip)::after { content: ""; order: 9; flex-basis: 100%; height: 0 }
+.tb-a .tb-sp { flex: 1 }
+.tb-a > .fx-sheet > summary.btn, .tb-a .fx-sort { min-height: 38px; height: 38px; border-radius: 999px; font-size: .9rem; padding: 0 12px }
+.tb-a .fx-sort { max-width: 7.2rem !important; padding-right: 26px !important }
+.tb-ib { width: 40px; height: 40px; border-radius: 12px; display: inline-grid; place-items: center; position: relative; flex: none;
+  color: var(--ink); background: var(--surface-2); cursor: pointer; list-style: none }
+.tb-ib::-webkit-details-marker { display: none }
+.tb-ib svg { width: 20px; height: 20px }
+a.tb-trash { color: #bd4256; background: color-mix(in srgb, #bd4256 12%, var(--surface)) }
+a.tb-trash:hover { text-decoration: none }
+.tb-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 4px; background: #bd4256;
+  color: #fff; font: 700 11px/18px system-ui, sans-serif; text-align: center }
+.tb-a .tb-select { padding: 0 8px !important }
+@media (pointer: coarse) { .tb-a .tb-select:not([aria-pressed="true"]) { display: none } }   /* phones: long-press a talk to select */
+:root[data-theme="dark"] a.tb-trash { color: #f28ba0 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) a.tb-trash { color: #f28ba0 } }
+/* "Don't know" speakers (2026-11-22): plain chip with a small ?, not dotted (dotted = still to name) */
+.sp-idk-q { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; font-size: 11px; font-weight: 700;
+  background: var(--surface-2); color: var(--muted) }
+.sp-idk-all { display: inline }
+.sp-idk-all .chip { border-style: dashed; color: var(--muted) }
+/* ROOT CAUSE of "taps on talks don't open" (Brian's video, 2026-11-22 night): in a tappable row the small lines
+   (date · length · people, "AI notes · Work"), the New badge and the icon sat ABOVE the row's link, so ~18% of every
+   Talks row lit up on a tap but opened nothing. Labels now let the tap through to the row; real buttons and links
+   inside a row still work. */
+.tap-row :is(.item-sub, .cr-line, .cr-ic, .badge, .item-actions, .tag-mini, .meta) { pointer-events: none }
+.tap-row :is(a, button, select, input, textarea, summary, label, form) { pointer-events: auto }
+.tap-row .item-link { pointer-events: auto }
+/* Tasks A (Brian, 2026-11-22 night) */
+.tk-head { flex-wrap: nowrap; align-items: center }
+.tk-head .tk-open { margin-left: auto; font-size: .9rem }
+.tk-head .tk-open a { padding: 6px 14px }
+.tk-bar { flex-wrap: nowrap !important; gap: 8px !important; margin-top: 10px !important }
+.tk-bar .fx-sort { min-height: 38px; height: 38px; border-radius: 999px; font-size: .9rem; padding: 0 26px 0 12px; width: auto !important; min-width: 0; max-width: none !important; flex: 1 1 0 }
+.lh-group { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-transform: none; letter-spacing: 0; font-size: .85rem }
+.lh-group .cut { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.lh-group a { flex: none; font-weight: 600 }
+.add-sheet > summary.fab { list-style: none }
+.add-sheet > summary.fab::-webkit-details-marker { display: none }
+/* the + sits exactly in the middle of the red circle (Brian, 2026-11-22) */
+.fab { line-height: 0; padding: 0 }
+.fab .icon { display: block; margin: 0 }
+/* Tap highlight (Brian, 2026-11-22 night: "hard corners, text right against the edge; make it like the long-press
+   selection"). The hard box was Chrome's own tap flash on the link: turned off app-wide. Every tappable row now
+   lights up like a selected row: a soft tint with rounded corners, 10px wider than the text on each side, never
+   spilling onto the rows above or below. */
+html { -webkit-tap-highlight-color: transparent }
+:is(.tap-row, .row1, .in-row > summary, .sp-row > summary, .mention-row, .ts-row > summary, a.ts-row):is(:active, .tap-go) {
+  background: color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; border-radius: 0 !important; border-top-color: transparent;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; clip-path: inset(0 -10px round 12px); transition: none }   /* instant: edge and middle light up in the same frame */
+:is(.tap-row, .row1, .in-row > summary):is(:active, .tap-go) + :is(.tap-row, .row1, .in-row) { border-top-color: transparent }
+.sw-host:active { box-shadow: none !important; clip-path: none !important }
+/* hover on computers: the same rounded, wider shape (lighter) */
+@media (hover: hover) { :is(.tap-row, .row1, .st-row):hover { border-radius: 0; box-shadow: 0 0 0 10px color-mix(in srgb, var(--acc) 5%, var(--surface));
+  background: color-mix(in srgb, var(--acc) 5%, var(--surface)); clip-path: inset(0 -10px round 12px) } }
+/* Crisp arrows (Brian, 2026-11-22: the ⌄ on Today looked low-res and off centre). Every text arrow (› ⌄ ▾) is now one
+   drawn chevron: sharp at any size, centred, same weight everywhere. The text stays for screen readers' sake only. */
+:root { --chev-r: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 5.5l6.5 6.5L9 18.5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --chev-d: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5.5 9l6.5 6.5L18.5 9' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+.go, .chev-r, .rg-chev { font-size: 0 !important; line-height: 0 !important; color: var(--muted); width: 18px; height: 18px; flex: none; display: inline-block;
+  align-self: center; background: currentColor; -webkit-mask: var(--chev-r) center / 18px 18px no-repeat; mask: var(--chev-r) center / 18px 18px no-repeat }
+.go.pri { color: var(--acc) }
+.rg-chev { -webkit-mask-image: var(--chev-d); mask-image: var(--chev-d); transition: transform .25s cubic-bezier(.2, .9, .25, 1) }
+.conv-row::after, .person-row::after { content: "" !important; width: 18px; height: 18px; font-size: 0; background: var(--muted);
+  -webkit-mask: var(--chev-r) center / 18px 18px no-repeat; mask: var(--chev-r) center / 18px 18px no-repeat }
+.who-pin-btn::after { content: "" !important; width: 14px; height: 14px; background: var(--muted); -webkit-mask: var(--chev-d) center / 14px 14px no-repeat; mask: var(--chev-d) center / 14px 14px no-repeat }
+/* Person picker sheet (Brian picked A, 2026-11-22 night) */
+.pp-sheet { position: fixed; inset: 0; z-index: 80 }
+.pp-sheet[hidden] { display: none }
+.pp-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .42); animation: pp-fade .18s ease }
+.pp-body { position: absolute; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto; height: min(82dvh, 720px); display: flex; flex-direction: column;
+  background: var(--surface); border-radius: 18px 18px 0 0; padding: 8px 16px 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .18); animation: pp-up .24s cubic-bezier(.2, .9, .25, 1) }
+@keyframes pp-up { from { transform: translateY(40px); opacity: .6 } } @keyframes pp-fade { from { opacity: 0 } }
+.pp-grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line-strong, #d6d3d1); margin: 0 auto 8px; flex: none }
+.pp-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 10px; flex: none }
+.pp-head b { font-size: 1.05rem }
+.pp-x { border: 0; background: var(--surface-2); width: 32px; height: 32px; border-radius: 50%; color: var(--ink); font-size: 14px }
+.pp-search { display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; height: 46px; flex: none }
+.pp-search:focus-within { border-color: var(--acc) }
+.pp-search .icon { width: 18px; height: 18px; color: var(--muted); flex: none }
+.pp-q { border: 0 !important; outline: 0 !important; box-shadow: none !important; -webkit-appearance: none; appearance: none; background: transparent; flex: 1; font-size: 16px; color: var(--ink); min-width: 0; padding: 0; height: 100% }
+.pp-scroll { position: relative; overflow-y: auto; flex: 1; margin: 8px -16px 0; padding: 0 34px env(safe-area-inset-bottom) 16px; overscroll-behavior: contain }
+.pp-sec { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; font-weight: 700 }
+.pp-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; margin: 0 -10px;
+  width: calc(100% + 20px); border-radius: 12px; color: var(--ink); font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent }
+.pp-row:active { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) }
+@media (hover: hover) { .pp-row:hover { background: color-mix(in srgb, var(--acc) 5%, var(--surface)) } }
+.pp-av { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px }
+.pp-plus { background: color-mix(in srgb, var(--acc) 14%, var(--surface)); color: var(--acc); font-size: 18px }
+.pp-tx { display: flex; flex-direction: column; min-width: 0 }
+.pp-tx b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pp-tx small { color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pp-new b { color: var(--acc) }
+.pp-extra { padding-left: 10px; border-top: 1px solid var(--line); border-radius: 0; margin-top: 6px } .pp-extra b { color: var(--muted); font-weight: 600 }
+.pp-l { display: block; height: 0 }
+.pp-msg { color: var(--muted); padding: 16px 0 }
+.pp-rail { position: absolute; right: 4px; top: 130px; bottom: 16px; display: flex; flex-direction: column; justify-content: center; gap: 0 }
+.pp-rail button { border: 0; background: none; color: var(--acc); font: 700 11px/1 system-ui, sans-serif; padding: 2px 6px; min-height: 0; cursor: pointer }
+.cr-line:not(:has(*)) { display: none }   /* nothing left to show on that line */
+.pp-rail { touch-action: none; user-select: none; -webkit-user-select: none }
+.pp-rail button.on { color: #fff; background: var(--acc); border-radius: 6px }
+/* Pop-ups opened from a row (Brian, 2026-11-22: the task pop-up's bottom was hidden behind the tab bar and its text cut
+   off). The row was lifted to the tab bar's own layer, so the tab bar won; a row with an open sheet now sits above it.
+   Sheet titles show in full (the sheet scrolls if it's long). */
+.item:has(details.fx-sheet[open]), .row1:has(details.fx-sheet[open]), .lines .line:has(details.fx-sheet[open]),
+.in-row:has(details.fx-sheet[open]), .in-row.fx-sheet[open] { z-index: 60 !important; position: relative }
+.fx-sheet[open] .sh-head b, .task-sheet .ts-title { -webkit-line-clamp: unset !important; display: block !important; overflow: visible !important; white-space: normal !important }
+.fx-sheet[open] > .fx-body { padding-bottom: calc(16px + env(safe-area-inset-bottom)) }
+/* Pressing a button never selects its text or offers Copy (Brian, 2026-11-22: pressing a note's ⋯ selected "..."). */
+summary, button, .btn, .icon-btn, .chip, .pill, .tick, .seg a, .tabbar a, .fab, .go, .chev-r, .row-menu > summary {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none }
+/* Premium pass (Brian OK, 2026-11-22). (a) Page to page: a quick cross-fade with a small rise, like native apps; the top
+   and bottom bars stay still. Off for people who ask their phone for less motion. */
+@view-transition { navigation: auto }
+.topbar { view-transition-name: topbar } .tabbar { view-transition-name: tabbar } .sidebar { view-transition-name: sidebar }
+::view-transition-old(root) { animation: vt-out .16s cubic-bezier(.4, 0, 1, 1) both }
+::view-transition-new(root) { animation: vt-in .22s cubic-bezier(.2, .9, .25, 1) both }
+@keyframes vt-out { to { opacity: 0 } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(8px) } }
+@media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none } }
+/* (c) One motion style: every bottom sheet slides up the same way, every small menu fades and grows the same way */
+@media (max-width: 959px) { .fx-sheet[open] > .fx-body, .pp-body { animation: sheet-up .26s cubic-bezier(.2, .9, .25, 1) } .fx-sheet[open] > .fx-back, .pp-back { animation: pp-fade .2s ease } }
+@keyframes sheet-up { from { transform: translateY(48px); opacity: .5 } }
+details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-pop { animation: menu-in .16s cubic-bezier(.2, .9, .25, 1); transform-origin: top right }
+@keyframes menu-in { from { opacity: 0; transform: scale(.96) translateY(-4px) } }
+@media (prefers-reduced-motion: reduce) { .fx-sheet[open] > .fx-body, .pp-body, details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-pop { animation: none } }
+
+/* People notes A (Brian, 2026-11-22): tap a note for its pop-up; no ⋯ on the row */
+.fact-row > .item-main { cursor: pointer }
+.fact-row .fact-t { font-weight: 500 }
+.ts-btns .danger-text { color: #dc2626 }
+.fact-row .fact-t { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; -webkit-line-clamp: unset !important; display: block !important }
+.ts-btns > .grow { flex: 1 1 0; min-width: 0 }
+.ts-row.ts-link .ts-v { flex: 0 1 auto; min-width: 0 }
+
+/* Long task text A (Brian, 2026-11-22): bold short title + the full task in grey underneath; the full text wraps. */
+.task-row .item-title, .unsure-row .item-title { font-weight: 650 }
+.item-full { color: var(--muted); font-size: .86rem; line-height: 1.4; margin-top: 2px; white-space: normal; overflow-wrap: anywhere }
+.done-text ~ .item-full, .not-needed .item-full { opacity: .7 }
+/* Rounded tap highlight everywhere (Brian, 2026-11-22: "make sure this is implemented anywhere else it applies"). Task
+   rows, note rows, status-sheet rows, the Due/Who rows in pop-ups and "Show more" now light up the same way as Talks
+   rows: rounded from the first frame, 10px wider than the text. Menu items light up instantly too (no fade). */
+:is(.st-row, .ts-pick, .show-more):active, :is(.task-row, .fact-row):not(.sw-host):has(> .item-main:active) {
+  background: color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; border-radius: 0 !important; border-top-color: transparent;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; clip-path: inset(0 -10px round 12px); transition: none }
+:is(.st-row:active, :is(.task-row, .fact-row):not(.sw-host):has(> .item-main:active)) + :is(.st-row, .task-row, .fact-row) { border-top-color: transparent }
+.menu-item:active, .pp-row:active, .acts .act:active { transition: none }
+.st-row, .ts-pick, .show-more, .task-row, .fact-row { -webkit-tap-highlight-color: transparent }
+.task-row:has(.item-full), .unsure-row:has(.item-full), .item:has(> .item-main > .item-full) { align-items: flex-start }
+.task-row:has(.item-full) .tick-f { margin-top: 0 }
+
+/* Upload progress card (Brian, 2026-11-23): "Uploading 3 of 23", the file and its %, then each file's result */
+.up-card { position: fixed; z-index: 55; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom));
+  max-height: min(70vh, 560px); display: flex; flex-direction: column; gap: 8px; padding: 14px 14px 12px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg) }
+@media (min-width: 960px) { .up-card { left: auto; right: 24px; bottom: 24px; width: 420px } }
+.up-head { display: flex; align-items: center; gap: 8px } .up-title { flex: 1; font-size: var(--fs-md) }
+.up-x { border: 0; background: none; color: var(--muted); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1rem }
+.up-bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden }
+.up-bar i { display: block; height: 100%; width: 0; background: var(--acc); border-radius: 99px; transition: width .25s var(--ease) }
+.up-done .up-bar { display: none }
+.up-now { font-size: var(--fs-sm); overflow-wrap: anywhere }
+.up-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-top: 1px solid var(--line); min-height: 0 }
+.up-row { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-sm) }
+.up-row .up-name { overflow-wrap: anywhere; font-weight: 600 } .up-row .up-st { grid-column: 2; font-size: var(--fs-xs) }
+.up-ic::before { content: "·"; color: var(--muted); font-weight: 700 }
+.up-now-row .up-ic::before { content: "↑"; color: var(--acc) }
+.up-ok .up-ic::before { content: "✓"; color: var(--ok) } .up-ok .up-st { color: var(--ok) }
+.up-dup .up-ic::before { content: "⧉"; color: var(--warn) } .up-dup .up-st { color: var(--ink-2) }
+.up-bad .up-ic::before { content: "✕"; color: var(--bad) } .up-bad .up-st { color: var(--bad) }
+.up-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap } .up-actions:empty { display: none }
+
+/* Phone: the pinned audio player hides everything behind it, up under the frosted top bar and out to both screen edges,
+   so no transcript shows between or through them (Brian, 2026-11-23) */
+@media (max-width: 959px) {
+  /* any screen size: a page-coloured shadow reaches up and out to the screen edges (no fixed sizes), cut off at the player's bottom */
+  .player.stuck { box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(-100vmax -100vmax 0 -100vmax) }
+  html:has(.player.stuck) .topbar { background: var(--bg) }
+}
+
+/* Short | Detailed stay on screen while you're in the summary (Brian, 2026-11-23), like the player in Transcript.
+   Sticky inside #sec-summary, so it leaves with the section; under the phone top bar, at the top on desktop. */
+.sum-head:has(.notes-tabs) { position: sticky; top: 57px; z-index: 4; background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(-100vmax -100vmax 0 -100vmax) }
+@media (min-width: 960px) { .sum-head:has(.notes-tabs) { top: 0; box-shadow: none; clip-path: none } }
+
+/* Hold for a label (2026-11-23) */
+.hold-tip { position: fixed; z-index: 200; max-width: min(260px, calc(100vw - 16px)); padding: 6px 10px; border-radius: 8px; background: var(--ink); color: var(--bg);
+  font-size: var(--fs-sm); line-height: 1.3; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s }
+.hold-tip.on { opacity: 1; transform: none }
+
+/* Settings rows with button groups: on phones the buttons go on their own line under the label, nothing cut off (2026-11-23) */
+.set-row { flex-wrap: wrap } .set-row > .item-main { flex: 1 1 220px } .set-row > .item-actions { flex-wrap: wrap; gap: 8px; max-width: 100% }
+
+/* One highlight size (Brian's video, 2026-11-23): a picked row in Select mode was the row's own width, while the press
+   tint is 10px wider on each side, so the tint jumped in size when he let go. Picked rows now use the press shape. */
+:is(#conv-list.picking .item.picked, [data-picker].picking [data-pick-id].picked, #inbox-list.picking .in-row.picked > summary) {
+  background: color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; border-radius: 0 !important;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; clip-path: inset(0 -10px round 12px) }
+
+/* Detailed notes start the same distance below the Short | Detailed line as the Short ones (Brian, 2026-11-23) */
+.notes-detailed { padding: var(--s3) 0 }
+
+/* ===================== Gmail-style redesign (Brian's picks, 2026-11-23) ===================== */
+/* Shared: every nav list has one icon column (24px box) and every label starts on the same left edge */
+.nv-ic { width: 24px; height: 24px; flex: none; display: grid; place-items: center }
+.nv-ic .icon { width: 22px; height: 22px }
+.navlist a, .side-more > summary { gap: 16px }
+.nl { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.navlist a .count { flex: none }
+.dtop, .drawer, .drawer-btn, .rpane { display: none }
+
+/* A1 + A2: desktop sidebar and top bar */
+@media (min-width: 960px) {
+  :root { --side: 256px }
+  html.side-rail { --side: 72px }
+  .sidebar { gap: 2px; padding: 8px 12px 12px; width: var(--side); overflow-x: hidden; z-index: 40;
+    transition: width .2s cubic-bezier(.2, .9, .25, 1), box-shadow .2s }
+  .sidebar .side-top { display: flex; align-items: center; gap: 4px; min-height: 56px; margin: 0 0 4px -10px }
+  .sidebar .side-top .icon-btn { flex: none }
+  .sidebar .brand { padding: 0; gap: 10px; white-space: nowrap }
+  .sidebar .side-add { display: inline-flex; align-items: center; gap: 16px; align-self: flex-start; height: 60px; margin: 0 0 12px -2px; padding: 0 22px 0 14px;
+    border-radius: 16px; background: var(--acc-soft); color: var(--acc-soft-ink); font-weight: 650; text-decoration: none; box-shadow: var(--shadow);
+    white-space: nowrap; transition: box-shadow .15s, padding .2s }
+  .sidebar .side-add:hover { box-shadow: var(--shadow-lg); text-decoration: none }
+  .sidebar .side-add .icon { stroke-width: 2.2 }
+  .side-areas { margin: 0 0 10px }
+  .sidebar .navlist a, .side-more > summary { min-height: 40px; padding: 0 12px; border-radius: 20px }
+  .side-more > summary { display: flex; align-items: center; color: var(--ink-2); font-weight: 520; cursor: pointer; list-style: none; -webkit-user-select: none; user-select: none }
+  .side-more > summary::-webkit-details-marker { display: none }
+  .side-more > summary:hover { background: var(--surface-2) }
+  .side-more .nv-ic .icon { transition: transform .22s cubic-bezier(.2, .9, .25, 1) }
+  /* B20 (2026-11-25): only the More/Less chevron turns; the old rule turned every icon in the open list upside down */
+  .side-more .nl-less, .side-more[open] .nl-more { display: none } .side-more[open] .nl-less { display: block }
+  .side-more .navlist { margin-top: 2px }
+  .sidebar .side-foot { margin-top: auto; padding: 8px 12px 0 }
+  /* folded to icons: same icon positions as the full sidebar, so nothing jumps when it opens */
+  html.side-rail .sidebar:not(.peek) :is(.nl, .side-areas, .side-foot, .brand) { display: none }
+  html.side-rail .sidebar:not(.peek) .side-add { padding: 0 14px; gap: 0 }
+  html.side-rail .sidebar:not(.peek) .navlist a .count { position: absolute; margin: 0; top: 6px; left: 34px; min-width: 9px; width: 9px; height: 9px; padding: 0; font-size: 0 }
+  html.side-rail .sidebar .navlist a { position: relative }
+  html.side-rail .sidebar.peek { width: 256px; box-shadow: 0 10px 40px rgb(0 0 0 / .22) }
+  .main, .main.wide { transition: margin .2s cubic-bezier(.2, .9, .25, 1) }
+  /* top bar beside the sidebar: search (☷ advanced search on its right), 🔔, status, ⚙ */
+  .dtop { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 16px 0 24px; margin-left: var(--side); transition: margin .2s cubic-bezier(.2, .9, .25, 1) }
+  .dsearch { position: relative; flex: 1 1 auto; max-width: 720px; height: 48px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 16px;
+    border-radius: 24px; background: var(--surface-2); transition: background .15s, box-shadow .15s }
+  .dsearch:focus-within, .dsearch:has(.adv-sheet[open]) { background: var(--surface); box-shadow: 0 1px 6px rgb(0 0 0 / .16) }
+  .dsearch > form { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 100% }
+  .dsearch > form .icon { color: var(--muted) }
+  .dsearch input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; box-shadow: none; padding: 0; font: inherit; font-size: 16px; color: var(--ink) }
+  .dsearch input::-webkit-search-cancel-button { display: none }
+  .dsearch .adv-sheet { position: static }
+  .dtop-r { margin-left: auto; display: flex; align-items: center; gap: 2px }
+  .dtop .qs-sheet, .dtop .st-sheet, .dtop .head-menu { position: relative }
+  .dtop .qs-sheet .fx-body, .dtop .st-sheet .fx-body { left: auto; right: 0; width: 340px }
+  .main, .main.wide { padding-top: var(--s2) }
+  .back-link { margin-top: 0 }
+}
+/* A4: advanced search, Gmail's layout (label column, one field per row, generous rows, Search bottom right) */
+.adv-body { padding: 20px 24px 18px }
+@media (min-width: 960px) { .dsearch .adv-body { left: 0; right: 0; width: auto; top: calc(100% + 4px); max-height: none; border-radius: 12px } }
+.adv-form { display: grid; gap: 6px }
+.adv-r { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; column-gap: 16px; min-height: 48px; margin: 0 }
+.adv-r > span { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2) }
+.adv-r input, .adv-r select { width: 100%; min-height: 40px; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background-color: transparent;
+  padding: 0 2px; font: inherit; font-size: .95rem; color: var(--ink); box-shadow: none; outline: none }
+.adv-r input:focus, .adv-r select:focus { border-bottom: 2px solid var(--acc) }
+.adv-dates { display: flex; align-items: center; gap: 12px } .adv-dates i { font-style: normal; color: var(--muted); font-size: var(--fs-sm) }
+.adv-dates input { flex: 1 1 0; min-width: 0 }
+.adv-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 14px }
+@media (max-width: 520px) { .adv-r { grid-template-columns: minmax(0, 1fr); row-gap: 2px; padding: 6px 0 } }
+
+/* A3: Quick settings */
+.qs-body .fx-head { margin-bottom: 4px } .qs-all { font-size: var(--fs-sm); font-weight: 600 }
+.qs-h { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px }
+.qs-opts { display: grid; gap: 2px }
+.qs-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 10px; border: 0; border-radius: 12px; background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent }
+.qs-opt:hover { background: var(--surface-2) } .qs-opt:active { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) }
+.qs-opt span { display: flex; flex-direction: column; line-height: 1.25 } .qs-opt small { color: var(--muted); font-size: .8rem }
+.qs-radio { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line-strong); transition: border .15s }
+.qs-opt.on .qs-radio { border: 6px solid var(--acc) }
+.qs-panes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
+.qs-pane { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 0; border-radius: 12px; background: none; color: var(--ink-2);
+  font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer }
+.qs-pane:hover { background: var(--surface-2) } .qs-pane.on { color: var(--acc) }
+.qs-thumb { display: flex; gap: 3px; width: 64px; height: 44px; padding: 4px; border-radius: 6px; border: 1.5px solid var(--line-strong); background: var(--surface) }
+.qs-pane.on .qs-thumb { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc) }
+.qs-thumb s { flex: 1; border-radius: 2px; background: var(--line-strong); text-decoration: none }
+.qs-t-none s + s { display: none } .qs-t-below { flex-direction: column }
+.qs-body .seg-switch { margin-top: 2px }
+
+/* Density (A3) */
+html[data-density="compact"] :is(.item, .task-row) { padding-top: 6px; padding-bottom: 6px }
+html[data-density="compact"] .conv-row .cr-line { display: none }
+html[data-density="compact"] .conv-row .cr-ic { flex-basis: 30px; width: 30px; height: 30px }
+html[data-density="compact"] .list-head { padding-top: 10px; padding-bottom: 4px }
+html[data-density="comfortable"] :is(.item, .task-row) { padding-top: 18px; padding-bottom: 18px }
+
+/* C1: phone drawer, opened by ☰ or a swipe in from the left edge; follows the finger */
+@media (max-width: 959px) {
+  .drawer-btn { display: inline-grid; margin-left: -8px }
+  .topbar .brand { margin-left: 2px }
+  .drawer:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 90 }
+  .drawer-back { position: absolute; inset: 0; background: rgb(0 0 0 / .4); opacity: var(--dp, 0) }
+  .drawer-body { position: absolute; top: 0; bottom: 0; left: 0; width: min(304px, 84vw); overflow-y: auto; overscroll-behavior: contain;
+    background: var(--surface); border-radius: 0 18px 18px 0; padding: calc(12px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(calc((var(--dp, 0) - 1) * 100%)); box-shadow: 0 0 40px rgb(0 0 0 / .25) }
+  .drawer.anim .drawer-body, .drawer.anim .drawer-back { transition: transform .2s cubic-bezier(.2, .9, .25, 1), opacity .2s }
+  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px 14px; font-size: 1.1rem }
+  .drawer-head img { width: 26px; height: 26px; border-radius: 7px }
+  .drawer .navlist a { min-height: 48px; padding: 0 12px; border-radius: 24px; font-size: 1rem }
+  .drawer-sec { margin: 12px 12px 4px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted) }
+  .topbar-in { gap: 0 }
+}
+@media (max-width: 379px) { .topbar .icon-btn { width: 38px } .topbar-in { padding-left: 12px } }
+
+/* Swipe right / left on empty space = Back / Forward: a round arrow follows the finger (like Chrome) */
+.nav-swipe { position: fixed; z-index: 95; top: 50%; width: 44px; height: 44px; margin-top: -22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); color: var(--acc); box-shadow: 0 4px 16px rgb(0 0 0 / .22); pointer-events: none; opacity: 0; transition: background .12s, color .12s }
+.nav-swipe.go { background: var(--acc); color: var(--acc-ink) }
+.nav-swipe .icon { width: 22px; height: 22px; stroke-width: 2.4 }
+
+/* A1: reading pane (desktop): the list on the left, the talk or person on the right (or below); drag the line */
+@media (min-width: 960px) {
+  body.pane-on .rpane:not([hidden]) { display: flex; flex-direction: column; position: fixed; z-index: 35; top: 0; right: 0; bottom: 0; width: var(--pane-w, 46vw);
+    background: var(--surface); border-left: 1px solid var(--line) }
+  html[data-pane="below"] body.pane-on .rpane:not([hidden]) { top: auto; left: var(--side); width: auto; height: var(--pane-h, 48vh); border-left: 0; border-top: 1px solid var(--line) }
+  html[data-pane="right"] body.pane-on :is(.main, .main.wide) { margin-left: var(--side); margin-right: var(--pane-w, 46vw); max-width: none }
+  html[data-pane="right"] body.pane-on .dtop { margin-right: var(--pane-w, 46vw) }
+  html[data-pane="below"] body.pane-on :is(.main, .main.wide) { margin-left: var(--side); max-width: none; padding-bottom: calc(var(--pane-h, 48vh) + 24px) }
+  html[data-pane="right"] body.pane-on :is(.rail, .rail-out) { right: calc(var(--pane-w, 46vw) + 4px) }
+  html[data-pane="right"] body.pane-on :is(.undo-bar, .up-card) { right: calc(var(--pane-w, 46vw) + 24px) }
+  .rpane-drag { position: absolute; z-index: 2; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none }
+  .rpane-drag::after { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .15s }
+  .rpane-drag:hover::after, .rpane.dragging .rpane-drag::after { background: var(--acc) }
+  html[data-pane="below"] .rpane-drag { left: 0; right: 0; top: -5px; bottom: auto; width: auto; height: 10px; cursor: row-resize }
+  html[data-pane="below"] .rpane-drag::after { left: 0; right: 0; top: 4px; bottom: auto; width: auto; height: 2px }
+  .rpane.dragging iframe { pointer-events: none }   /* the drag keeps going over the page inside */
+  body.pane-dragging { cursor: col-resize; -webkit-user-select: none; user-select: none }
+  html[data-pane="below"] body.pane-dragging { cursor: row-resize }
+  .rpane-bar { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 4px 8px 4px 12px; border-bottom: 1px solid var(--line); flex: none }
+  .rpane-bar .btn { display: inline-flex; align-items: center; gap: 6px } .rpane-bar .btn .icon { width: 16px; height: 16px }
+  .rpane iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--bg) }
+  .rpane-empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); text-align: center }
+  .rpane-empty .icon { width: 40px; height: 40px; opacity: .5 }
+  .rpane:not(.empty) .rpane-empty, .rpane.empty iframe, .rpane.empty .rpane-bar > :not(.grow):not([data-rpane-close]) { display: none }
+  #conv-list .item.current, #people-list .current { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) !important; box-shadow: 0 0 0 10px color-mix(in srgb, var(--acc) 9%, var(--surface)) !important;
+    clip-path: inset(0 -10px round 12px); border-top-color: transparent }
+}
+/* Inside the reading pane: just the page, no app frame */
+html.in-pane .sidebar, html.in-pane .topbar, html.in-pane .tabbar, html.in-pane .dtop, html.in-pane .fab, html.in-pane .back-link, html.in-pane .drawer { display: none !important }
+html.in-pane :is(.main, .main.wide) { margin: 0 !important; max-width: none !important; padding: 14px 20px 48px !important }
+html.in-pane .player { top: 0 !important }
+html.in-pane .sum-head:has(.notes-tabs) { top: 0 }
+html.in-pane .undo-bar, html.in-pane .tour { left: 50% !important }
+/* The pinned Short | Detailed bar's cover reached UP over the whole page, so a talk's title, pills and speakers were
+   hidden behind it until you scrolled (found 2026-11-23). It now covers only its own band, out to the screen sides. */
+.sum-head:has(.notes-tabs) { clip-path: inset(0 -100vmax 0 -100vmax) }
+html.in-pane .sum-head:has(.notes-tabs) { top: 0 }
+html.in-pane .jump-bar { top: 0 }
+
+/* E2: top of a talk (Brian, 2026-11-23): back on the left, Summarize and ⋯ on the right; one line of pills that folds */
+.cv-bar { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -4px 0 6px }
+.cv-back { display: inline-flex; align-items: center; gap: 2px; min-height: 40px; padding: 0 10px 0 2px; margin-left: -6px; border-radius: 20px;
+  color: var(--ink-2); font-weight: 600; font-size: .95rem; text-decoration: none }
+.cv-back:hover { background: var(--surface-2); text-decoration: none }
+.cv-back-ic { width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--chev-r) center / 20px 20px no-repeat; mask: var(--chev-r) center / 20px 20px no-repeat; transform: rotate(180deg) }
+html.in-pane .cv-back { display: none }
+.cv-bar .grow { flex: 1 }
+.cv-bar .cv-sum { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 20px; line-height: 1 }
+.cv-bar .cv-sum .icon { width: 18px; height: 18px }
+.cv-bar .row-menu .menu-panel { right: 0; left: auto }
+.cv-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0 }
+.cv-pills .pill-form { margin: 0; display: inline-flex }
+.pill-sel { min-height: 30px !important; height: 30px; padding: 0 26px 0 12px !important; border-radius: 999px; border: 1px solid var(--line); background-color: var(--surface-2);
+  font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink); width: auto; max-width: 11rem; background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52% !important; cursor: pointer }
+.pill-sel.guess { border: 1.5px dashed color-mix(in srgb, var(--acc) 60%, transparent); background-color: transparent }
+.cv-pills .tag-chip { min-height: 30px }
+.pf-hide { display: none !important }
+.pf-more { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; min-width: 40px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: none; color: var(--acc); font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer }
+
+/* D: compact speaker bar; tap it for the full list (D1) */
+.sp-line { display: flex; align-items: center; gap: 8px; margin-top: 12px; max-width: 560px }
+.talk.sp-bar { flex: 1; min-width: 0; height: 26px; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 8px; gap: 2px; cursor: pointer; display: flex;
+  background: var(--surface-2); -webkit-tap-highlight-color: transparent; transition: transform .12s, box-shadow .12s }
+.talk.sp-bar:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 20%, transparent) }
+.talk.sp-bar:active { transform: scale(.985) }
+.sp-seg { min-width: 4px; flex-basis: 0; display: flex; align-items: center; overflow: hidden; container-type: inline-size }
+.talk .sp-lab, .talk span .sp-lab { background: none !important; font-style: normal; font-size: 11.5px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden;
+  text-overflow: clip; padding: 0 10px; text-shadow: 0 1px 2px rgb(0 0 0 / .35); line-height: 26px }
+@container (max-width: 30px) { .sp-lab { display: none } }
+.sp-todo { flex: none; min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1.5px dashed #b45309; background: none; color: #b45309; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer }
+:root[data-theme="dark"] .sp-todo { color: #fbbf24; border-color: #fbbf24 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sp-todo { color: #fbbf24; border-color: #fbbf24 } }
+.sp-sheet:not([hidden]) { position: fixed; inset: 0; z-index: 80 }
+.sp-sheet-back { position: absolute; inset: 0; background: rgb(0 0 0 / .4); animation: pp-fade .18s ease }
+.sp-sheet-body { position: absolute; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto; max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border-radius: 18px 18px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgb(0 0 0 / .2);
+  animation: sheet-up .26s cubic-bezier(.2, .9, .25, 1) }
+@media (min-width: 960px) { .sp-sheet-body { bottom: auto; top: 12vh; border-radius: 16px; max-height: 76vh; animation: menu-in .16s cubic-bezier(.2, .9, .25, 1) } .sp-sheet-body .fx-grab { display: none } }
+.sp-sheet .legend.speakers { display: block; margin: 0 }
+.sp-sheet .speaker-chip { display: block; border-top: 1px solid var(--line) }
+.sp-sheet .speaker-chip:first-child { border-top: 0 }
+.sp-sheet .speaker-chip > summary { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 8px 4px; border: 0 !important; border-radius: 12px;
+  background: none !important; color: var(--ink) !important; font-size: 1rem }
+.sp-sheet .speaker-chip > summary:active { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) !important }
+.sp-sheet .speaker-chip > summary > i { flex: none; width: 14px; height: 14px; margin: 0; border-radius: 50% }
+.sp-sheet .speaker-chip.sp-unnamed > summary > i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px #b45309 }
+.sp-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3 }
+.sp-who .speaker-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sp-who small { color: var(--muted); font-size: .8rem }
+.sp-chev { flex: none; width: 18px; height: 18px; background: var(--muted); -webkit-mask: var(--chev-d) center / 18px 18px no-repeat; mask: var(--chev-d) center / 18px 18px no-repeat; transition: transform .2s }
+.sp-sheet .speaker-chip[open] .sp-chev { transform: rotate(180deg) }
+.sp-sheet .chip-panel { position: static; margin: 0 0 12px; box-shadow: none; max-width: none; width: auto; animation: none }
+.sp-sheet .sp-idk-all { display: block; margin: 8px 0 0 } .sp-help { margin: 12px 0 0; font-size: .8rem }
+/* F2: hold the summary to copy it (a small note says so) */
+.copy-note { position: fixed; z-index: 200; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px); padding: 10px 16px; border-radius: 10px;
+  background: var(--ink); color: var(--bg); font-size: var(--fs-sm); font-weight: 600; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none }
+.copy-note.on { opacity: 1; transform: translate(-50%, 0) }
+[data-hold-copy].holding { transition: background .35s; background: color-mix(in srgb, var(--acc) 6%, var(--surface)) }
+.check-strip:not(:has(a)) { display: none }
+
+/* B1 + B3 (Brian, 2026-11-23): pick talks with a checkbox (computers) or by tapping the round icon (any screen).
+   Both sit exactly in the middle of the row, height-wise. */
+.conv-row .cr-ic { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; align-self: center; margin: 0 12px 0 0; display: grid; place-items: center;
+  position: relative; z-index: 1; cursor: pointer; font-size: 0; transition: background .15s, box-shadow .15s }
+.tap-row .conv-row .cr-ic, .tap-row.conv-row .cr-ic[data-pick-ic] { pointer-events: auto }
+.conv-row .cr-ic .icon { width: 20px; height: 20px; display: block; margin: 0 }
+.conv-row .cr-ic::after { content: ""; position: absolute; inset: -6px }   /* a bigger target than it looks */
+#conv-list.picking .conv-row { padding-left: 0 }
+#conv-list.picking .conv-row::before { content: none !important }
+#conv-list.picking .conv-row .cr-ic { display: grid !important }
+#conv-list .conv-row.picked .cr-ic { background: var(--acc) no-repeat center / 20px 20px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important }
+#conv-list .conv-row.picked .cr-ic .icon { visibility: hidden }
+html[data-density="compact"] .conv-row .cr-ic { flex-basis: 32px; width: 32px; height: 32px } html[data-density="compact"] .conv-row .cr-ic .icon { width: 17px; height: 17px }
+.row-cb { display: none }
+.row-cb, .pk-all .row-cb { flex: none; width: 18px; height: 18px; border: 2px solid color-mix(in srgb, var(--ink) 45%, transparent); border-radius: 4px; box-sizing: border-box;
+  align-self: center; position: relative; z-index: 1; cursor: pointer; transition: background .12s, border-color .12s }
+.row-cb::after { content: ""; position: absolute; inset: -11px; border-radius: 50% }
+.row-cb:hover::after { background: color-mix(in srgb, var(--ink) 8%, transparent) }
+.conv-row.picked .row-cb, .pk-all[aria-checked="true"] .row-cb, .pk-all[aria-checked="mixed"] .row-cb { background: var(--acc) no-repeat center / 14px 14px; border-color: var(--acc) }
+.conv-row.picked .row-cb, .pk-all[aria-checked="true"] .row-cb { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+.pk-all[aria-checked="mixed"] .row-cb { background-image: linear-gradient(#fff, #fff); background-size: 9px 2px }
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  .conv-row .row-cb { display: block; margin: 0 16px 0 4px }
+  .tap-row.conv-row .row-cb { pointer-events: auto }
+  .tb-a .tb-select { display: none }   /* the boxes replace the Select button */
+  .pick-bar .pk-all .row-cb { display: block }
+}
+/* the toolbar for picked talks: on computers it sits above the list (Gmail); on phones it floats at the bottom */
+.pick-bar button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; text-align: center }
+.pick-bar button .icon { width: 17px; height: 17px; flex: none }
+.pk-all { gap: 10px !important }
+@media (max-width: 959px) { .pick-bar [data-pick-act] .icon, .pick-bar [data-pick-export] .icon { display: none } }
+@media (min-width: 960px) {
+  .pick-bar { position: sticky; z-index: 15; top: 8px; left: auto; right: auto; bottom: auto; max-width: none; margin: 0 0 10px; flex-wrap: nowrap; gap: 6px;
+    padding: 6px 10px; border-radius: 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow-lg) }
+  .pick-bar .btn-ghost { color: var(--ink) }
+  .pick-bar .pick-n { flex: 1 1 auto; order: 0; color: var(--muted); font-weight: 600; font-size: var(--fs-sm) }
+  .pick-bar .pk-break { display: none }
+  .pick-bar [data-pick-act], .pick-bar [data-pick-export] { order: 1; flex: 0 0 auto; min-height: 36px; padding: 0 14px; border-radius: 18px }
+  .pick-bar .pk-all { order: -1; padding-left: 8px !important }
+  .pick-bar .pk-all .pk-all-t { display: none }
+}
+/* B2: right-click menu */
+.ctx-menu { position: fixed; z-index: 120; min-width: 220px; padding: 6px 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .2); animation: menu-in .12s cubic-bezier(.2, .9, .25, 1); transform-origin: top left }
+.ctx-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 36px; padding: 0 16px 0 12px; border: 0; background: none; color: var(--ink);
+  font: inherit; font-size: .9rem; text-align: left; cursor: pointer }
+.ctx-item:hover, .ctx-item:focus-visible { background: var(--surface-2); outline: none }
+.ctx-ic { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--ink-2) }
+.ctx-ic .icon { width: 18px; height: 18px }
+.ctx-item.danger, .ctx-item.danger .ctx-ic { color: var(--bad) }
+.ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 0 }
+#conv-list.picking .conv-row::after { position: static !important; transform: none !important; left: auto !important; top: auto !important }
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {   /* computers: the checkbox shows the tick; the icon stays itself */
+  #conv-list .conv-row.picked .cr-ic.cr-ai { background: color-mix(in srgb, #2563eb 14%, var(--surface)) !important }
+  #conv-list .conv-row.picked .cr-ic.cr-tx { background: var(--surface-2) !important }
+  #conv-list .conv-row.picked .cr-ic .icon { visibility: visible }
+  .pick-bar { container-type: inline-size }
+}
+@container (max-width: 560px) { .pick-bar [data-pick-act] span, .pick-bar [data-pick-export] span { display: none } .pick-bar [data-pick-act], .pick-bar [data-pick-export] { padding: 0 10px !important } }
+
+/* C2: search filter pills (Gmail app) */
+.s-pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 4px -16px 12px; padding: 2px 16px }
+.s-pills::-webkit-scrollbar { display: none }
+.s-pill { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px 0 14px; border-radius: 8px; border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent }
+.s-pill:active { transform: scale(.97) }
+.s-pill.on { background: var(--acc-soft); color: var(--acc-soft-ink); border-color: transparent }
+.s-pill-chev, .s-pill-x { width: 16px; height: 16px; flex: none; background: currentColor; -webkit-mask: var(--chev-d) center / 16px 16px no-repeat; mask: var(--chev-d) center / 16px 16px no-repeat }
+.s-pill-x { position: relative; --x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' stroke='black' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask-image: var(--x); mask-image: var(--x) }
+.s-pill-x::after { content: ""; position: absolute; inset: -10px }
+/* C3: a pill opens a full list. Every circle, name and tick sits in the middle of its row. */
+.sp-full:not([hidden]) { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; background: var(--surface); animation: sheet-up .24s cubic-bezier(.2, .9, .25, 1) }
+@media (min-width: 960px) { .sp-full:not([hidden]) { inset: 10vh auto auto 50%; width: 440px; height: 76vh; transform: translateX(-50%); border-radius: 16px; border: 1px solid var(--line);
+  box-shadow: 0 20px 60px rgb(0 0 0 / .3); animation: menu-in .16s cubic-bezier(.2, .9, .25, 1) } .sp-full-back:not([hidden]) { position: fixed; inset: 0; z-index: 89; background: rgb(0 0 0 / .3) } }
+.sp-full-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: env(safe-area-inset-top) 8px 0; flex: none }
+.sp-full-head b { font-size: 1.1rem; flex: 1 }
+.sp-full-search { margin: 4px 16px 6px; flex: none }
+.sp-full-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px calc(16px + env(safe-area-inset-bottom)) }
+.sf-sec { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 14px 12px 4px }
+.sf-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent }
+.sf-row:active { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) }
+@media (hover: hover) { .sf-row:hover { background: var(--surface-2) } }
+.sf-av { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px; line-height: 1 }
+.sf-av .icon { width: 20px; height: 20px }
+.sf-t { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.3 }
+.sf-t b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sf-t small { color: var(--muted); font-size: .8rem }
+.sf-tick { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); box-sizing: border-box }
+.sf-row.on .sf-tick { border: 0; background: var(--acc) no-repeat center / 14px 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+.sf-dates { display: flex; gap: 10px; align-items: center; padding: 8px 12px } .sf-dates input { flex: 1; min-width: 0 } .sf-dates i { font-style: normal; color: var(--muted) }
+.sf-apply { display: flex; justify-content: flex-end; padding: 6px 12px }
+/* G2: choose before uploading */
+.up-choose { display: grid; gap: 4px; width: 100% }
+.up-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 12px; background: none;
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent }
+.up-opt span { display: flex; flex-direction: column; line-height: 1.3 } .up-opt small { color: var(--muted); font-size: .8rem }
+.up-opt.on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 7%, var(--surface)) }
+.up-opt.on .qs-radio { border: 6px solid var(--acc) }
+.up-btns { display: flex; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 8px }
+.up-btns .btn { display: inline-flex; align-items: center; justify-content: center }
+.up-list:empty { display: none }
+/* Nothing cut mid-word when the list gets narrow (Brian, 2026-11-23): a one-line text-only subline ends in "…" */
+.item-sub:not(:has(*)) { display: block; text-overflow: ellipsis }
+@media (min-width: 960px) { .dsearch { flex: 1 1 0; min-width: 140px } .dtop { min-width: 0 } .dtop-r { flex: none } }
+@media (max-width: 370px) { .tb-a { gap: 4px !important } .tb-a .fx-sort { max-width: 7.4rem !important; padding-left: 9px !important; padding-right: 22px !important; font-size: .85rem !important }
+  .tb-a > .fx-sheet > summary.btn { padding: 0 9px; font-size: .85rem } .tb-ib { width: 36px; height: 36px; border-radius: 10px } }
+
+/* ===== Round 2 (Brian, 2026-11-23 afternoon) ===== */
+/* Phone ⚙ didn't work: the top bar's frosted glass trapped every pop-up in it (Quick settings opened above the screen).
+   Same bug type as the status sheet: any open pop-up in the top bar drops the glass and lifts the bar. */
+.topbar:has(details[open]) { backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 60; background: var(--bg) }
+/* Talk top row: Summarize and ⋯ always fit (⋯ was pushed off a phone screen); the ⋯ menu opens right under ⋯
+   (on computers it opened below the bottom of the screen) */
+.cv-bar .grow { flex: 1 1 0; min-width: 0 }
+.cv-bar > :not(.grow) { flex-shrink: 0 }
+.cv-bar .row-menu { position: relative }
+.cv-bar .row-menu .menu-panel { top: calc(100% + 4px); right: 0; left: auto; width: min(20rem, calc(100vw - 24px)); z-index: 30 }
+@media (max-width: 359px) { .cv-bar .cv-sum { padding: 0 12px } .cv-back { padding-right: 4px } }
+/* D: a light outline round the whole speaker bar, so many colours still read as one bar */
+.talk.sp-bar { outline: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); outline-offset: 2px }
+/* C1: a narrower drawer (it covered most of the phone) */
+@media (max-width: 959px) { .drawer-body { width: min(272px, 76vw) } }
+/* A1: ☰ sits in the same column as every icon under it, folded or open (its middle was 16px left of theirs) */
+@media (min-width: 960px) {
+  .sidebar .side-top { margin-left: 0; gap: 8px }
+  .sidebar .side-top .side-toggle { width: 48px; height: 48px }
+  html.side-rail .sidebar:not(.peek) .side-top { justify-content: flex-start }
+}
+/* Rails (the dashes on the right edge that jump to a section): lighter until the mouse is on them; with the preview
+   pane open, only the talk's own rail shows (no double rail) */
+/* N1 (Brian, 2026-11-25): the column the mouse is in shows its rail, light, and darker when you point at it; the other
+   column's rail fades out and comes back as soon as the mouse goes over that side (ui.js sets .mouse-away). Both rails
+   stay on the page: the list's rail no longer vanishes when a talk opens beside it. */
+@media (hover: hover) and (pointer: fine) {
+  .rail { opacity: .45; transition: opacity .18s } .rail:hover, .rail:focus-visible, .rail[aria-expanded="true"] { opacity: 1 }
+  html.mouse-away .rail:not(:hover):not([aria-expanded="true"]) { opacity: 0 }
+}
+/* Transcript-only talks: more of the opening on big screens and in the preview pane (it was one cut-off line) */
+.plain-card .inbox-preview { white-space: normal !important; display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 3 !important; overflow: hidden }
+@media (min-width: 700px) { .plain-card .inbox-preview { -webkit-line-clamp: 9 !important } }
+html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
+/* Inbox on computers: a checkbox on each row and the toolbar above the list (like Talks); no Select button */
+.in-cb, .pk-cb { display: none }
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  #inbox-list .in-row > summary .in-cb { display: block; margin: 0 8px 0 6px; pointer-events: auto }
+  #inbox-list.picking .in-row > summary { padding-left: 4px }
+  #inbox-list.picking .in-row > summary::before, #inbox-list.picking .in-row > summary::after { content: none !important }
+  #inbox-list.picking .in-row .ib-go, #inbox-list.picking .in-row .ib-plain { display: grid }
+  .in-row.picked .in-cb, .pk-all-in[aria-checked="true"] .row-cb, .pk-all-in[aria-checked="mixed"] .row-cb { background: var(--acc) no-repeat center / 14px 14px; border-color: var(--acc) }
+  .in-row.picked .in-cb, .pk-all-in[aria-checked="true"] .row-cb { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+  .pk-all-in[aria-checked="mixed"] .row-cb { background-image: linear-gradient(#fff, #fff); background-size: 9px 2px }
+  [data-inpick="start"] { display: none }
+  .pk2:not([hidden]) { position: sticky; z-index: 15; top: 8px; display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 6px 10px;
+    border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg) }
+  .pk2 .pk-top, .pk2 .pk-bot { position: static; width: auto; height: auto; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--ink) }
+  .pk2 .pk-top { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; font-weight: 600 }
+  .pk2 .pk-top [data-inpick="done"] { display: none }
+  .pk2 .pk-top .pick-n { order: 1; flex: 1; font-size: var(--fs-sm); color: var(--muted) }
+  .pk2 .pk-all-in { order: 0; display: inline-flex; align-items: center; gap: 10px; padding: 0 8px; min-height: 36px }
+  .pk2 .pk-all-in .row-cb { display: block } .pk2 .pk-all-in .pk-all-t { display: none }
+  .pk2 .pk-bot { display: flex; gap: 6px; flex: none }
+  .pk2 .pk-bot button { flex: none; max-width: none; flex-direction: row; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid var(--line);
+    font-size: .88rem; background: var(--surface) }
+  .pk2 .pk-bot button:hover { background: var(--surface-2) }
+  .pk2 .pk-bot button > i, .pk2 .pk-bot button > i.ib { width: 18px; height: 18px; line-height: 18px; font-size: 13px }
+  .pk2 .pk-bot [data-inpick="skip"] { color: var(--bad) }
+  /* B1 (Brian, 2026-11-25): the four Inbox buttons line up: same height, icon and text centred in each pill, every
+     icon in the same 20px box, the ▶ centred in its circle (no nudge), drawn icons instead of ⧉ and 🗑 */
+  .pk2 .pk-bot button { display: inline-flex; align-items: center; justify-content: center; line-height: 1; height: 36px }
+  .pk2 .pk-bot button > i, .pk2 .pk-bot button > i.ib { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; flex: none; font-style: normal }
+  .pk2 .pk-bot button > i.ib { border-radius: 50% }
+  .pk2 .pk-bot button > i.ib .icon { width: 11px; height: 11px; margin-left: 1px }
+  .pk2 .pk-bot button > i.pk-ic .icon { width: 17px; height: 17px }
+  .pk2 .pk-bot .pk-l { display: inline-block; line-height: 20px }
+}
+/* Reading pane on Inbox, Tasks and Today (computers). T8 + C11 (Brian, 2026-11-25): with Right or Below the pane stays
+   open like Talks' (an empty "pick one" panel until you pick a row), it can be dragged wider or taller (the size is
+   remembered), and the list beside it is its own column or row, scrolling on its own. A picked recording or task fills
+   the pane; another row switches it; ✕ or Esc empties it. None keeps the small pop-up by the row. ui.js sets .dp-on. */
+@media (min-width: 960px) {
+  body.dp-on { --dpw: var(--dp-w, min(460px, 42vw)); --dph: var(--dp-h, min(46vh, 520px)) }
+  .dpane, .dpane-drag { display: none }
+  body.dp-on .dpane { display: grid; place-content: center; justify-items: center; gap: 8px; position: fixed; z-index: 40; background: var(--surface);
+    color: var(--muted); text-align: center; padding: 24px }
+  body.dp-on .dpane .icon { width: 40px; height: 40px; opacity: .5 }
+  html[data-pane="right"] body.dp-on .dpane { top: 0; right: 0; bottom: 0; width: var(--dpw); border-left: 1px solid var(--line) }
+  html[data-pane="below"] body.dp-on .dpane { left: var(--side); right: 0; bottom: 0; height: var(--dph); border-top: 1px solid var(--line) }
+  body.dp-on .dpane-drag { display: block; position: fixed; z-index: 62; touch-action: none }
+  html[data-pane="right"] body.dp-on .dpane-drag { top: 0; bottom: 0; right: calc(var(--dpw) - 5px); width: 10px; cursor: col-resize }
+  html[data-pane="below"] body.dp-on .dpane-drag { left: var(--side); right: 0; bottom: calc(var(--dph) - 5px); height: 10px; cursor: row-resize }
+  .dpane-drag::after { content: ""; position: absolute; inset: 0; margin: auto; background: transparent; transition: background .15s }
+  html[data-pane="right"] .dpane-drag::after { width: 2px } html[data-pane="below"] .dpane-drag::after { height: 2px }
+  .dpane-drag:hover::after, body.dp-dragging .dpane-drag::after { background: var(--acc) }
+  body.dp-dragging { cursor: col-resize; user-select: none } html[data-pane="below"] body.dp-dragging { cursor: row-resize }
+  body.dp-dragging .fx-body { transition: none !important }
+
+  html[data-pane="right"] body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body {
+    position: fixed; z-index: 61; top: 0; right: 0; bottom: 0; left: auto; width: var(--dpw); max-width: none; max-height: none; translate: none;
+    border-radius: 0; border: 0; border-left: 1px solid var(--line); box-shadow: none; padding: 20px 20px 24px; overflow-y: auto; animation: none }
+  html[data-pane="below"] body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body {
+    position: fixed; z-index: 61; top: auto; bottom: 0; left: var(--side); right: 0; width: auto; max-width: none; height: var(--dph); max-height: none;
+    translate: none; border-radius: 0; border: 0; border-top: 1px solid var(--line); box-shadow: none; padding: 16px 24px 24px; overflow-y: auto; animation: none }
+  html[data-pane="below"] body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body > * { max-width: 760px; margin-left: auto; margin-right: auto }
+  body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body > .fx-grab { display: none }
+  body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-back { display: none }
+  .dp-close { display: none }
+  body.dp-on .fx-body > .dp-close { display: grid; position: sticky; top: 0; float: right; margin: -8px -8px 0 8px; z-index: 2 }
+  /* the list makes room: its own column (Right) or row (Below), so nothing sits under the pane */
+  html[data-pane="right"] body.dp-on :is(.main, .main.wide) { margin-right: var(--dpw); max-width: none }
+  html[data-pane="right"] body.dp-on .dtop { margin-right: var(--dpw) }
+  html[data-pane="right"] body.dp-on :is(.rail, .rail-out) { right: calc(var(--dpw) + 4px) }
+  html[data-pane="right"] body.dp-on :is(.undo-bar, .up-card) { right: calc(var(--dpw) + 24px) }
+  html[data-pane="below"] body.dp-on :is(.main, .main.wide) { padding-bottom: calc(var(--dph) + 24px) }
+  html[data-pane="below"] body.dp-on :is(.rail, .rail-out) { bottom: calc(var(--dph) + 12px) }
+  html[data-pane="below"] body.dp-on :is(.undo-bar, .up-card) { bottom: calc(var(--dph) + 16px) }
+}
+@keyframes pane-in { from { transform: translateX(24px); opacity: 0 } }
+@keyframes pane-up { from { transform: translateY(24px); opacity: 0 } }
+.desk-only { display: none } @media (min-width: 960px) { .desk-only { display: flex } }
+/* Settings: each group's icon in its own column, level with its name */
+.settings-pane .tap-row .item-link { display: inline-flex; align-items: center; gap: 12px }
+.settings-pane .tap-row .item-link .icon { flex: none; width: 20px; height: 20px }
+.settings-pane .tap-row .item-sub { padding-left: 32px }
+
+/* People on computers: checkboxes like Talks and Inbox (the toolbar above the list, no Select button) */
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  [data-picker] .pk-cb { display: block; margin: 0 12px 0 4px; pointer-events: auto; position: relative; z-index: 2 }
+  [data-picker] .pk-cb-none { visibility: hidden; pointer-events: none }
+  [data-picker] [data-pick-id].picked .pk-cb { background: var(--acc) no-repeat center / 14px 14px; border-color: var(--acc);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+  [data-picker].picking a.item-link { pointer-events: auto }
+  [data-picker].picking .person-row[data-pick-id] .av, [data-picker].picking .person-row[data-pick-id].picked .av { visibility: visible; background: var(--av) !important; color: #fff !important; box-shadow: none !important }
+  [data-picker].picking [data-pick-id]::before, [data-picker].picking [data-pick-id]::after { content: none !important }
+  [data-pk-start], .pk2 [data-pk-done] { display: none }
+  .pk2 .pk-bot .pk-danger { color: var(--bad) }
+  .pk2 .pk-all-in .row-cb, .pk2 .pk-all-in { pointer-events: auto }
+}
+
+/* Brian, 2026-11-23 (A3.1): picking on a phone. Inbox: the ▶ square itself becomes the checkbox (same 32 px, same
+   place), so nothing changes size or jumps. People and Talks: no › arrow on a row while picking (its space is kept). */
+@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  #inbox-list.picking .in-row > summary { padding-left: 4px }
+  #inbox-list.picking .in-row > summary::before, #inbox-list.picking .in-row > summary::after { content: none !important }
+  #inbox-list.picking .in-row .ib-go, #inbox-list.picking .in-row .ib-plain { display: inline-grid; box-sizing: border-box; background: var(--surface);
+    border: 2px solid var(--line-strong); color: transparent; padding: 0 }
+  #inbox-list.picking .in-row.picked .ib-go, #inbox-list.picking .in-row.picked .ib-plain { border-color: var(--acc); background: var(--acc) no-repeat center / 16px 16px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+  #people-list.picking .person-row::after, #conv-list.picking .conv-row::after { visibility: hidden !important }
+}
+/* Search page: the Advanced search button beside the box on phones (computers have it in the top bar) */
+.sb-row { display: flex; gap: var(--s2); align-items: flex-start }
+.sb-row > .searchbar { flex: 1 1 auto; min-width: 0 }
+.sb-adv { flex: none } .sb-adv .adv-btn { width: 44px; height: 44px; border: 1px solid var(--line-strong); border-radius: 12px }
+@media (min-width: 960px) { .sb-adv { display: none } }
+/* Inbox on computers: the details show about 12 lines of the transcript before See more (Brian, 2026-11-23: it was 2) */
+@media (min-width: 960px) {
+  .in-sheet .sh-prev-wrap:has(> [data-more][hidden]) > [data-less] { display: none !important }
+  .in-sheet .sh-prev-wrap:has(> [data-more][hidden]) > [data-more] { display: -webkit-box !important; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 12 !important; max-height: none; overflow: hidden }
+  .in-sheet > .sh-preview { -webkit-line-clamp: 12 }
+}
+/* C10 (Brian, 2026-11-23): More / Less stands out as something to click (blue, a line above it, the arrow in a soft
+   circle), on the computer's sidebar and in the phone drawer, where it now opens and closes too. */
+.side-more { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px }
+.side-more > summary { display: flex; align-items: center; gap: 16px; list-style: none; cursor: pointer; color: var(--acc) !important; font-weight: 650 !important;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent }
+.side-more > summary::-webkit-details-marker { display: none }
+.side-more > summary .nv-ic { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--acc-soft); color: var(--acc) }
+.side-more > summary .nv-ic .icon { width: 16px; height: 16px; transition: transform .22s cubic-bezier(.2, .9, .25, 1) }
+.side-more[open] > summary .nv-ic .icon { transform: rotate(180deg) }
+.side-more .nl-less, .side-more[open] .nl-more { display: none } .side-more[open] .nl-less { display: block }
+.side-more > summary:hover, .side-more > summary:active { background: var(--acc-soft) !important }
+.drawer-more { margin: 8px 0 0 } .drawer-more > summary { min-height: 48px; padding: 0 12px; border-radius: 24px; font-size: 1rem }
+
+/* N7 / C12 (Brian, 2026-11-25): the ▶ on Inbox was a typed character, so it never sat in the middle of its square.
+   It's a drawn triangle now, centred by its shape (a triangle looks centred a little right of its box's middle). */
+.ib .ic-play { width: 14px; height: 14px; stroke: none } .pk-bot .ib .ic-play { width: 13px; height: 13px }
+.ib-go, .ib-plain { padding-left: 0 !important; font-size: inherit }
+/* N4 (Brian, 2026-11-25): pick several on Tasks and Trash. On a phone the checkbox takes the task's circle's place
+   (same 24 px), so nothing moves; Trash rows get it at the left. On computers it's the checkbox column, like Talks. */
+@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  #task-list.picking .task-row::before, #task-list.picking .task-row::after,
+  #trash-list.picking .tr-row::before, #trash-list.picking .tr-row::after { content: none !important }
+  #task-list.picking .tick-f { display: none }
+  #task-list.picking .pk-cb, #trash-list.picking .pk-cb { display: block; width: 24px; height: 24px; border-radius: 7px; margin: 0 12px 0 0; pointer-events: auto }
+  #task-list.picking .item-actions, #trash-list.picking .item-actions { visibility: hidden }
+  #task-list.picking .picked .pk-cb, #trash-list.picking .picked .pk-cb { background: var(--acc) no-repeat center / 15px 15px; border-color: var(--acc);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+}
+#trash-list .tr-row { display: flex; align-items: center }
+/* N3 (Brian, 2026-11-25): Talks picking on a phone looks like Inbox and People: count + Select all on top, labelled
+   buttons at the bottom in the tab bar's place. Computers keep the toolbar above the list (the two groups melt into it). */
+.pick-bar .pk-top, .pick-bar .pk-bot { display: contents }
+.pick-bar .pk-x { display: none }
+@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  .pick-bar:not([hidden]) { display: contents }
+  .pick-bar .pk-top { display: flex; color: var(--acc-soft-ink) }
+  .pick-bar .pk-bot { display: flex }
+  .pick-bar .pk-x { display: grid; color: inherit }
+  .pick-bar .pk-top .pick-n { order: 0; flex: 1 1 auto; font-size: 1.05rem }
+  .pick-bar .pk-top .pk-all { order: 1; color: inherit; font-weight: 650; padding: 0 6px }
+  .pick-bar .pk-top .pk-all .row-cb { display: block }
+  .pick-bar .pk-top .pk-break { display: none }
+  .pick-bar .pk-bot button { flex: 1 1 0; max-width: 110px; flex-direction: column; gap: 3px; min-height: 52px; padding: 0; background: none; border: 0;
+    border-radius: 12px; color: var(--ink); font-size: .78rem; font-weight: 600; box-shadow: none }
+  .pick-bar .pk-bot button .icon { display: block !important; width: 22px; height: 22px }
+  .pick-bar .pk-bot button.danger { color: var(--bad) }
+  .pick-bar .pk-bot button:disabled { opacity: .5 }
+  body:has(.pick-bar:not([hidden])) .tabbar { visibility: hidden }
+}
+/* N8 (Brian, 2026-11-23: "task tap laggy"): the page no longer shifts sideways when a pop-up locks scrolling on a
+   computer (the scrollbar's room is kept), and a phone sheet rises a shorter way, faster, so a tap feels immediate. */
+@media (hover: hover) and (pointer: fine) { html { scrollbar-gutter: stable } }
+@keyframes sheet-up-quick { from { transform: translateY(24px); opacity: .6 } }
+@media (max-width: 959px) { .fx-sheet.task-sheet[open] > .fx-body, .fx-sheet[open] > .fx-body.in-sheet { animation: sheet-up-quick .16s cubic-bezier(.2, .9, .25, 1) } }
+@media (prefers-reduced-motion: reduce) { .fx-sheet[open] > .fx-body { animation: none !important } }
+.task-row .item-main { cursor: pointer; -webkit-tap-highlight-color: transparent }
+.ctx-item[aria-checked="true"] { font-weight: 650; color: var(--acc) } .ctx-item[aria-checked="true"] .ctx-ic { color: var(--acc) }
+/* N9 / A3.5 (Brian picked ⭐, 2026-11-25): one row above every list (Talks, Inbox, Tasks, People): a search box, then
+   the Filter and Sort pills, all 38 px tall and fully rounded. Phones: the search box on its own line, pills under it. */
+.lbar { flex-wrap: wrap !important; gap: 8px !important }
+.lb-q { position: relative; display: flex; align-items: center; flex: 1 1 220px; min-width: 0; order: -1; margin: 0 }
+.lb-q > .icon { position: absolute; left: 13px; width: 17px; height: 17px; color: var(--muted); pointer-events: none }
+.lb-q > input { width: 100%; height: 38px; min-height: 38px; border-radius: 999px; padding: 0 14px 0 38px; font-size: .9rem; box-sizing: border-box }
+.lbar > .fx-sheet > summary.btn, .lbar .fx-sort, .lbar .inline-label > .fx-sort { min-height: 38px; height: 38px; border-radius: 999px; font-size: .9rem; padding: 0 26px 0 12px;
+  width: auto !important; max-width: 11rem !important; flex: 0 0 auto }
+.lbar > .fx-sheet > summary.btn { padding: 0 14px }
+.lbar .tb-sp { flex: 0 0 0 }
+.lbar .inline-label { margin: 0 !important }
+.people-tools.lbar > .fx-sheet > summary.btn { width: 38px; padding: 0; justify-content: center }
+@media (max-width: 959px) { .lb-q { flex-basis: 100% } }
+@media (min-width: 960px) { .lb-q { max-width: 420px } .tk-bar.lbar .fx-sort { flex: 0 0 auto } }
+/* N10 (Brian picked ⭐, 2026-11-25): Add recording laid out for a computer: the drop zone and Record on the left, a
+   text note and Recent on the right. Phones stack them. */
+.cap-zone { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 150px; padding: 20px;
+  border: 2px dashed var(--line-strong); border-radius: 16px; background: var(--surface-2); text-align: center; cursor: pointer; transition: border-color .15s, background .15s }
+.cap-zone:hover, .cap-zone:focus-within, body.dragging .cap-zone { border-color: var(--acc); background: var(--acc-soft) }
+.cap-ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--surface); color: var(--acc); margin-bottom: 4px }
+.cap-ic .icon { width: 26px; height: 26px }
+.cap-t { font-size: 1.05rem } .cap-s u { color: var(--acc); text-decoration: none; font-weight: 600 }
+.cap-file { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer }
+.cap-rec { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap }
+.cap-rec:has(#record[hidden]) { display: none }
+.desk-txt { display: none } .ph-txt { display: inline }
+@media (hover: hover) and (pointer: fine) { .desk-txt { display: inline } .ph-txt { display: none } }
+@media (min-width: 960px) {
+  .cap-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 28px; align-items: start; max-width: 1120px }
+  .cap-grid > .section, .cap-side > .section:first-child { margin-top: 0 }
+  .cap-zone { min-height: 280px }
+  .cap-side .item-main > div:first-child { overflow-wrap: anywhere }
+}
+
+/* ---------- Round 3 (Brian, 2026-11-25) ---------- */
+/* The top bar's height, for everything that sticks under it */
+:root { --top-h: 57px }
+@media (min-width: 960px) { :root { --top-h: 64px } }
+/* B36 + B38: the top bar stays at the top while you scroll (phone and computer), and is solid, so text never shows
+   through it (it was see-through with a blur, which let text scrolling under it show) */
+.topbar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none }
+@media (min-width: 960px) {
+  .dtop { position: sticky; top: 0; z-index: 30; background: var(--bg) }
+  .pick-bar, .pk2:not([hidden]) { top: calc(var(--top-h) + 58px) }
+  .settings-nav { top: calc(var(--top-h) + 8px) }
+}
+/* B14: the search / Filter / Sort row above every list stays under the top bar instead of scrolling away */
+.lbar { position: sticky; top: var(--top-h); z-index: 12; background: var(--bg); padding-block: 8px; margin-block: -8px 4px !important;
+  box-shadow: 0 6px 6px -6px rgb(0 0 0 / .18) }
+/* B30: a settings page's title stays at the top while you scroll it */
+.settings-pane > .page-head { position: sticky; top: var(--top-h); z-index: 8; background: var(--bg); margin-top: 0; padding: 8px 0 }
+/* B32: a settings group's name never wraps (bold made "Privacy & Data Ledger" too wide for its column) */
+@media (min-width: 960px) { .settings-grid { grid-template-columns: 240px minmax(0, 1fr) }
+  .settings-nav a { white-space: nowrap } .settings-nav a .sn-t { overflow: hidden; text-overflow: ellipsis; min-width: 0 } }
+/* B27: Settings list on a phone: the icon in its own column, centred on the two lines */
+.settings-pane .set-home { display: flex; align-items: center; gap: 14px }
+.settings-pane .set-home .sh-ic { flex: none; display: grid; place-items: center; width: 24px; height: 24px; color: var(--ink-2) }
+.settings-pane .set-home .sh-ic .icon { width: 20px; height: 20px }
+.settings-pane .set-home .item-sub { padding-left: 0 }
+.settings-pane .set-home .chev { align-self: center }
+
+/* B12 (2026-11-25): speakers still to name are striped in the talk bar and marked "?", so it's clear which ones */
+.sp-seg.sp-seg-open { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.38) 0 4px, transparent 4px 9px); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.75) }
+.sp-seg { cursor: pointer }
+/* B9: "Don't know" / "Not X" at the top of the person picker */
+.pp-extras { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px }
+.pp-extras .pp-row b { font-weight: 600 }
+
+/* Tasks (Brian, 2026-11-25): the done circle (and the pick box) sit centred on the row, phone and computer, also on
+   rows with a longer full title underneath. */
+.task-row, .task-row:has(.item-full) { align-items: center }
+.task-row > .tick-f, .task-row > .pk-cb, .task-row:has(.item-full) .tick-f { align-self: center; margin-top: 0 }
+/* Select vs done, computer (⭐ A): the pick box is a small, quiet square in its own gutter that shows on hover, on the
+   focused row, or for every row once something is picked; the round done circle stays the main control. */
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  #task-list[data-picker] .task-row > .pk-cb { width: 16px; height: 16px; margin: 0 10px 0 0; border-width: 1.5px; border-radius: 4px;
+    opacity: 0; transition: opacity .12s }
+  #task-list[data-picker] .task-row:hover > .pk-cb, #task-list[data-picker] .task-row:focus-within > .pk-cb,
+  #task-list[data-picker]:has(.picked) .task-row > .pk-cb, #task-list[data-picker] .task-row.picked > .pk-cb { opacity: 1 }
+  #task-list[data-picker] .task-row > .tick-f { margin-right: 12px }
+}
+/* Select vs done, phone (⭐ A): picking shows a round blue selection circle in the done circle's place (like Photos and
+   Mail), so the shape doesn't jump between a circle and a square; blue = picked, green ✓ = done. */
+@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  #task-list.picking .pk-cb { border-radius: 50% !important }
+}
+
+/* N5 (Brian, 2026-11-25), computers. Right: the top of the page stays full width; the pane starts level with the first
+   row of the list (--dp-top, set by ui.js) because a task or recording is short. Below: a panel in the bottom-right
+   corner only, not the whole width. Layout buttons sit in the open item's header, so the layout can change any time. */
+@media (min-width: 960px) {
+  html[data-pane="right"] body.dp-on .dtop { margin-right: 0 }
+  html[data-pane="right"] body.dp-on .dp-wide { margin-right: calc(-1 * var(--dpw)) }
+  html[data-pane="right"] body.dp-on :is(.dpane, :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body) { top: var(--dp-top, 0px) }
+  html[data-pane="right"] body.dp-on .dpane-drag { top: var(--dp-top, 0px) }
+  html[data-pane="right"] body.dp-on :is(.dpane, :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body) { border-top: 1px solid var(--line); border-top-left-radius: 12px }
+  body.dp-on { --dpbw: min(620px, 50vw) }
+  html[data-pane="below"] body.dp-on :is(.dpane, :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body) {
+    left: auto; right: 16px; bottom: 16px; width: var(--dpbw); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18) }
+  html[data-pane="below"] body.dp-on .dpane-drag { left: auto; right: 16px; width: var(--dpbw); bottom: calc(var(--dph) + 11px) }
+  html[data-pane="below"] body.dp-on :is(#inbox-list details.in-row[open], .task-row details.task-sheet[open]) > .fx-body > * { max-width: none }
+  html[data-pane="below"] body.dp-on :is(.undo-bar, .up-card) { right: calc(var(--dpbw) + 32px); bottom: 16px }
+  /* the layout buttons in the open item's header */
+  .dp-layout { display: inline-flex; gap: 2px; padding: 2px; margin-left: auto; margin-right: 6px; border-radius: 8px; background: var(--surface-2); flex: none }
+  .sh-head .dp-layout + [data-fx-close], .fx-head .dp-layout + [data-fx-close] { margin-left: 0 }
+  .dp-lay { width: 30px; height: 26px; min-height: 0 !important; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; display: grid; place-items: center; color: var(--muted) }
+  .dp-lay.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12) }
+  .dp-lay i { width: 16px; height: 12px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; box-sizing: border-box }
+  .dp-lay-right i::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 6px; background: currentColor }
+  .dp-lay-below i::after { content: ""; position: absolute; right: 0; bottom: 0; width: 8px; height: 5px; background: currentColor }
+  .dp-lay-none i::after { content: ""; position: absolute; inset: 2px 3px; border: 1.5px solid currentColor; border-radius: 1px }
+}
+@media (max-width: 959px) { .dp-layout { display: none } }
+/* U4 (Brian, 2026-11-25): on Today with the Right pane, the quick-settings panel and the pane's words overlapped. The
+   top bar's open panels now sit above any pane, on a solid background. */
+@media (min-width: 960px) {
+  .dtop:has(details[open]) { z-index: 70 }
+  .dtop details[open] > .fx-body { background: var(--surface); z-index: 71 }
+}
+/* B29 (Brian, 2026-11-25): a setting's description is the explanation, so it wraps in full instead of ending in "…"
+   (the one-line "…" rule is for list rows only) */
+.settings-pane .item-sub, .settings-pane .item-sub:not(:has(*)) { white-space: normal; overflow: visible; text-overflow: clip; display: block }
+/* B33 (Brian, 2026-11-25): a placeholder never runs past its box: boxes are sized for their hint, and a hint that still
+   doesn't fit ends in "…" */
+input::placeholder, textarea::placeholder { text-overflow: ellipsis }
+input[placeholder] { text-overflow: ellipsis; max-width: 100% }
+/* B39: the rest of the processing queue, folded */
+.q-more > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: var(--s2); font-weight: 600; color: var(--acc) }
+.q-more > summary::-webkit-details-marker { display: none }
+.q-more .q-row { padding-left: var(--s3) }
+/* B40 (Brian, 2026-11-25): on a phone the processing lines wrap instead of running off the card ("ready ~11:49 …") */
+.progress-item .item-sub { flex-wrap: wrap; white-space: normal }
+.progress-item .item-sub > * { flex: 0 1 auto; min-width: 0; white-space: nowrap }
+.progress-item .item-sub > :last-child { overflow: visible !important; text-overflow: clip !important }
+.steps li { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--s2) }
+/* B1 sweep: drawn icons replaced the 🗑 / ⧉ characters in every pick bar and chip; they sit centred at text size */
+.pk-bot button > i.pk-ic { display: inline-grid; place-items: center; font-style: normal }
+.pk-bot button > i.pk-ic .icon { width: 18px; height: 18px }
+.chip > .icon, .ts-del-btn > .icon { width: 16px; height: 16px; vertical-align: -3px }
+/* B6: the talk's Trash button on the top row, beside ⋯ */
+.cv-trash { display: inline-flex; margin: 0 }
+.cv-trash .icon-btn:hover { color: var(--bad) }
+
+/* B24 + U11P (Brian, 2026-11-25): Trash rows on a phone. Restore sits on its own line under the dates (it squeezed the
+   title before); while picking, the Restore buttons hide so picked rows stay compact (the bar has Restore). */
+@media (max-width: 700px) {
+  #trash-list .tr-row { flex-wrap: wrap; row-gap: 6px }
+  #trash-list .tr-row .item-main { flex: 1 1 calc(100% - 40px) }
+  #trash-list .tr-row .tr-act { flex-basis: 100%; justify-content: flex-start; margin: 0 }
+}
+#trash-list.picking .tr-act { display: none }
+#trash-list.picking .tr-row { padding-top: 10px; padding-bottom: 10px }
+
+/* B26 (Brian, 2026-11-25): the tour card gets a ✕ in its corner; the Help page's tour button is full size. */
+.tour { padding-right: 48px }
+.tour .tour-x { position: absolute; top: 6px; right: 6px }
+.tour-cta { min-height: 44px; padding: 0 var(--s4); font-size: var(--fs-md) }
+
+/* U11: the themed confirm box */
+.ask-dialog { width: min(24rem, calc(100vw - 2 * var(--s4))) }
+.ask-dialog p { margin: 0 0 var(--s4); line-height: 1.45 }
+.ask-row { justify-content: flex-end; gap: var(--s2) }
+
+/* B2 (Brian, 2026-11-25): opening the folded sidebar on hover felt laggy. It waited 280 ms (now 120 ms, ui.js),
+   then animated its width while also fading in a big blurred shadow and re-wrapping every label each frame. Now only
+   the width moves (shorter), the shadow appears at once, and labels never wrap. */
+@media (min-width: 960px) {
+  .sidebar { transition: width .14s cubic-bezier(.2, .9, .25, 1) }
+  .sidebar .nl, .sidebar .navlist a { white-space: nowrap }
+}
+
+/* B3: a speaker's "Nina's page ›" and "Not Nina" share one short row */
+.chip-panel .sp-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: var(--s2) }
+.chip-panel .sp-links form { margin: 0 }
+.chip-panel .sp-links .chip { min-height: 32px; text-decoration: none }
+.chip-panel .chip-quiet { color: var(--muted); background: transparent }
+.chip-panel .sp-turns { margin: 0 0 var(--s2) }
+
+/* B4 (Brian, 2026-11-25): on Talks rows the checkbox, the round icon and the title sit closer together, and the gaps
+   follow the density setting (compact tighter, comfortable roomier). */
+.conv-row { --cr-gap: 10px }
+html[data-density="compact"] .conv-row { --cr-gap: 7px }
+html[data-density="comfortable"] .conv-row { --cr-gap: 14px }
+.conv-row .cr-ic { margin-right: var(--cr-gap) !important }
+html[data-density="comfortable"] .conv-row .cr-ic { flex-basis: 44px; width: 44px; height: 44px }
+@media (pointer: fine) and (min-width: 960px) { .conv-row .row-cb { margin: 0 var(--cr-gap) 0 2px } }
+
+/* B17 (Brian, 2026-11-25): blocks on Your speaking, Status (What's normal?) and your own People page sat too close to
+   what was above them. One gap above each block: a period heading after tiles, the ranges card after the M14 card. */
+.tiles + .group-label { margin-top: var(--s4) }
+.section-help + .group-label { padding-top: var(--s1) }
+#ranges { margin-top: var(--s4) }
+#my-speaking { margin-top: var(--s6) }
+
+/* B31: Data Ledger and Backups fold away (tap the heading) and have a filter box */
+.fold-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--s2) }
+.fold-sec > summary::-webkit-details-marker { display: none }
+.fold-sec > summary .chev .icon { width: 14px; height: 14px; transition: transform .18s; transform: rotate(-90deg) }
+.fold-sec[open] > summary .chev .icon { transform: none }
+.rows-q { margin: var(--s2) 0 }
+tr[hidden], .item[hidden] { display: none }
+
+/* People merge suggestions: Merge / Don't merge / ✕ in one row (wraps under the names on a phone) */
+.dup-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
+.dup-acts form { margin: 0 }
+@media (max-width: 700px) { .dup-acts { flex-basis: 100% } }
+/* B7 (2026-11-25): a row removed on another device fades out; on the removed thing's own page, a note says so. */
+.gone-out { opacity: 0; transition: opacity .2s ease; pointer-events: none }
+.gone-note { margin: 0 0 var(--s3); padding: 10px 14px; border-radius: 12px; background: var(--surface-2); color: var(--ink); font-size: 14px }
+.gone-note a { font-weight: 600; color: var(--acc); margin-left: 4px }
+/* B13 (Brian, 2026-11-25): people notes without a line under each one. Settings › Appearance › People notes:
+   Bullets (default: a dot before each note, no lines), Paragraph (one person's notes run on as one paragraph, "·" between),
+   Lines (the earlier look). Tapping a note still opens it. */
+html[data-pnotes="bullets"] .fact-row { border-top: 0 !important; padding: 4px 0 4px 18px !important; min-height: 0 !important }
+html[data-pnotes="bullets"] .fact-row::before { content: ""; position: absolute; left: 5px; top: calc(4px + .62em); width: 5px; height: 5px; border-radius: 50%; background: var(--ink-2) }
+html[data-pnotes="bullets"] .fact-row .fact-t, html[data-pnotes="paragraph"] .fact-row .fact-t { font-weight: 400 }
+html[data-pnotes="bullets"] .fact-row .item-sub:not(:has(*)) { display: none }
+html[data-pnotes="bullets"] .fact-row .item-sub { margin-top: 2px }
+html[data-pnotes="paragraph"] .fact-row { display: inline !important; border: 0 !important; padding: 0 !important; min-height: 0 !important; line-height: 1.55 }
+html[data-pnotes="paragraph"] .fact-row > .item-main, html[data-pnotes="paragraph"] .fact-row > .item-actions { display: inline }
+html[data-pnotes="paragraph"] .fact-row .fact-t { display: inline !important }
+html[data-pnotes="paragraph"] .fact-row .item-sub { display: none !important }
+html[data-pnotes="paragraph"] .fact-row + .fact-row > .item-main::before { content: " · "; color: var(--muted) }
+html[data-pnotes="paragraph"] .fact-row[hidden] { display: none !important }
+/* B19 (2026-11-25): Costs › Last 30 days, a small bar chart colored by account */
+.cg { display: block; width: 100%; height: 110px; overflow: visible }
+.cg line { vector-effect: non-scaling-stroke }
+.cg-base { stroke: var(--muted); stroke-width: 1 } .cg-top { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3 }
+.cg-ax { color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; margin-bottom: 4px }
+.cg-dates { display: flex; justify-content: space-between; margin: 4px 0 0 }
+.cg-hit { fill: transparent } .cg-day:hover .cg-hit { fill: var(--surface-2) }
+.cg-0 { fill: var(--acc); background: var(--acc) } .cg-1 { fill: #0d9488; background: #0d9488 } .cg-2 { fill: #d97706; background: #d97706 }
+.cg-3 { fill: #7c3aed; background: #7c3aed } .cg-4 { fill: var(--muted); background: var(--muted) }
+.cg-key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: var(--s2); font-size: var(--fs-sm); color: var(--ink-2) }
+.cg-key span { display: inline-flex; align-items: center; gap: 6px } .cg-key i { width: 10px; height: 10px; border-radius: 3px; display: inline-block }
+/* B37/N11 (2026-11-25): swipe rows only ever pan up and down for the browser, from the first touch (before, a row
+   got this only once a swipe had started, so the first swipe on a row could also scroll the page sideways or jitter). */
+[data-sw]:not(details), details[data-sw] > summary { touch-action: pan-y }
+.lines .line.flash { background: var(--acc-soft); transition: background .6s ease }   /* U12: right-click › Go to their first line */
+/* U12 (Brian, 2026-11-25: on a computer the ＋ Tag box spanned the whole line): on wider screens it opens as a small
+   field with Add, right beside ＋ Tag, on the same line as the other tags; phones keep the full-width field for typing. */
+@media (min-width: 600px) {
+  .tag-add[open] { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px }
+  .tag-add[open] > summary { flex: none }
+  .tag-add form.row { margin-top: 0; display: inline-flex; flex-wrap: nowrap; gap: 6px; align-items: center }
+  .tag-add form.row input.grow { flex: 0 0 auto; width: 15ch; min-width: 0; height: 30px; padding: 0 10px; font-size: 14px }
+  .tag-add form.row .btn-sm { height: 30px }
+}
+/* B23: links onward sit at the bottom right of their block */
+.fwd-link { text-align: right; margin: var(--s2) 0 0; }
+
+/* R4-08 (Brian, 2026-11-25: "swiping on Talks makes the item enlarge"; "the row enlarges while held"). On a touch
+   screen the pressed tint stays inside the row: the 10px ring that made it look bigger is for mouse hover only. */
+@media (hover: none) {
+  :is(.tap-row, .row1, .in-row > summary, .sp-row > summary, .mention-row, .ts-row > summary, a.ts-row):is(:active, .tap-go),
+  :is(.st-row, .ts-pick, .show-more):active, :is(.task-row, .fact-row):not(.sw-host):has(> .item-main:active) {
+    box-shadow: none !important; clip-path: inset(0 round 10px) }
+}
+
+/* R4-06 + R4-07 (Brian, 2026-11-25), computers. (1) A row with an open menu or sheet (z-index 20, inbox rows 60) could
+   scroll over the search row and the top bar; the bars now sit above every row, below pop-ups and sheets. (2) In the
+   Right or Below reading pane, the open item's row isn't lifted at all: its sheet is in the pane, not under the row. */
+.lbar { z-index: 21 }
+@media (min-width: 960px) {
+  .dtop { z-index: 44 }
+  body.dp-on :is(.task-row:has(details.task-sheet[open]), #inbox-list .in-row:is(.fx-sheet[open], :has(details.fx-sheet[open]))) { z-index: auto !important }
+  body.dp-on:has(:is(#inbox-list details.in-row[open], .task-row details.task-sheet[open])) .dpane > * { visibility: hidden }
+}
+/* R4-07: the undo / progress bar is centred on the list column and never runs under the reading pane (it was centred
+   on the whole page and cut off at the pane's edge: "Moved" on Talks, "Moved to Trash" on Today). */
+@media (min-width: 960px) {
+  .undo-bar { --ub-r: 0px; left: calc(var(--side) + (100vw - var(--side) - var(--ub-r)) / 2); right: auto;
+    max-width: calc(100vw - var(--side) - var(--ub-r) - 32px) }
+  html[data-pane="right"] body.pane-on .undo-bar { --ub-r: var(--pane-w, 46vw) }
+  html[data-pane="right"] body.dp-on .undo-bar { --ub-r: var(--dpw) }
+  html[data-pane="below"] body.dp-on .undo-bar { --ub-r: calc(var(--dpbw) + 32px); bottom: 16px }
+  html[data-pane="below"] body.pane-on .undo-bar { bottom: calc(var(--pane-h, 48vh) + 16px) }
+}
+html.in-pane .undo-bar { left: 50% !important; max-width: calc(100vw - 32px) }
+/* R4-03 (Brian, 2026-11-25): a task's last line (date · reminder · talk) was cut with "…" though the space under
+   "Stop reminding" / "Keep" was empty. The button now sits in the row's top-right corner and only the title lines
+   make room for it, so the last line runs the full width. */
+@media (min-width: 600px) {
+  .task-row:has(> .item-actions > form .btn) { position: relative }
+  .task-row:has(> .item-actions > form .btn) > .item-actions { position: absolute; top: 8px; right: 0 }
+  .task-row:has(> .item-actions > form .btn) > .item-main > :is(.item-title, .item-full) { margin-right: 150px }
+  .task-row:has(> .item-actions > form .btn) > .item-main { min-width: 0; flex: 1 1 auto }
+}
+/* R4-05: the layout switch in the empty pane (top right) and in the preview's bar */
+@media (min-width: 960px) {
+  body.dp-on .dpane > .dp-layout { position: absolute; top: 12px; right: 12px; margin: 0 }
+  .rpane-bar .dp-layout { margin-left: 0 }
+}
+/* R4-13 (Brian, 2026-11-25: "redesign it more compact"): a line's fix panel, one row per fix */
+.le-panel { display: grid; gap: 10px; padding: 10px 12px }
+.le-panel .le-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+.le-panel .le-k { font-size: .85rem; font-weight: 600; color: var(--muted); flex: none }
+.le-panel .le-who select { flex: 1 1 140px; min-width: 0; min-height: 36px }
+.le-panel .le-who input { flex: 1 1 140px; min-width: 0; min-height: 36px }
+.le-panel .le-words { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px }
+.le-panel .le-words textarea { width: 100%; font: inherit; min-height: 0 }
+.le-panel .teach > summary { font-size: .85rem; color: var(--acc); cursor: pointer; list-style: none }
+.le-panel .teach > summary::-webkit-details-marker { display: none }
+.le-panel .teach[open] { flex-basis: 100% }
+.le-panel .le-join { border-top: 1px solid var(--line); padding-top: 6px; margin: 0 }
+.le-panel .le-join .btn { padding-left: 0 }
+/* R4-16: tag suggestions use the app's menu look; a just-added tag shows at once, a little faded until saved */
+.tag-sugg { position: fixed; z-index: 120; max-height: 280px; overflow-y: auto }
+.tag-sugg .ctx-item.on { background: var(--surface-2) }
+.tag-chip.tag-pending { opacity: .6 }
+/* R4-17: a drop-down's menu on a computer (same look as the right-click menu) */
+.sel-menu { max-height: min(60vh, 420px); overflow-y: auto }
+.sel-menu .menu-label { padding: 8px 16px 4px }
+select.sel-open { outline: 2px solid var(--acc); outline-offset: 1px }
+
+/* R4-18 (Brian, 2026-11-25: speaker panel "could be re-designed to be more compact"). Turns join the summary line, the
+   voice sample is a small button beside "Who is it?" (no full-width 0:00 / 0:00 player), smaller colour dots on one row. */
+.sp-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.sp-pick > select { flex: 1 1 0 !important; min-width: 0; width: auto !important }
+.sp-pick > .qp-new, .sp-pick > input[name="new_name"] { flex: 1 1 100% !important }
+.voice-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px 0 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--acc) 18%, transparent) var(--vp, 0%), transparent var(--vp, 0%)) }
+.voice-btn:hover { border-color: var(--acc) }
+.voice-btn .vb-ic { width: 0; height: 0; border-style: solid; border-width: 6px 0 6px 10px; border-color: transparent transparent transparent currentColor }
+.voice-btn.playing .vb-ic { width: 10px; height: 12px; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; box-sizing: border-box }
+.voice-btn.loading { opacity: .7 }
+.sp-sheet .chip-panel { padding: 10px 12px }
+.sp-sheet .picker-form { margin-top: 0 }
+.sp-sheet .swatches { flex-wrap: nowrap; gap: 6px; margin: 10px 0 0; overflow-x: auto }
+.sp-sheet .swatch { flex: none; width: 24px; height: 24px }
+.sp-sheet .swatches .meta { margin-right: 2px }
+.sp-sheet .swatches .btn { min-height: 28px; padding: 0 8px; font-size: .8rem }
+.sp-sheet .sp-links { margin-top: 10px }
+#review .sp-pick, .fx-body .sp-pick { width: 100% }
+/* R4-07 sweep (same bug type: a fixed note centred on the whole page, so it sat half under the sidebar or the reading
+   pane): the "Copied" note and the tour card are centred on the list column too. */
+@media (min-width: 960px) {
+  .copy-note, .tour { --ub-r: 0px; left: calc(var(--side) + (100vw - var(--side) - var(--ub-r)) / 2) }
+  html[data-pane="right"] body.pane-on :is(.copy-note, .tour) { --ub-r: var(--pane-w, 46vw) }
+  html[data-pane="right"] body.dp-on :is(.copy-note, .tour) { --ub-r: var(--dpw) }
+}
+html.in-pane :is(.copy-note, .tour) { left: 50% !important }
+
+/* Public demo on the web: one slim line above every page (made-up meetings, changes reset) */
+.demo-note { margin: 0 0 var(--s3); padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+  color: var(--muted); font-size: var(--fs-xs); line-height: 1.4 }
+.demo-note a { color: inherit; text-decoration: underline }

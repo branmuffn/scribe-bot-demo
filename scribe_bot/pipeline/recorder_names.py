@@ -29,9 +29,25 @@ def _clock(hh: str, mm: str) -> time | None:
     return time(h, m) if h < 24 and m < 60 else None
 
 
+# Apple Voice Memos / phone recorders: "20251009 143052" or "2025-10-09 14.30.52" (local time when recording started).
+# Brian, 2026-11-23: uploaded memos landed on the upload date in Talks instead of the day they were recorded.
+_STAMP = re.compile(r"\b(20\d{2})-?(\d{2})-?(\d{2})[ _T-]+(\d{2})[.:_-]?(\d{2})[.:_-]?(\d{2})\b")
+
+
+def parse_stamp(name: str) -> datetime | None:
+    if m := _STAMP.search(name):
+        try:
+            return _local_to_utc(datetime(*map(int, m.groups())))
+        except ValueError:
+            return None
+    return None
+
+
 def parse_recorder_datetime(name: str, file_mtime: float) -> datetime | None:
     """Start time (UTC) from a Recorder name, or None if the name has no Recorder date."""
     saved = datetime.fromtimestamp(file_mtime)  # naive local
+    if stamped := parse_stamp(name):
+        return stamped
     if m := _MONTH_DAY.search(name):
         month, day, clock = MONTHS[m.group(1).lower()[:3]], int(m.group(2)), _clock(m.group(3), m.group(4))
         if clock is None:
@@ -66,6 +82,6 @@ def started_at(name: str, file_mtime: float, duration_s: float | None) -> str:
 
 def fallback_title(name: str) -> str:
     """Title when there's no AI title: the name without its Recorder date, or "Conversation" if that's all it was."""
-    rest = _WEEKDAY.sub("", _MONTH_DAY.sub("", name))
+    rest = _STAMP.sub("", _WEEKDAY.sub("", _MONTH_DAY.sub("", name)))
     rest = re.sub(r"[\s_\-–—·,|]+$", "", re.sub(r"^[\s_\-–—·,|]+", "", rest)).strip()
     return rest or "Conversation"

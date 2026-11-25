@@ -269,8 +269,12 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
                  "VALUES (NULL, 'Renew the parking permit', 1, ?, 'personal', 1, ?, ?)", (due(4), now, now))
     # The Unsure tab: tasks the AI wasn't sure about (who owns it, or whether it's a task at all)
     for i, cid in enumerate(made[1:12:4]):
-        conn.execute("UPDATE task SET inbox = 1, confidence = 0.4 WHERE id = "
-                     "(SELECT id FROM task WHERE conversation_id = ? AND status = 'open' ORDER BY id LIMIT 1)", (cid,))
+        row = conn.execute("SELECT id FROM task WHERE conversation_id = ? AND status = 'open' ORDER BY id LIMIT 1",
+                           (cid,)).fetchone()
+        if row:   # as extract.py does: the flag on the task plus its review item, so Today's count matches the tab
+            conn.execute("UPDATE task SET inbox = 1, confidence = 0.4 WHERE id = ?", (row[0],))
+            conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) "
+                         "VALUES ('inbox', ?, ?, ?, ?)", (cid, row[0], json.dumps({"reason": "low confidence"}), now))
     # States: one private talk, two in Trash, one still being transcribed, one that failed
     conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[9],))
     for cid in made[-2:]:

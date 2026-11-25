@@ -133,3 +133,13 @@ def test_confirm_goes_back_to_the_talk(demo):
     r = demo.post("/conversations/2/rerun", data={"confirm": "1"},
                   headers={"referer": "http://testserver/conversations/2/rerun/confirm"}, follow_redirects=False)
     assert r.headers["location"].startswith("/conversations/2?") and "note=demo-ai" in r.headers["location"]
+
+
+def test_today_unsure_matches_the_unsure_tab(demo):
+    """F13 (live pass): Today said "0 unsure" while Tasks › Unsure listed 2 (the seed flagged tasks without review items)."""
+    import re
+    today = demo.get("/").text
+    tab = demo.get("/tasks?tab=inbox").text
+    n_today = int(re.search(r'href="/tasks\?tab=inbox"><b>(\d+)</b><small>unsure', today)[1])
+    n_tab = int(re.search(r'Unsure\s*<span[^>]*>(\d+)<', tab)[1])
+    assert n_today == n_tab >= 2

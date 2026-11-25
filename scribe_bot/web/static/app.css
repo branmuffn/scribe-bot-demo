@@ -2654,3 +2654,13 @@ html.in-pane :is(.copy-note, .tour) { left: 50% !important }
 .demo-note { margin: 0 0 var(--s3); padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
   color: var(--muted); font-size: var(--fs-xs); line-height: 1.4 }
 .demo-note a { color: inherit; text-decoration: underline }
+/* F7 (2026-11-25 demo pass): with the Right pane open, the page outline sat in the middle of the full-width top
+   (over the "How to use" card). It now starts level with the list, beside the pane, like the pane itself. */
+@media (min-width: 960px) {
+  html[data-pane="right"] body.dp-on :is(.rail, .rail-out) { top: calc(var(--dp-top, 24px) + 8px) }
+}
+/* F8: the demo's welcome card: wide enough that its three buttons sit on one row, and above the reading pane */
+.demo-welcome { z-index: 70; width: min(520px, calc(100vw - 32px)) }
+.demo-welcome .row { flex-wrap: nowrap; gap: var(--s2) }
+.demo-welcome .row .btn { white-space: nowrap }
+@media (max-width: 520px) { .demo-welcome .row { flex-wrap: wrap } .demo-welcome .row .grow { display: none } }

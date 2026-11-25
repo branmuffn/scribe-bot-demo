@@ -17,7 +17,7 @@
    one small button beside "Who is it?", not a full-width player that read 0:00 / 0:00 until played. app.js plays it. #}
 {% macro voice(src) -%}<button type="button" class="voice-btn" data-voice="{{ src }}" aria-label="Play their voice" title="Play a short sample of their voice"><span class="vb-ic" aria-hidden="true"></span><span class="vb-t">Voice</span></button>{%- endmacro %}
 
-{% macro avatar(name, cls="") -%}{% set n = (name or "?")|trim %}{% set parts = n.split(" ") %}
+{% macro avatar(name, cls="") -%}{% set n = (name or "?")|trim %}{% set ns = namespace(w=[]) %}{% for p in n.split() if p[:1].isalpha() %}{% set ns.w = ns.w + [p] %}{% endfor %}{% set parts = ns.w or [n] %}{# F6: "Lena Fischer (demo)" is LF, not L( #}
 {% set pal = ["#2563eb", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#dc2626", "#4d7c0f"] %}
 <span class="av {{ cls }}" style="--av:{{ pal[(n|sum_chars) % 8] }};background:var(--av)" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>
 {%- endmacro %}

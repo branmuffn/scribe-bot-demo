@@ -351,7 +351,12 @@ def demo_stop(request: Request, what: str, default: str = "/") -> RedirectRespon
     """D-11: on the public demo, an action that would transcribe, call an AI, take a recording, use a key or send a
     message does nothing and goes back with a short note (no job is queued, so nothing sits "waiting" forever).
     Returns None everywhere else, so the real app is unchanged."""
-    return back(request, default, note=f"demo-{what}") if public_demo() else None
+    if not public_demo():
+        return None
+    ref = request.headers.get("referer") or ""
+    if urlsplit(ref).path.endswith("/confirm"):   # F12: Confirm left you on the confirm box; go where the real app goes
+        return RedirectResponse(with_note(default, f"demo-{what}"), status_code=303)
+    return back(request, default, note=f"demo-{what}")
 
 
 def with_note(url: str, note: str) -> str:
@@ -2534,7 +2539,8 @@ def fact_person(request: Request, fid: int, person_id: OptId = None, new_name: s
 # ---------- Review ----------
 
 # "Oct 23 at 09_07", also at the end of a renamed one ("Intro with Sam - Oct 14 at 11_30", or 11-30 / 11:30)
-RECORDER_NAME = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}) at (\d{1,2})[_:\-](\d{2})\b")
+# F10: a phone on a 12-hour clock adds AM/PM ("Nov 12 at 2_15 PM"), which read as 2:15 in the morning
+RECORDER_NAME = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}) at (\d{1,2})[_:\-](\d{2})\b(?:\s?([AaPp])\.?[Mm]\b\.?)?")
 
 
 def recorded_at(title: str | None, received_at: str | None) -> datetime:
@@ -2551,7 +2557,10 @@ def recorded_at(title: str | None, received_at: str | None) -> datetime:
     if not m:
         return voicememo.name_date(title) or got   # Apple Voice Memos: "20261113 201200"
     try:
-        when = datetime.strptime(f"{m[1]} {m[2]} {got.astimezone().year} {m[3]}:{m[4]}", "%b %d %Y %H:%M").astimezone()
+        hour = int(m[3])
+        if m[5] and 1 <= hour <= 12:
+            hour = hour % 12 + (12 if m[5] in "Pp" else 0)
+        when = datetime.strptime(f"{m[1]} {m[2]} {got.astimezone().year} {hour}:{m[4]}", "%b %d %Y %H:%M").astimezone()
     except ValueError:
         return got
     if when > got + timedelta(days=2):   # "Dec 30" that arrived in January: last year

@@ -61,7 +61,7 @@
   </ul>
   <details class="side-more" data-remember="side-more"><summary title="More places"><span class="nv-ic">{{ m.icon("chev-d") }}</span><span class="nl nl-more">More</span><span class="nl nl-less">Hide</span></summary>
     <ul class="navlist">{% for href, icon, label in more_places %}<li><a href="{{ href }}" class="{{ 'on' if (href == '/conversations?trash=1' and request.query_params.get('trash')) or (href != '/conversations?trash=1' and request.url.path == href) }}" title="{{ label }}"><span class="nv-ic">{{ m.icon(icon) }}</span><span class="nl">{{ label }}</span></a></li>{% endfor %}</ul></details>
-  <div class="side-foot nl">Runs on the M14</div>
+  <div class="side-foot nl">{% if public_demo %}Demo · made-up data{% else %}Runs on the M14{% endif %}</div>
 </aside>
 
 {# Desktop top bar: search with advanced search (☷) on its right, then 🔔, status and ⚙ Quick settings #}

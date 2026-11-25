@@ -59,7 +59,7 @@
     if (h) html.style.setProperty("--pane-h", clampH(h) + "px");
   }
   function sideW() { var s = document.querySelector(".sidebar"); return s ? s.getBoundingClientRect().width : 0; }
-  function clampW(w) { return Math.max(340, Math.min(w, innerWidth - sideW() - 360)); }
+  function clampW(w) { return Math.max(300, Math.min(w, innerWidth - sideW() - 460)); }   // F14: the list keeps ~460 px
   function clampH(h) { return Math.max(200, Math.min(h, innerHeight - 220)); }
   function paneMode() {
     var p = pane(); if (!p) { document.body && document.body.classList.remove("pane-on"); return; }
@@ -703,7 +703,7 @@ document.addEventListener("click", function (e) {
   function store(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
   function load(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
   function sideW() { var s = document.querySelector(".sidebar"); return s ? s.getBoundingClientRect().width : 0; }
-  function clampW(w) { return Math.max(320, Math.min(w, innerWidth - sideW() - 380)); }
+  function clampW(w) { return Math.max(300, Math.min(w, innerWidth - sideW() - 460)); }   // F14: the list keeps ~460 px
   function clampH(h) { return Math.max(180, Math.min(h, innerHeight - 220)); }
   function on() {
     return wide.matches && (html.dataset.pane === "right" || html.dataset.pane === "below") && !html.classList.contains("in-pane") &&

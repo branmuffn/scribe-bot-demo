@@ -14,7 +14,7 @@ import sqlite3
 import struct
 import sys
 import wave
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from scribe_bot.core import db
@@ -42,9 +42,16 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
         return conn.execute("INSERT INTO person (name, area, notes, created_at, color) VALUES (?, ?, 'Demo person (made up).', ?, ?)",
                             (name, area, now, color)).lastrowid
 
-    acct = conn.execute("INSERT INTO account (provider, nickname, owner, type, monthly_cap_usd, training_policy, may_train, enabled, "
-                        "secret_ref, created_at) VALUES ('anthropic', 'Personal API (demo)', 'Me', 'paid', 10, "
-                        "'no training (API default)', 0, 1, 'demo-no-key', ?)", (now,)).lastrowid
+    # F16 (live pass): the first install already has one Claude account; the demo renames it instead of adding a second
+    first = conn.execute("SELECT id FROM account WHERE provider = 'anthropic' ORDER BY id LIMIT 1").fetchone()
+    if first:
+        acct = first[0]
+        conn.execute("UPDATE account SET nickname = 'Personal API (demo)', owner = 'Me', type = 'paid', monthly_cap_usd = 10, "
+                     "training_policy = 'no training (API default)', may_train = 0, enabled = 1, secret_ref = 'demo-no-key' WHERE id = ?", (acct,))
+    else:
+        acct = conn.execute("INSERT INTO account (provider, nickname, owner, type, monthly_cap_usd, training_policy, may_train, enabled, "
+                            "secret_ref, created_at) VALUES ('anthropic', 'Personal API (demo)', 'Me', 'paid', 10, "
+                            "'no training (API default)', 0, 1, 'demo-no-key', ?)", (now,)).lastrowid
     gem = conn.execute("INSERT INTO account (provider, nickname, owner, type, monthly_cap_usd, training_policy, may_train, enabled, "
                        "secret_ref, created_at) VALUES ('google', 'Gemini free (demo)', 'Me', 'free', 0, "
                        "'may train', 1, 0, 'demo-no-key', ?)", (now,)).lastrowid
@@ -275,6 +282,31 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
             conn.execute("UPDATE task SET inbox = 1, confidence = 0.4 WHERE id = ?", (row[0],))
             conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) "
                          "VALUES ('inbox', ?, ?, ?, ?)", (cid, row[0], json.dumps({"reason": "low confidence"}), now))
+    # F19 (live pass): Backups & schedules were empty. A week of made-up nightly backups to two drives, one restore test,
+    # and each schedule's last run (one failed, so the "failed" look can be seen too)
+    for d in range(7):
+        for dest, size in (("Drive A (demo)", 41_000_000 + d * 900_000), ("Drive B (demo)", 41_000_000 + d * 900_000)):
+            conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES (?, 'backup', ?, ?, ?, 'ok')",
+                         (dest, ago(d, 6), ago(d, 5.95), size))
+    conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES "
+                 "('Drive A (demo)', 'restore_test', ?, ?, 41000000, 'ok')", (ago(12, 6), ago(12, 5.8)))
+    for job, days in (("export", 0), ("trash-purge", 0), ("backup", 0), ("reconcile", 0), ("original_cleanup", 0),
+                      ("restore-test", 12), ("briefing", 0), ("task-cleanup", 3), ("weekly-review", 3)):
+        conn.execute("INSERT OR REPLACE INTO schedule_run (job_name, last_success_at, last_attempt_at, status) VALUES (?, ?, ?, ?)",
+                     (job, ago(days + (1 if job == "reconcile" else 0)), ago(days), "failed: the phone folder was offline (made up)"
+                      if job == "reconcile" else "ok"))
+    # F18 (live pass): the Glossary was empty. Three made-up terms, plus one suggestion waiting in Review
+    for term, variants, ok in (("Northwind", ["north wind", "nor wind"], 1), ("OKR", ["okay are", "oh kay are"], 1),
+                               ("Priya", ["pria", "pre ya"], 1), ("Kubernetes", ["cooper netties"], 0)):
+        gid = conn.execute("INSERT INTO glossary_term (term, variants, approved, created_at) VALUES (?, ?, ?, ?)",
+                           (term, json.dumps(variants), ok, now)).lastrowid
+        if not ok:
+            conn.execute("INSERT INTO review_item (kind, conversation_id, ref_id, payload, created_at) VALUES ('glossary', ?, ?, ?, ?)",
+                         (made[2], gid, json.dumps({"term": term}), now))
+    # F22 (live pass): the Status page said "Needs attention", "No readings yet" and "Worker not running" (there is no
+    # worker or M14 here). Thirty days of made-up healthy M14 readings, every 15 minutes, so the charts have a shape.
+    _machine_rows(conn, datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc), timedelta(minutes=15))
+
     # States: one private talk, two in Trash, one still being transcribed, one that failed
     conn.execute("UPDATE conversation SET private = 1, title = 'DEMO: Private talk (stays on this computer)' WHERE id = ?", (made[9],))
     for cid in made[-2:]:
@@ -314,6 +346,52 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None) -> None:
                      "VALUES (?, ?, ?, 'sent', ?, ?, ?)", ("alerts" if i == 4 else "bot", title, link, ago(0, i * 3),
                                                            ago(0, i * 3), ago(0, 1) if i == 5 else None))
     conn.execute("UPDATE person SET last_spoken_at = ? WHERE last_spoken_at IS NULL AND name LIKE '%(demo)'", (ago(9),))
+
+
+MACHINE_COLS = ("ts", "cpu_pct", "load1", "mem_used_pct", "mem_free_pct", "swap_mb", "temp_c", "fan_rpm", "speed_limit",
+                "wifi_dbm", "on_battery", "disk_used_pct", "smart_ok")
+
+
+def machine_reading(at: datetime) -> dict:
+    """A made-up, healthy M14 reading for the moment `at` (smooth daily waves, same answer for the same minute)."""
+    h = at.timestamp() / 3600
+    day = math.sin(2 * math.pi * (h % 24) / 24 - 1.2)          # busier in the afternoon
+    jitter = math.sin(h * 7.3) * 0.5 + math.sin(h * 2.1) * 0.5
+    return {"ts": at.isoformat(timespec="seconds"), "cpu_pct": round(14 + 9 * day + 5 * jitter, 1),
+            "load1": round(0.7 + 0.3 * day + 0.1 * jitter, 2), "mem_used_pct": round(62 + 5 * day + 2 * jitter, 1),
+            "mem_free_pct": round(58 - 4 * day - 2 * jitter, 1), "swap_mb": round(180 + 60 * day),
+            "temp_c": round(56 + 7 * day + 3 * jitter, 1), "fan_rpm": int(2300 + 500 * day + 150 * jitter),
+            "speed_limit": 100, "wifi_dbm": -55, "on_battery": 0, "disk_used_pct": 38.4, "smart_ok": 1}
+
+
+def _machine_rows(conn: sqlite3.Connection, start: datetime, end: datetime, step: timedelta) -> None:
+    at, rows = start, []
+    while at <= end:
+        r = machine_reading(at)
+        rows.append([r[c] for c in MACHINE_COLS])
+        at += step
+    conn.executemany(f"INSERT INTO machine_sample ({', '.join(MACHINE_COLS)}) VALUES ({', '.join('?' * len(MACHINE_COLS))})", rows)
+
+
+def keep_alive(conn: sqlite3.Connection) -> None:
+    """Public demo only: stands in for the worker that isn't there. A fresh heartbeat, and a made-up reading every
+    5 minutes, so the Status page reads Healthy however long the demo has been running."""
+    now = datetime.now(timezone.utc)
+    conn.execute("INSERT OR REPLACE INTO setting (key, value) VALUES ('worker_heartbeat', ?)", (now.isoformat(timespec="seconds"),))
+    last = conn.execute("SELECT max(ts) FROM machine_sample").fetchone()[0]
+    since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
+    if now - since >= timedelta(minutes=5):
+        _machine_rows(conn, max(since + timedelta(minutes=5), now - timedelta(days=1)), now, timedelta(minutes=5))
+    conn.commit()
+
+
+def live_reading() -> dict:
+    """Public demo only: what the M14 card's live check would show (made up, healthy)."""
+    r = machine_reading(datetime.now(timezone.utc))
+    return {**{k: r[k] for k in MACHINE_COLS if k != "ts"}, "cpus": 8, "mem_used_gb": round(16 * r["mem_used_pct"] / 100, 1),
+            "mem_total_gb": 16.0, "pressure": "green", "fans": [r["fan_rpm"]], "temp_tool": True,
+            "battery": {"cycles": 412, "health_pct": 86, "failed": False}, "smart": "Verified", "uptime_s": 6 * 86400 + 5 * 3600,
+            "procs": {"worker": {"running": True, "cpu_pct": 1.2, "mem_mb": 210}, "web": {"running": True, "cpu_pct": 0.8, "mem_mb": 140}}}
 
 
 def seed(conn: sqlite3.Connection, folder: Path | None = None) -> int:

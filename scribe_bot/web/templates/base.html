@@ -8,7 +8,7 @@
 {% set rail = request.cookies.get('side') == 'rail' %}
 {# B13 (Brian, 2026-11-25): how people notes look (Settings › Appearance), saved on this device #}
 {% set pnotes = request.cookies.get('pnotes') if request.cookies.get('pnotes') in ('paragraph', 'lines') else 'bullets' %}
-<html lang="en"{% if theme != 'system' %} data-theme="{{ theme }}"{% endif %} data-density="{{ density }}" data-pane="{{ rpane }}" data-pnotes="{{ pnotes }}" class="{{ 'in-pane' if in_pane }}{{ ' side-rail' if rail }}">
+<html lang="en"{% if theme != 'system' %} data-theme="{{ theme }}"{% endif %} data-density="{{ density }}" data-pane="{{ rpane }}" data-pnotes="{{ pnotes }}"{% if public_demo %} data-demo{% endif %} class="{{ 'in-pane' if in_pane }}{{ ' side-rail' if rail }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
@@ -101,7 +101,7 @@
 {% if people %}<template id="people-options">{% for p in people %}<option value="{{ p.id }}">{{ 'Me (Brian)' if p.id == 1 else p.name }}</option>{% endfor %}</template>{% endif %}
 
 <main class="main{% block main_class %}{% endblock %}" id="content">
-{% if public_demo %}<p class="demo-note" role="note">Demo with made-up meetings. Changes reset on their own; nothing is recorded, sent or charged. <a href="https://github.com/branmuffn/scribe-bot-demo">About</a></p>{% endif %}
+{% if public_demo %}<p class="demo-note" role="note">Clickable demo with made-up meetings. Summarize, transcribe and uploads are for show; changes reset on their own. <a href="https://github.com/branmuffn/scribe-bot-demo#run-it-yourself">Run it yourself</a></p>{% endif %}
 {% block back %}{% endblock %}{# nested pages: "‹ Section" to their parent, no browser Back needed #}
 {% block body %}{% endblock %}
 </main>
@@ -127,6 +127,19 @@
     <button type="button" class="btn" data-tour="back">Back</button>
     <button type="button" class="btn btn-primary" data-tour="next">Next</button></div>
 </div>
+
+{% if public_demo %}{# D-12 (Brian, 2026-11-25): first visit to the public demo. Shown once per browser (app.js), dismissed for good. #}
+<div id="demo-welcome" class="tour demo-welcome" role="dialog" aria-labelledby="demo-welcome-title" hidden>
+  <button type="button" class="icon-btn tour-x" data-demo-welcome aria-label="Close" title="Close">{{ m.icon("x") }}</button>
+  <h2 id="demo-welcome-title">Welcome to the Scribe Bot demo</h2>
+  <p>Click around on your phone or computer to see how it looks and works. The meetings are made up.</p>
+  <p class="meta">Summarize, transcribe and uploads are for show here. To use them for real, you run Scribe Bot on your own computer with your own AI account.</p>
+  <div class="row"><a class="btn btn-ghost" href="https://github.com/branmuffn/scribe-bot-demo#run-it-yourself" data-demo-welcome>How to run it</a>
+    <span class="grow"></span>
+    <button type="button" class="btn" data-demo-welcome data-tour-start="{{ demo_tour or '' }}">1-minute tour</button>
+    <button type="button" class="btn btn-primary" data-demo-welcome>Look around</button></div>
+</div>
+{% endif %}
 
 {# U11 (Brian, 2026-11-25): the app's own confirm box, never the browser's. app.js sbConfirm() fills and opens it. #}
 <dialog id="ask" class="dialog ask-dialog" aria-labelledby="ask-text">

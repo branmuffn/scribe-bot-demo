@@ -8,14 +8,14 @@ from scribe_bot.core.settings import Settings
 def test_seed_creates_only_demo_conversations(conn):
     n = demo_data.seed(conn)
     titles = [r[0] for r in conn.execute("SELECT title FROM conversation")]
-    assert n == len(titles) == 6
+    assert n == len(titles) == 42
     assert all(t.startswith("DEMO:") for t in titles)
     people = [r[0] for r in conn.execute("SELECT name FROM person WHERE id != 1")]
     assert people and all(p.endswith("(demo)") for p in people)
 
 
 def test_seed_is_idempotent(conn):
-    assert demo_data.seed(conn) == demo_data.seed(conn) == 6
+    assert demo_data.seed(conn) == demo_data.seed(conn) == 42
 
 
 def test_transcript_only_demo_meeting_never_sent(conn):
@@ -32,5 +32,5 @@ def test_refuses_a_database_with_real_conversations(conn):
 
 def test_cli_seeds_a_folder(tmp_path, capsys):
     assert demo_data.main(["demo_data", str(tmp_path / "demo")]) == 0
-    assert "6 made-up conversations" in capsys.readouterr().out
+    assert "42 made-up conversations" in capsys.readouterr().out
     assert Settings(tmp_path / "demo").demo and not Settings(tmp_path).demo   # marks the folder as Demo mode

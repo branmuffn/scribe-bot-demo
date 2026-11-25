@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
-{% block title %}Conversations · Scribe Bot{% endblock %}
+{% block title %}{% if trash %}Trash{% else %}Talks{% endif %} · Scribe Bot{% endblock %}
 {% block back %}{% if trash or unsorted %}<a class="back-link" href="/conversations">‹ Talks</a>{% endif %}{% endblock %}
 {% block body %}
 {{ m.talks_head("conversations") }}

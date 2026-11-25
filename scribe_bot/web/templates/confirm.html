@@ -11,6 +11,7 @@
   <p id="confirm-cost" class="confirm-cost">This will cost about <b>${{ '%.2f'|format(cost) if cost >= 0.01 else '%.3f'|format(cost) }}</b>
     {%- if model %} ({{ model }}{% if tokens %}, ~{{ tokens }} tokens{% endif %}){% endif %}.</p>
   {% if detail %}<p class="meta">{{ detail }}</p>{% endif %}
+  {% if public_demo %}<p class="demo-note">This is the demo: Confirm shows what would happen, but nothing is sent or charged.</p>{% endif %}
   {% if blocked %}<div class="notice">{{ m.icon("alert") }}<div>Can't run right now: {{ blocked }}</div></div>{% endif %}
   <div class="row">
     <form method="post" action="{{ action }}">

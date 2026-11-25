@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 
 [[package]]
@@ -1017,11 +1017,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fpdf2" },
     { name = "jinja2" },
-    { name = "litellm" },
-    { name = "numpy" },
     { name = "python-multipart" },
-    { name = "sherpa-onnx" },
-    { name = "sherpa-onnx-core" },
     { name = "uvicorn" },
 ]
 
@@ -1030,17 +1026,19 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
 ]
+full = [
+    { name = "litellm" },
+    { name = "numpy" },
+    { name = "sherpa-onnx" },
+    { name = "sherpa-onnx-core" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.148.0" },
     { name = "fpdf2", specifier = ">=2.8.9" },
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "litellm", specifier = "==1.103.4" },
-    { name = "numpy", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
-    { name = "sherpa-onnx", specifier = "==1.13.8" },
-    { name = "sherpa-onnx-core", specifier = "==1.13.8" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
@@ -1048,6 +1046,12 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=8" },
+]
+full = [
+    { name = "litellm", specifier = "==1.103.4" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "sherpa-onnx", specifier = "==1.13.8" },
+    { name = "sherpa-onnx-core", specifier = "==1.13.8" },
 ]
 
 [[package]]

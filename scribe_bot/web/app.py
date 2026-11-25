@@ -33,8 +33,17 @@ templates = Jinja2Templates(directory=WEB / "templates")
 templates.env.globals["area_labels"] = AREA_LABELS
 from scribe_bot.ai.prompts import MEETING_TYPES  # noqa: E402  (review cards and the confirm step list them)
 templates.env.globals["meeting_types"] = MEETING_TYPES
-# The public demo on the web (index.py sets this): a slim line on every page says the meetings are made up and changes reset
-templates.env.globals["public_demo"] = os.environ.get("SCRIBE_BOT_PUBLIC_DEMO") == "1"
+
+
+def public_demo() -> bool:
+    """The public demo on the web (scribe-bot-demo's index.py sets SCRIBE_BOT_PUBLIC_DEMO=1). Nothing there is
+    transcribed, sent to an AI, uploaded or sent out (D-11, Brian 2026-11-25: "what happens if someone tries to?");
+    each such button ends in a short note instead. Never set on the M14."""
+    return os.environ.get("SCRIBE_BOT_PUBLIC_DEMO") == "1"
+
+
+# The public demo: a slim line on every page says the meetings are made up and changes reset
+templates.env.globals["public_demo"] = public_demo()
 # Fingerprint of the page code: base.html adds ?v=<this> to the CSS/JS links, so phones fetch the new files right after a
 # deploy instead of reusing a cached copy (the installed app kept running old code otherwise).
 # Every static file counts (2026-11-25: only the CSS/JS did, so a new logo alone would have kept the old cached one).
@@ -415,7 +424,8 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
         response.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
         if request.url.path.startswith("/static/") and "v=" in request.url.query and response.status_code == 200:
             # versioned file (?v= changes with every deploy): the phone keeps it, no check with the M14 on each page
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            # s-maxage: the public demo's CDN (Vercel) keeps it too, so a new visitor gets it without starting Python
+            response.headers["Cache-Control"] = "public, max-age=31536000, s-maxage=31536000, immutable"
         # R5-07: no other website may show the app inside its own page (a hidden frame could make Brian's clicks press
         # buttons; those clicks count as the app's own, so the cross-site check above wouldn't stop them). The
         # reading pane is the app framing itself, which "self" allows. nosniff: files are only what they say they are.

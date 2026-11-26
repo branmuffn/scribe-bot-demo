@@ -1051,7 +1051,8 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
     has_audio = playable_audio(conn, cid) is not None
     mine = [t for t in tasks if t["owner_person_id"] == ME]
     theirs = [t for t in tasks if t["owner_person_id"] != ME]
-    check = {"mine": len(mine), "theirs": len(theirs), "notes": len(facts),
+    # F132: "What to check" counts only what's still open (a done task read "1 you owe")
+    check = {"mine": sum(t["status"] == "open" for t in mine), "theirs": sum(t["status"] == "open" for t in theirs), "notes": len(facts),
              "unsure": sum(1 for t in tasks if t["status"] == "open"
                            and (t["inbox"] or (t["confidence"] is not None and t["confidence"] < 0.6))),
              "unnamed": sum(1 for s in speakers if s["person_id"] is None and not s["unknown"])}

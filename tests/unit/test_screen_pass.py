@@ -629,3 +629,14 @@ def test_the_demo_bell_agrees_with_costs(demo):  # noqa: F811
     for (title,) in conn.execute("SELECT title FROM notification"):
         m = re.search(r"(\d+)% of (?:this month's|the [^ ]+ monthly) cap", title)
         assert not m or int(m.group(1)) <= pct, (title, pct)
+
+
+def test_what_to_check_counts_only_open_tasks(demo):  # noqa: F811
+    """F132 (500 dark pass): a talk whose only task of yours was done still said "What to check · 1 you owe"."""
+    conn = demo.db()
+    cid = conn.execute("SELECT id FROM conversation c WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM task t WHERE t.conversation_id = c.id "
+                       "AND t.owner_person_id = 1 AND t.status = 'done') LIMIT 1").fetchone()[0]
+    n_open = conn.execute("SELECT count(*) FROM task WHERE conversation_id = ? AND owner_person_id = 1 AND status = 'open'", (cid,)).fetchone()[0]
+    strip = demo.get(f"/conversations/{cid}").text.split('id="check-strip"', 1)[1].split("</nav>", 1)[0]
+    shown = re.search(r'>(\d+) you owe<', strip)
+    assert (int(shown.group(1)) if shown else 0) == n_open, (cid, n_open, strip)

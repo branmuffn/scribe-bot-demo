@@ -390,6 +390,8 @@ details.edit > summary { min-height: var(--tap) }   /* 44px touch target */
   box-shadow: -8px 0 0 color-mix(in srgb, var(--acc) 16%, transparent), 8px 0 0 color-mix(in srgb, var(--acc) 16%, transparent) }
 .line.playing .who { color: var(--acc) }
 .line.cursor { outline: 2px solid var(--focus); outline-offset: 2px }
+/* F119 (live check): after a "line 6" link, k moved the mark on but line 6 kept its tint, so two lines looked marked */
+.lines:has(.line.cursor) .line:target:not(.cursor) { background: none; box-shadow: none }
 
 .cost-chip { color: var(--ink-2); font-variant-numeric: tabular-nums }
 .item-actions .cost { font-variant-numeric: tabular-nums; white-space: nowrap }

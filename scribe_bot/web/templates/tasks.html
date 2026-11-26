@@ -72,8 +72,8 @@
   {% set gs = namespace(g="") %}
   {% for t in rows %}
     {% if show in ('done', 'closed', 'not_needed') %}{{ m.list_head(t.updated_at|date_group, gs) }}{% elif tab != 'inbox' and show != 'old' and sort in ('talk', 'tag') %}{% set key = 'k' ~ ((t.conversation_id or 0)|string if sort == 'talk' else (t.first_tag or '')) %}
-      {% if key != gs.g %}{% set gs.g = key %}<h3 class="list-head lh-group">{% if sort == 'talk' %}<span class="cut">{{ t.conv_title or 'Not from a talk' }}</span>{% if t.conversation_id %}<a href="/conversations/{{ t.conversation_id }}">Open ›</a>{% endif %}
-        {% else %}<span class="cut">{{ '# ' ~ t.first_tag if t.first_tag else 'No tag' }}</span>{% endif %}</h3>{% endif %}
+      {% if key != gs.g %}{% set gs.g = key %}<h2 class="list-head lh-group">{% if sort == 'talk' %}<span class="cut">{{ t.conv_title or 'Not from a talk' }}</span>{% if t.conversation_id %}<a href="/conversations/{{ t.conversation_id }}">Open ›</a>{% endif %}
+        {% else %}<span class="cut">{{ '# ' ~ t.first_tag if t.first_tag else 'No tag' }}</span>{% endif %}</h2>{% endif %}
     {% elif tab != 'inbox' and show != 'old' %}{{ m.list_head(t.created_at|date_group|group_phrase("Added") if sort == 'added' else t.due|due_group, gs) }}{% endif %}
     {% if tab == 'inbox' %}{{ m.unsure_row(t, "task-list") }}
     {% elif show == 'old' %}{{ m.task_row(t, people, show_owner=True, show_conv=True, tgt="task-list", keep=True) }}

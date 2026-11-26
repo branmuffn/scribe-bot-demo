@@ -321,7 +321,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 
 {# sort=True: Work / Home buttons instead of the badges (the Not sorted list). #}
 {# A heading inside a long list each time the group changes (Brian, 2026-11-20): the contents rail gets one tick per group. #}
-{% macro list_head(label, ns) %}{% if label != ns.g %}{% set ns.g = label %}<h3 class="list-head" id="g-{{ label|lower|replace(' ', '-') }}">{{ label }}</h3>{% endif %}{% endmacro %}
+{% macro list_head(label, ns) %}{% if label != ns.g %}{% set ns.g = label %}<h2 class="list-head" id="g-{{ label|lower|replace(' ', '-') }}">{{ label }}</h2>{% endif %}{% endmacro %}
 
 {% macro conv_row(c, sort=False) %}
 {# Brian picked A (2026-11-22): an icon says at a glance if AI notes exist (blue ✦) or it's a transcript (grey ≡); the
@@ -384,7 +384,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {% if head %}{{ section("Your speaking", help="Your lines across talks; counted on the M14, no AI. Filler counts are a minimum.") }}
 {% else %}<p class="section-help">Your lines across talks; counted on the M14, no AI. Filler counts are a minimum.</p>{% endif %}
 {% for d in (7, 30) %}{% set s = speaking[d] %}{% if s %}
-  <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} talk{{ 's' if s.conversations != 1 }} · you spoke {{ s.seconds|mins }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
+  {% set hl = 'h3' if head else 'h2' %}<{{ hl }} class="group-label">Last {{ d }} days · {{ s.conversations }} talk{{ 's' if s.conversations != 1 }} · you spoke {{ s.seconds|mins }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</{{ hl }}>
   {{ speak_tiles(s) }}{% endif %}{% else %}{% endfor %}
 {% if not (speaking[7] or speaking[30]) %}<div class="card">{{ empty("mic", "No speaking numbers yet", "They appear after your first conversations with you named as a speaker.") }}</div>{% endif %}
 {% endmacro %}

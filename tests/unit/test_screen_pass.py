@@ -528,3 +528,29 @@ def test_pausing_from_status_cancels_a_timed_resume(demo):
     assert "<b>Paused</b>" in page and "until" not in page.split('class="ctl-bar"')[1].split("</div>")[0]
     demo.post("/settings/pause", data={"on": "0"})
     assert control is not None and "Processing now" in demo.get("/processing").text
+
+
+def test_headings_never_skip_a_level(demo):  # noqa: F811
+    """F126 (2026-11-26): Inbox, People, Tasks, Processing and Your speaking went from the page title (h1) straight to
+    h3 group headings, and a confirm page opened on its own had no h1, so screen readers' heading lists had gaps. Every
+    page the app links to starts at h1 and never jumps more than one level down."""
+    from urllib.parse import urlsplit
+
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    seen, todo, bad = set(), list(START), []
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        levels = [int(x) for x in re.findall(r"<h([1-6])\b", r.text.split("<main", 1)[-1])]
+        if levels and levels[0] != 1:
+            bad.append((urlsplit(u).path, "starts at h%d" % levels[0]))
+        bad += [(urlsplit(u).path, "h%d then h%d" % (a, b)) for a, b in zip(levels, levels[1:]) if b > a + 1]
+    assert len(seen) > 25 and not bad, bad

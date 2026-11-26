@@ -472,7 +472,7 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .confirm-slot:empty { display: none }
 .confirm-panel { margin: var(--s3) 0; padding: var(--s4); border-radius: var(--r); background: var(--warn-soft);
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); display: grid; gap: var(--s2) }
-.confirm-panel h2 { font-size: var(--fs-base) }
+.confirm-panel h2, .confirm-panel h1 { font-size: var(--fs-base); font-weight: 650 }
 .confirm-cost { margin: 0; font-size: var(--fs-md) }
 .main > .confirm-panel { max-width: 32rem; margin-top: var(--s8) }
 
@@ -663,7 +663,7 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
 .glance-back { margin-bottom: var(--s2) }
 
 /* Settings › AI model cards, R1 (Brian, 2026-11-20) */
-.sub-head { font-size: var(--fs-md); margin: var(--s4) 0 var(--s2) }
+.sub-head { font-size: var(--fs-md); font-weight: 600; margin: var(--s4) 0 var(--s2) }
 .ai-cards { display: grid; gap: var(--s2); margin-bottom: var(--s2) }
 .ai-card { display: flex; gap: var(--s3); align-items: flex-start; text-align: left; width: 100%; padding: var(--s3) var(--s4);
   border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: inherit; font: inherit; cursor: pointer }
@@ -1023,7 +1023,7 @@ h1 { font-size: 1.5rem }
 .check-strip .check-label { display: none }
 .check-strip a { min-height: 30px; padding: 0 10px; font-size: .8rem }
 .fix-help { font-size: .8rem; color: var(--muted); margin: 0 2px 8px } .fix-help b { color: var(--ink-2); font-weight: 600 }
-.jump-glow.section-head, summary.jump-glow, h2.jump-glow { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 9px }
+.jump-glow.section-head, summary.jump-glow, h2.jump-glow:not(.list-head) { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 9px }
 .section-head.jump-glow { padding-top: 4px; padding-bottom: 4px; margin-top: -4px }
 .section-head.jump-glow { margin-bottom: 2px }
 /* second lines: no stray "·" at a wrap or inside a badge; the talk a task came from gets its own short line */

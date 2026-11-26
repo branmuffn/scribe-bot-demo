@@ -943,7 +943,7 @@ h1 { font-size: 1.5rem }
   font-size: .8rem; font-weight: 650; color: var(--ink-2); list-style: none; cursor: pointer }
 .area-pill::-webkit-details-marker { display: none }
 .area-menu .menu-panel { min-width: 140px } .area-menu .menu-item.on { color: var(--acc); font-weight: 650 }
-.badge-school { background: color-mix(in srgb, #7c3aed 14%, transparent); color: #6d28d9 }
+.badge-school { background: color-mix(in srgb, #7c3aed 14%, transparent); color: color-mix(in srgb, #7c3aed 60%, var(--ink)) }
 .badge-other { background: var(--surface-2); color: var(--ink-2) }
 .seg-areas a { padding: 0 8px }
 
@@ -1450,7 +1450,7 @@ form:has(select option[value="__new"]:checked) .qp-new[hidden] { display: block 
 /* S1 overnight card on Today */
 .overnight-card { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 14px; margin-bottom: var(--s3) }
 .overnight-card > .item-link { position: absolute; inset: 0; z-index: 0; font-size: 0 }
-.overnight-card .oc-ic { flex: 0 0 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: #e0e7ff; color: #3730a3; font-size: 18px }
+.overnight-card .oc-ic { flex: 0 0 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--work-soft); color: var(--work); font-size: 18px }
 .overnight-card .oc-main { flex: 1; min-width: 0 }
 .overnight-card form { position: relative; z-index: 1 }
 html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (2026-11-22: swipes moved the whole page) */
@@ -1467,7 +1467,7 @@ html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (
 .cr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; font-size: .82rem; color: var(--muted) }
 .cr-k-ai { color: #2563eb; font-weight: 600 }
 .cr-area::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted) }
-.cr-work::before { background: #4f46e5 } .cr-personal::before { background: #0d9488 } .cr-school::before { background: #7c3aed }
+.cr-work::before { background: var(--work) } .cr-personal::before { background: var(--personal) } .cr-school::before { background: color-mix(in srgb, #7c3aed 60%, var(--ink)) }
 .cr-name { color: #b45309; font-weight: 600 }
 #conv-list.picking .conv-row .cr-ic { display: none }
 :root[data-theme="dark"] .cr-k-ai, :root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }
@@ -1622,7 +1622,7 @@ details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-
 /* People notes A (Brian, 2026-11-22): tap a note for its pop-up; no ⋯ on the row */
 .fact-row > .item-main { cursor: pointer }
 .fact-row .fact-t { font-weight: 500 }
-.ts-btns .danger-text { color: #dc2626 }
+.ts-btns .danger-text { color: var(--bad) }
 .fact-row .fact-t { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; -webkit-line-clamp: unset !important; display: block !important }
 .ts-btns > .grow { flex: 1 1 0; min-width: 0 }
 .ts-row.ts-link .ts-v { flex: 0 1 auto; min-width: 0 }

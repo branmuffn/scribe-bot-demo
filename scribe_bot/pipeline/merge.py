@@ -135,11 +135,6 @@ def parts_of(conn: sqlite3.Connection, rec_id: int | None) -> list[dict]:
     return [dict(r) for r in conn.execute("SELECT * FROM recording_part WHERE recording_id = ? ORDER BY idx", (rec_id,))]
 
 
-def first_start(conn: sqlite3.Connection, rec_id: int) -> str | None:
-    r = conn.execute("SELECT started_at FROM recording_part WHERE recording_id = ? ORDER BY idx LIMIT 1", (rec_id,)).fetchone()
-    return r[0] if r else None
-
-
 
 # ---------- Merge finished talks (Brian, 2026-11-22: two talks transcribed overnight were one conversation) ----------
 

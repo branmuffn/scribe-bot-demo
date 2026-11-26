@@ -1,11 +1,10 @@
 """Overnight backlog + busy-chat rule (Brian, 2026-11-22: "run through as many recordings as it can every night";
 an open Claude chat only slows processing when it's doing heavy work). Synthetic data only."""
 import json
-import time
 from datetime import datetime
 from types import SimpleNamespace
 
-from scribe_bot.core import db, queue
+from scribe_bot.core import queue
 from scribe_bot.pipeline import control, pace
 from test_round5 import _waiting
 from test_web_pages import env, one  # noqa: F401

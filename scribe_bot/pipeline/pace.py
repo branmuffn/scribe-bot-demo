@@ -25,12 +25,11 @@ Nothing here reads content: only CPU and memory use per app and temperatures.
 from __future__ import annotations
 
 import csv
-import os
 import re
 import sqlite3
 import subprocess
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 MODES = ("auto", "full", "gentle", "night")
@@ -238,12 +237,6 @@ def heat_paused(conn: sqlite3.Connection) -> bool:
 def night_window(now: datetime | None = None) -> bool:
     h = (now or datetime.now()).astimezone().hour
     return NIGHT_START <= h < NIGHT_END
-
-
-def next_night(now: datetime | None = None) -> datetime:
-    now = (now or datetime.now()).astimezone()
-    at = now.replace(hour=NIGHT_START, minute=0, second=0, microsecond=0)
-    return at if at > now else at + timedelta(days=1)
 
 
 def threads_for(conn: sqlite3.Connection, use_reason: str, now: float | None = None) -> int:

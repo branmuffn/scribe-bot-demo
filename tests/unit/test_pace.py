@@ -1,7 +1,5 @@
 """Heat guard, Auto speed and Night only (Brian, 2026-11-21: "heat OK", Auto must notice SSH, Screen Sharing, RustDesk and
 Claude / Codex chats too, Night only after 1 AM)."""
-import os
-import time
 from datetime import datetime
 from types import SimpleNamespace
 

@@ -50,7 +50,6 @@ SLOW_DOWN_ABOVE = 190
 LONGEST_OK_S = 120  # a stretch longer than this without a break gets a tip
 FILLERS_OK_PER_MIN = 2
 QUIET_AFTER_S = 300  # talking this long without asking anything gets a tip
-EARLY_UNTIL = 3     # a trend from fewer conversations than this is labeled "Early numbers"
 
 
 def _speaking_from(rows: list[sqlite3.Row], person_id: int) -> dict | None:

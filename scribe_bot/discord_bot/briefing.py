@@ -17,7 +17,6 @@ from scribe_bot.discord_bot.notify import enqueue
 from scribe_bot.discord_bot.sender import TITLE_MAX
 
 DOWNTIME_MINUTES = 10
-WAITING_AGE_DAYS = 7
 AGING_DAYS = 14
 NUDGE_TYPES = ("birthday", "family", "event")
 DEFAULT_CAP_USD = 10.0

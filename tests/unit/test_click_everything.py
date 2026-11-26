@@ -5,7 +5,6 @@ import re
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
-import pytest
 
 from tests.unit.test_public_demo import demo  # noqa: F401  (the demo fixture)
 

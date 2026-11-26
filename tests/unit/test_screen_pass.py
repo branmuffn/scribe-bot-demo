@@ -661,7 +661,6 @@ def test_compare_on_a_demo_talk_offers_the_other_model(demo):  # noqa: F811
 
 def _crawl(demo):  # noqa: F811
     """Every kind of page the app links to, once each: yields (path, html)."""
-    from urllib.parse import urlsplit
 
     from tests.unit.test_click_everything import SKIP, START, Page, kind
     seen, todo = set(), list(START)

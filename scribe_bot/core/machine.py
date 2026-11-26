@@ -21,7 +21,6 @@ from pathlib import Path
 
 from scribe_bot.core import health
 from scribe_bot.core.health import Runner
-from scribe_bot.discord_bot import notify
 
 TEMP_TOOL = "/usr/local/bin/osx-cpu-temp"
 SAMPLE_EVERY = timedelta(minutes=5)

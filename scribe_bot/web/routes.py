@@ -322,10 +322,6 @@ def notifications_test(request: Request, conn: sqlite3.Connection = Conn):
     return RedirectResponse("/notifications?sent=1", status_code=303)
 
 
-def as_dict(row) -> dict:
-    return dict(row) if not isinstance(row, dict) else row
-
-
 def back(request: Request, default: str = "/", note: str | None = None) -> RedirectResponse:
     url = request.headers.get("referer") or default
     return RedirectResponse(with_note(url, note) if note else url, status_code=303)
@@ -1332,7 +1328,7 @@ def set_area(request: Request, cid: int, area: str = Form(...), conn: sqlite3.Co
 def trash_conversation(cid: int, conn: sqlite3.Connection = Conn):
     """Trash: the conversation and everything from it (tasks, notes, review items) are hidden until restored, or
     removed for good after TRASH_DAYS. Undo works like any other change."""
-    c = get_conversation(conn, cid)
+    get_conversation(conn, cid)   # 404 if missing
     with db.transaction(conn):
         undo.save(conn, "Moved to Trash", [("conversation", cid)])   # Brian, 2026-11-22: the title made it "Moved…"
         # F118: a second tap (double tap, or the other device) leaves the first time alone, so it changes nothing
@@ -2005,7 +2001,7 @@ def task_or_404(conn: sqlite3.Connection, tid: int) -> sqlite3.Row:
 
 @router.post("/tasks/{tid}/done")
 def task_done(request: Request, tid: int, conn: sqlite3.Connection = Conn):
-    t = task_or_404(conn, tid)
+    task_or_404(conn, tid)
     with db.transaction(conn):
         undo.save(conn, "Marked done", [("task", tid)])
         conn.execute("UPDATE task SET status = 'done', closed_as = NULL, closed_note = NULL, rated = coalesce(rated, 'right'), "
@@ -2017,7 +2013,7 @@ def task_done(request: Request, tid: int, conn: sqlite3.Connection = Conn):
 def task_not_needed(request: Request, tid: int, note: str = Form(""), conn: sqlite3.Connection = Conn):
     """N1 (Brian, 2026-11-20): closed without being done (the event passed...). Kept in history, marked "Not needed",
     never counted as finished, no rating for the AI (it wasn't wrong). Undo or Reopen brings it back."""
-    t = task_or_404(conn, tid)
+    task_or_404(conn, tid)
     with db.transaction(conn):
         undo.save(conn, "Marked not needed", [("task", tid)])
         conn.execute("UPDATE task SET status = 'done', closed_as = 'not_needed', closed_note = ?, updated_at = ? WHERE id = ?",
@@ -2075,7 +2071,7 @@ def task_owner(request: Request, tid: int, person_id: OptId = None, new_name: st
 
 @router.post("/tasks/{tid}/delete")
 def task_delete(request: Request, tid: int, conn: sqlite3.Connection = Conn):
-    t = task_or_404(conn, tid)
+    task_or_404(conn, tid)
     with db.transaction(conn):
         undo.save(conn, "Task removed", [("task", tid), *(("review_item", r[0]) for r in conn.execute(   # Undo reopens it
             "SELECT id FROM review_item WHERE kind = 'inbox' AND ref_id = ? AND status = 'open'", (tid,)))])
@@ -2154,7 +2150,7 @@ def trash_bulk(request: Request, what: str, ids: str = Form(...), conn: sqlite3.
 @router.post("/tasks/{tid}/sure")
 def task_sure(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     """"Unsure" → Looks right: the tag goes and the task leaves the Inbox."""
-    t = task_or_404(conn, tid)
+    task_or_404(conn, tid)
     with db.transaction(conn):
         undo.save(conn, "Marked as right", [("task", tid), *(("review_item", r[0]) for r in conn.execute(   # F74: Undo
             "SELECT id FROM review_item WHERE kind = 'inbox' AND ref_id = ? AND status = 'open'", (tid,)))])   # reopens it
@@ -3538,13 +3534,6 @@ def ai_cards(conn: sqlite3.Connection, providers: list[dict], current: str) -> d
                       "on": model == first, "missing": prov not in connected})
     return {"cards": cards, "connected": len(connected), "fallback_on": current in ("quality_mix", "budget_mix"),
             "fallback_key": FALLBACK_OF.get(current), "missing": [SHORT_PROVIDER[k] for k, _ in PROVIDERS if k not in connected]}
-
-
-def cost_breakdown(conn: sqlite3.Connection, since: str) -> dict[str, list[dict]]:
-    """Spend by provider / task / model this month, straight from the Data Ledger."""
-    return {k: [{"name": r[0], "usd": r[1], "n": r[2]} for r in conn.execute(
-        f"SELECT {k}, round(sum(cost_usd), 4), count(*) FROM ledger_entry WHERE time >= ? GROUP BY {k} ORDER BY 2 DESC", (since,))]
-        for k in ("provider", "task", "model")}
 
 
 # Plain-English name and time for each schedule (times match the Schedule(...) definitions).

@@ -402,7 +402,6 @@ def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, appr
 # version in setting 'compare:<id>' until Brian keeps one of the two. Keeping the other one replaces the AI rows the
 # same way Re-run AI does (items Brian already acted on stay).
 COMPARE_KEY = "compare:{}"
-COMPARE_MODELS = (router.SONNET, router.HAIKU)
 
 
 def other_model(conn: sqlite3.Connection, conversation_id: int) -> list:

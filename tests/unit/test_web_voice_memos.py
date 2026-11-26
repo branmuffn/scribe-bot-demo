@@ -61,7 +61,6 @@ def memo_m4a(path, words):
 
 
 def test_voice_memo_transcript_is_read_from_inside_the_file(env, tmp_path):
-    from pathlib import Path
     from scribe_bot.pipeline import voicememo
     from scribe_bot.web.routes import recorded_at, recorder_title
     client, conn, cfg = env

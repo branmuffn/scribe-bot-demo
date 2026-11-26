@@ -1,8 +1,8 @@
 """Ingest (stage 1): pick up new recordings from the Syncthing inbound folder.
 
 Each new file is hashed (sha256 dedupe), copied into the vault (so phone deletions never affect it), recorded with its
-title (from the file name) and Private flag ("private" anywhere in the title; DECISIONS 2026-10-19), and queued as a
-'recording' job. Files still being synced (changed in the last 30 s) and Syncthing's hidden temp files are skipped.
+title (from the file name), and queued as a 'recording' job. Files still being synced (changed in the last 30 s) and
+Syncthing's hidden temp files are skipped.
 
 Backlog: the first scan on a machine records the files already in the inbound folder as status 'backlog' without
 queueing them (Brian asked not to process the existing recordings yet). process_backlog() queues chosen ones later.
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import datetime
 import shutil
 import sqlite3
@@ -20,17 +19,11 @@ from pathlib import Path
 
 from scribe_bot.core import queue, settings
 from scribe_bot.core.db import now, transaction
-from scribe_bot.discord_bot import notify
 from scribe_bot.pipeline import paths, recorder_names, speech
 
 SETTLE_SECONDS = 30
 BASELINE_KEY = "inbound_baseline_at"
 _seen: dict[str, tuple[int, int]] = {}  # path -> (size, mtime_ns) already handled this run, so ticks stay cheap
-
-
-def is_private(title: str) -> bool:
-    """Anywhere in the title, any case ("Private", "call_private", "Privately"): over-matching is the safe side."""
-    return re.search("private", title, re.IGNORECASE) is not None
 
 
 def sha256(path: Path) -> str:

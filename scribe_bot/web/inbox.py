@@ -15,8 +15,6 @@ from scribe_bot.pipeline import voicememo
 
 LONG_S, SHORT_S = 20 * 60, 5 * 60
 SORTS = {"newest": "Newest", "oldest": "Oldest", "longest": "Longest", "shortest": "Shortest"}
-FILTERS = {"all": "All", "transcript": "Has transcript", "long": "Long (20+ min)", "short": "Short (under 5 min)",
-           "older": "Older"}
 SOURCES = {"recorder": "phone", "share": "shared", "upload": "upload", "app": "recorded here"}
 STOP = set("""a about above after again against all also am an and any are aren't as at be because been before being
 below between both but by can can't cannot could couldn't did didn't do does doesn't doing don't down during each few

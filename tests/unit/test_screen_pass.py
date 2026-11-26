@@ -580,3 +580,17 @@ def test_every_open_fold_turns_its_chevron(demo):  # noqa: F811
     assert len(classes) >= 5, classes
     for c in classes:
         assert any(re.search(r"\.%s\[open\][^{]*\.chev[^{]*\{[^}]*rotate" % re.escape(t), css) for t in c.split()), c
+
+
+def test_every_more_menu_lists_the_same_places(demo):  # noqa: F811
+    """F128 (2026-11-26, 500 dark pass): the More page listed Status, Costs, Processing history, Help and Settings, while
+    ☰ › More also had Trash and Your speaking, in another order, and drew Help with another icon. Every More list now
+    comes from one list."""
+    def places(html, start, end):
+        part = html[html.index(start):]
+        part = part[:part.index(end)]
+        return re.findall(r'<a (?:class="[^"]*" )?href="([^"]+)"[^>]*>\s*(?:<span class="nv-ic">)?<svg[^>]*><use href="[^"#]*#([\w-]+)"', part)
+    more = places(demo.get("/more").text, 'class="card more-page"', "</div>")
+    drawer = places(demo.get("/costs").text, 'aria-label="All places"', "</nav>")
+    assert [h for h, _ in more] == ["/conversations?trash=1", "/speaking", "/costs", "/status", "/processing", "/help", "/settings"]
+    assert more == drawer[-len(more):], (more, drawer)

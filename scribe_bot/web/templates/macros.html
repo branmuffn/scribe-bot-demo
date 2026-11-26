@@ -56,9 +56,9 @@
 {% if on != 'people' %}<a class="fab" href="/capture" aria-label="Add recording" title="Add recording">{{ icon("plus") }}</a>{% endif %}
 {%- endmacro %}
 
-{# Header ⋯ menu: Status, Costs, Help (and Older recordings while there are any). A red dot when the M14 needs attention. #}
+{# Header ⋯ menu: every place under More but Settings (the gear is beside it). A red dot when the M14 needs attention. #}
 {% macro more_menu(alert=False) -%}
-<details class="row-menu head-menu"><summary class="icon-btn" aria-label="More: Status, Costs, Help{{ ' (the M14 needs attention)' if alert }}" title="More">{{ icon("dots") }}{% if alert %}<span class="alert-dot" aria-hidden="true"></span>{% endif %}</summary>
+<details class="row-menu head-menu"><summary class="icon-btn" aria-label="More: Trash, Your speaking, Costs, Status, Processing history, Help{{ ' (the M14 needs attention)' if alert }}" title="More">{{ icon("dots") }}{% if alert %}<span class="alert-dot" aria-hidden="true"></span>{% endif %}</summary>
   <div class="menu-panel">{{ more_links(alert) }}</div></details>
 {%- endmacro %}
 
@@ -81,11 +81,14 @@
 {# The ⋯ menu (and the More page): only places with no other home. The rest sit where they're used: Your speaking and
    History on Today, Decisions in Tasks, Trash at the bottom of Conversations, recent searches in Search, the Data Ledger
    and Dark mode in Settings. Older recordings shows while there are any (also on Today and under Conversations). #}
-{% macro more_links(alert=False) %}
-{% for href, ic, label, extra in [("/status", "pulse", "Status", "needs attention" if alert else None), ("/costs", "dollar", "Costs", None)]
-     + [("/processing", "clock", "Processing history", None), ("/help", "book", "Help", None)] %}
+{# F128: one list of the places under More, used by the side bar, ☰, the More page and the header ⋯ menu (they had
+   drifted: the More page lacked Trash and Your speaking and drew Help with another icon). #}
+{% set more_places = [("/conversations?trash=1", "trash", "Trash"), ("/speaking", "mic2", "Your speaking"), ("/costs", "dollar", "Costs"),
+                      ("/status", "pulse", "Status"), ("/processing", "clock", "Processing history"), ("/help", "help", "Help"), ("/settings", "gear", "Settings")] %}
+{% macro more_links(alert=False, settings=False) %}
+{% for href, ic, label in more_places if settings or href != "/settings" %}
 <a class="menu-item" href="{{ href }}">{{ icon(ic) }} {{ label }}
-  {%- if extra %} <span class="badge {{ 'badge-bad' if extra is string else 'badge-outline' }}">{{ extra }}</span>{% endif %}</a>{% endfor %}
+  {%- if alert and href == "/status" %} <span class="badge badge-bad">needs attention</span>{% endif %}</a>{% endfor %}
 {% endmacro %}
 
 {# Keyboard shortcuts: one list for the "?" dialog and the Help page. app.js implements them. #}

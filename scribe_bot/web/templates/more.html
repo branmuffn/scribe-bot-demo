@@ -4,6 +4,5 @@
 {% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
 {% block body %}
 <div class="page-head"><h1>More</h1></div>
-<div class="card more-page">{{ m.more_links(head_alert) }}
-  <a class="menu-item" href="/settings">{{ m.icon("gear") }} Settings</a></div>
+<div class="card more-page">{{ m.more_links(head_alert, settings=True) }}</div>
 {% endblock %}

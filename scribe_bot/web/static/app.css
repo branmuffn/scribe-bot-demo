@@ -17,7 +17,7 @@
   --side: 264px;                     /* desktop sidebar width (brand + 🔔 ⋯ ⚙ fit) */
   --content: 760px;                  /* reading width, as rated */
   /* Light theme */
-  --bg: #fafaf9; --surface: #ffffff; --surface-2: #f5f5f4; --ink: #1c1917; --ink-2: #44403c; --muted: #6b6560;
+  --bg: #fafaf9; --surface: #ffffff; --surface-2: #f5f5f4; --raised: #ffffff; --ink: #1c1917; --ink-2: #44403c; --muted: #6b6560;
   --line: #e7e5e4; --line-strong: #d6d3d1;
   --acc: #1d4ed8; --acc-ink: #ffffff; --acc-soft: #dbeafe; --acc-soft-ink: #1e3a8a;
   --ok: #15803d; --ok-soft: #dcfce7; --bad: #b91c1c; --bad-soft: #fee2e2; --warn: #a16207; --warn-soft: #fef3c7;
@@ -33,7 +33,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
+    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --raised: #48413c; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
     --line: #3d3734; --line-strong: #57504b;
     --acc: #93c5fd; --acc-ink: #172554; --acc-soft: #1e3a5f; --acc-soft-ink: #dbeafe;
     --ok: #4ade80; --ok-soft: #14361f; --bad: #f87171; --bad-soft: #451a1a; --warn: #fbbf24; --warn-soft: #3d2e0a;
@@ -48,7 +48,7 @@
 @media all {
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
+    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --raised: #48413c; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
     --line: #3d3734; --line-strong: #57504b;
     --acc: #93c5fd; --acc-ink: #172554; --acc-soft: #1e3a5f; --acc-soft-ink: #dbeafe;
     --ok: #4ade80; --ok-soft: #14361f; --bad: #f87171; --bad-soft: #451a1a; --warn: #fbbf24; --warn-soft: #3d2e0a;
@@ -107,7 +107,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 .
   font-size: var(--fs-sm); font-weight: 550; border: 0; background: none; cursor: pointer; position: relative }
 .seg a::after, .seg button::after { content: ""; position: absolute; inset: -4px 0 }   /* 44px hit area */
 .seg a:hover { text-decoration: none; color: var(--ink) }
-.seg .on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow) }
+.seg .on { background: var(--raised); color: var(--ink); box-shadow: var(--shadow) }
 .topbar .seg a { padding: 0 var(--s2) }
 
 /* Phone bottom tab bar */
@@ -1302,7 +1302,7 @@ select:not(.qp-native):not([multiple]) { -webkit-appearance: none; appearance: n
 .seg-switch { display: flex; width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; margin: 0 }
 .seg-opt { flex: 1; min-width: 0; min-height: 38px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; border: 0;
   border-radius: 9px; background: none; color: var(--muted); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; line-height: 1.15 }
-.seg-opt.on, .seg-opt:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow) }
+.seg-opt.on, .seg-opt:has(input:checked) { background: var(--raised); color: var(--ink); box-shadow: var(--shadow) }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--acc); outline-offset: -2px }
 /* Process at A: the switch, then two rows in the same style as the sheet */
 .pat-panel { margin: 10px 0 2px } .pat-panel .acts { margin: 4px 0 0 }
@@ -1735,7 +1735,7 @@ details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-
   .dtop { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 16px 0 24px; margin-left: var(--side); transition: margin .2s cubic-bezier(.2, .9, .25, 1) }
   .dsearch { position: relative; flex: 1 1 auto; max-width: 720px; height: 48px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 16px;
     border-radius: 24px; background: var(--surface-2); transition: background .15s, box-shadow .15s }
-  .dsearch:focus-within, .dsearch:has(.adv-sheet[open]) { background: var(--surface); box-shadow: 0 1px 6px rgb(0 0 0 / .16) }
+  .dsearch:focus-within, .dsearch:has(.adv-sheet[open]) { background: var(--raised); box-shadow: 0 1px 6px rgb(0 0 0 / .16) }
   .dsearch > form { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 100% }
   .dsearch > form .icon { color: var(--muted) }
   .dsearch input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; box-shadow: none; padding: 0; font: inherit; font-size: 16px; color: var(--ink) }
@@ -2343,7 +2343,7 @@ html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
   .dp-layout { display: inline-flex; gap: 2px; padding: 2px; margin-left: auto; margin-right: 6px; border-radius: 8px; background: var(--surface-2); flex: none }
   .sh-head .dp-layout + [data-fx-close], .fx-head .dp-layout + [data-fx-close] { margin-left: 0 }
   .dp-lay { width: 30px; height: 26px; min-height: 0 !important; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; display: grid; place-items: center; color: var(--muted) }
-  .dp-lay.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12) }
+  .dp-lay.on { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12) }
   .dp-lay i { width: 16px; height: 12px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; box-sizing: border-box }
   .dp-lay-right i::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 6px; background: currentColor }
   .dp-lay-below i::after { content: ""; position: absolute; right: 0; bottom: 0; width: 8px; height: 5px; background: currentColor }

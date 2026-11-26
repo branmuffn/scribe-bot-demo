@@ -296,8 +296,8 @@ def test_b37_swipes_settle_at_finger_speed_and_never_stay_stuck():
     back; swipe rows pan only up and down for the browser from the first touch."""
     root = Path(__file__).resolve().parents[2] / "scribe_bot/web/static"
     js, css = (root / "app.js").read_text(), (root / "app.css").read_text()
-    assert "function settle(dist, v)" in js and 'document.addEventListener("touchcancel"' in js
-    assert 'h.style.transitionDuration = ms ? ms + "ms" : ""' in js
+    # v3 (F141, 2026-11-26): every settle is a spring that starts at the finger's own speed
+    assert "function spring(row, to, v, bounce, done)" in js and 'document.addEventListener("touchcancel"' in js
     assert "[data-sw]:not(details), details[data-sw] > summary { touch-action: pan-y }" in css
 
 

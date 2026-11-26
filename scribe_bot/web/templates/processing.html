@@ -27,7 +27,7 @@
     </form>
     <p class="meta speed-note">Scribe Bot's own speed: full = 4 cores, half = 2. Auto goes to half speed while other apps are busy and pauses if they use most of the Mac. Every setting: half speed at 90 °C, pause at 95 °C.</p>
   </div>
-  {% set live = rows|selectattr("p")|map(attribute="p")|sort(attribute="queue_pos")|list %}{% if live %}<div class="card" style="margin-top:8px">{{ m.progress_list(live, ctl=False) }}</div>{% endif %}
+  {% set live = rows|selectattr("p")|map(attribute="p")|sort(attribute="queue_pos")|list %}{% if live %}<div class="card">{{ m.progress_list(live, ctl=False) }}</div>{% endif %}
 </section>
 <div class="card" id="history-list">
   {% set gs = namespace(g="") %}

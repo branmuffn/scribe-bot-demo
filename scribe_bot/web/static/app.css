@@ -1235,7 +1235,7 @@ body:has(.pk2:not([hidden])) .fab, body:has(.pk2:not([hidden])) .tabbar { visibi
 .menu-item { border-radius: 10px }
 .in-row > summary:active, .tap-row:active, .row1:active { border-radius: 10px; border-top-color: transparent; box-shadow: 0 0 0 4px var(--acc-soft) }
 .mention-row:active { box-shadow: none }
-.speed-card { margin-bottom: 12px }
+.speed-card { margin-bottom: 12px } #history-list { margin-top: 12px } /* F143: it touched the card above */
 /* the task pop-up's rows */
 .ts-pick { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; min-height: 48px; padding: 4px 2px; cursor: pointer;
   border-bottom: 1px solid var(--line); -webkit-tap-highlight-color: transparent; transition: background .12s }

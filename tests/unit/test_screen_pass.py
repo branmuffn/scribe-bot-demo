@@ -873,3 +873,12 @@ def test_f142_a_hover_fill_can_be_seen_on_the_page_and_on_cards_in_both_themes()
         h = _lstar(tok["hover"])
         for under in ("bg", "surface", "surface-2"):
             assert abs(h - _lstar(tok[under])) >= 4, (theme, under, round(h, 1), round(_lstar(tok[under]), 1))
+
+
+def test_f143_processing_history_card_keeps_its_gap_from_the_job_above():
+    """F143 (live, 500 Dark): on Processing history the "This week" card sat 2 px under the running job's card,
+    while every other card on the page is 12 px apart."""
+    css = _static("app.css")
+    assert re.search(r"#history-list\s*\{[^}]*margin-top:\s*12px", css)
+    tpl = (WEB / "templates" / "processing.html").read_text()
+    assert 'style="margin-top' not in tpl

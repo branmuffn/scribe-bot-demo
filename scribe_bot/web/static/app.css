@@ -1854,10 +1854,7 @@ html.in-pane .jump-bar { top: 0 }
 
 /* E2: top of a talk (Brian, 2026-11-23): back on the left, Summarize and ⋯ on the right; one line of pills that folds */
 .cv-bar { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -4px 0 6px }
-.cv-back { display: inline-flex; align-items: center; gap: 2px; min-height: 40px; padding: 0 10px 0 2px; margin-left: -6px; border-radius: 20px;
-  color: var(--ink-2); font-weight: 600; font-size: .95rem; text-decoration: none }
-.cv-back:hover { background: var(--surface-2); text-decoration: none }
-.cv-back-ic { width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--chev-r) center / 20px 20px no-repeat; mask: var(--chev-r) center / 20px 20px no-repeat; transform: rotate(180deg) }
+.cv-bar .cv-back { margin: 0; min-height: 40px }   /* D-SP-4: a plain "‹ Talks" back link, like every other page */
 html.in-pane .cv-back { display: none }
 .cv-bar .grow { flex: 1 }
 .cv-bar .cv-sum { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 20px; line-height: 1 }
@@ -2035,7 +2032,7 @@ html[data-density="compact"] .conv-row .cr-ic { flex-basis: 32px; width: 32px; h
 .cv-bar > :not(.grow) { flex-shrink: 0 }
 .cv-bar .row-menu { position: relative }
 .cv-bar .row-menu .menu-panel { top: calc(100% + 4px); right: 0; left: auto; width: min(20rem, calc(100vw - 24px)); z-index: 30 }
-@media (max-width: 359px) { .cv-bar .cv-sum { padding: 0 12px } .cv-back { padding-right: 4px } }
+@media (max-width: 359px) { .cv-bar .cv-sum { padding: 0 12px } }
 /* D: a light outline round the whole speaker bar, so many colours still read as one bar */
 .talk.sp-bar { outline: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); outline-offset: 2px }
 /* C1: a narrower drawer (it covered most of the phone) */

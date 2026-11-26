@@ -711,3 +711,15 @@ def test_work_and_home_are_the_same_pill_on_every_page(demo):  # noqa: F811
             bad.append(u)
     assert pills and not bad, bad
     assert 'badge badge-work' in demo.get("/conversations").text
+
+
+def test_every_back_link_is_the_same_text_link(demo):  # noqa: F811
+    """D-SP-4 (Brian, 2026-11-26: 4A): most pages said "‹ Today" in grey text, but a talk had an arrow icon and a bold
+    "Talks". Every back link on every page is the same text link: "‹ <where it goes>"."""
+    bad, n = [], 0
+    for u, html in _crawl(demo):
+        for cls, inner in re.findall(r'<a class="([^"]*\b(?:back-link|cv-back)\b[^"]*)"[^>]*>(.*?)</a>', html, re.S):
+            n += 1
+            if "back-link" not in cls.split() or not inner.startswith("‹ ") or "<" in inner:
+                bad.append((u, cls, inner[:60]))
+    assert n > 15 and not bad, bad

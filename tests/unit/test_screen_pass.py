@@ -333,7 +333,7 @@ def test_esc_closes_the_pane_unless_a_pop_up_is_open():
         assert k in kinds
     for k in ("side-more", "fold-sec", "q-more", "section"):   # folds that stay open are not pop-ups
         assert k not in kinds
-    assert "parent.postMessage({ sbPaneEsc: 1 }, location.origin)" in ui and "e.data.sbPaneEsc) escClose()" in ui
+    assert "parent.postMessage({ sbPaneEsc: 1 }, location.origin)" in ui and "e.data.sbPaneEsc) { popOpen = false; escClose(); }" in ui
     assert "closePane(); if (at) at.focus();" in ui
     assert ".sidebar > * { flex-shrink: 0 }" in _static("app.css")
 
@@ -367,3 +367,14 @@ def test_copy_says_it_copied_and_keeps_the_buttons_icon():
     assert '!copy.getClientRects().length) ScribeToast(' in js
     assert "writeText(text.trim()).then(done, function () {" in js
     assert "window.ScribeToast = note;" in _static("ui.js")
+
+
+def test_esc_with_a_menu_open_closes_only_the_menu_not_the_pane():
+    # F114: app.js loads first and shuts Quick settings on Esc before ui.js looked, so the pane closed too
+    ui = _static("ui.js")
+    assert 'window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS); }, true);' in ui
+    assert "|| popOpen || document.querySelector(POPS)) return;" in ui
+    assert "{ popOpen = false; escClose(); }" in ui   # Esc inside the pane isn't held back by an old note
+    assert ".ctx-menu" in ui.split("var POPS =")[1].split("var popOpen")[0]   # a right-click menu holds the pane too
+    base = (Path(__file__).parents[2] / "scribe_bot/web/templates/base.html").read_text()
+    assert base.index("/static/app.js") < base.index("/static/ui.js")   # why the note is needed

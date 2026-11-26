@@ -103,9 +103,15 @@
      places open (or a folded list group) it never closed. Only a pop-up that is open holds it back now.
      F107: Esc pressed inside the pane (after a click there) closes it too, and the keys go back to the list. */
   var POPS = ["speaker-chip", "tag-add", "line-edit", "edit", "filters", "row-menu", "chip-menu", "ts-row", "fx-sheet"]
-    .map(function (k) { return "details." + k + "[open]"; }).join(", ") + ", dialog[open], .picking";
+    .map(function (k) { return "details." + k + "[open]"; }).join(", ") +
+    ", details.in-row[open], details.task-sheet[open], details.mention-sheet[open], dialog[open], .picking, .ctx-menu, .pp-sheet:not([hidden]), .sp-sheet:not([hidden]), .pk2:not([hidden])";
+  /* F114 (1024 pass): app.js loads first, so its Esc handlers had already shut Quick settings (or Filter, Export, a ⋯
+     menu) before this one looked, and one Esc closed the menu and the pane together. What was open is now noted as the
+     key goes down (capture on window runs before every other handler), so the first Esc closes only the menu. */
+  var popOpen = false;
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS); }, true);
   function escClose() {
-    if (!paneOn() || !pane() || pane().classList.contains("empty") || document.querySelector(POPS)) return;
+    if (!paneOn() || !pane() || pane().classList.contains("empty") || popOpen || document.querySelector(POPS)) return;
     var at = document.querySelector("#conv-list .item.current a.item-link, #people-list .item.current a.item-link");
     closePane(); if (at) at.focus();
   }
@@ -116,7 +122,7 @@
     try { parent.postMessage({ sbPaneEsc: 1 }, location.origin); } catch (_) {}
   }, true);
   if (!inPane) window.addEventListener("message", function (e) {
-    if (e.origin === location.origin && e.data && e.data.sbPaneEsc) escClose();
+    if (e.origin === location.origin && e.data && e.data.sbPaneEsc) { popOpen = false; escClose(); }   // the key went down in the pane, not here
   });
   // a page inside the pane that leaves its talk or person (a delete, a merge): the list may have changed, so reload it
   document.addEventListener("load", function (e) {

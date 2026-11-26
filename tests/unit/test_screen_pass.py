@@ -372,9 +372,17 @@ def test_copy_says_it_copied_and_keeps_the_buttons_icon():
 def test_esc_with_a_menu_open_closes_only_the_menu_not_the_pane():
     # F114: app.js loads first and shuts Quick settings on Esc before ui.js looked, so the pane closed too
     ui = _static("ui.js")
-    assert 'window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS); }, true);' in ui
+    assert 'window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS) || typing(); }, true);' in ui
     assert "|| popOpen || document.querySelector(POPS)) return;" in ui
     assert "{ popOpen = false; escClose(); }" in ui   # Esc inside the pane isn't held back by an old note
     assert ".ctx-menu" in ui.split("var POPS =")[1].split("var popOpen")[0]   # a right-click menu holds the pane too
     base = (Path(__file__).parents[2] / "scribe_bot/web/templates/base.html").read_text()
     assert base.index("/static/app.js") < base.index("/static/ui.js")   # why the note is needed
+
+
+def test_esc_while_typing_in_a_list_box_leaves_the_pane_open():
+    # F115: Esc in the top search (after "/") closed the reading pane; inside the pane a box already held it back
+    ui = _static("ui.js")
+    assert "function typing() { var a = document.activeElement;" in ui
+    assert "|| typing(); }, true);" in ui
+    assert 'if (e.key !== "Escape" || document.querySelector(POPS) || typing()) return;' in ui   # same rule inside the pane

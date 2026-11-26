@@ -108,8 +108,11 @@
   /* F114 (1024 pass): app.js loads first, so its Esc handlers had already shut Quick settings (or Filter, Export, a ⋯
      menu) before this one looked, and one Esc closed the menu and the pane together. What was open is now noted as the
      key goes down (capture on window runs before every other handler), so the first Esc closes only the menu. */
+  /* F115: Esc while typing in a box on the list (the top search, Search talks) closed the pane too; inside the pane a box
+     already held it back. A box with the cursor in it now counts like an open menu. */
+  function typing() { var a = document.activeElement; return !!(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))); }
   var popOpen = false;
-  window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS); }, true);
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS) || typing(); }, true);
   function escClose() {
     if (!paneOn() || !pane() || pane().classList.contains("empty") || popOpen || document.querySelector(POPS)) return;
     var at = document.querySelector("#conv-list .item.current a.item-link, #people-list .item.current a.item-link");
@@ -117,8 +120,7 @@
   }
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") escClose(); });
   if (inPane) document.addEventListener("keydown", function (e) {   // capture: before app.js shuts what's open
-    var a = document.activeElement;
-    if (e.key !== "Escape" || document.querySelector(POPS) || (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))) return;
+    if (e.key !== "Escape" || document.querySelector(POPS) || typing()) return;
     try { parent.postMessage({ sbPaneEsc: 1 }, location.origin); } catch (_) {}
   }, true);
   if (!inPane) window.addEventListener("message", function (e) {

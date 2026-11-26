@@ -14,18 +14,18 @@
   {% if lines %}<section class="section">{{ m.snoozed_list(lines) }}</section>{% endif %}
   {% include "_review.html" %}
   {% if not (lines or speakers or inbox or approvals or glossary or recordings) %}
-  <div class="card">{{ m.empty("clock", "Nothing snoozed", "Use the clock on any Needs you item to be reminded later.") }}</div>{% endif %}
+  <div class="card">{{ m.empty("clock", "Nothing snoozed", "Use the clock on any Open item to be reminded later.") }}</div>{% endif %}
 {% else %}
 <p class="section-help">{{ 'What you approved, named, kept or added, newest first.' if tab == 'done' else
-  'What you skipped, declined or removed, newest first. Restore puts one back under Needs you.' }}</p>
+  'What you skipped, declined or removed, newest first. Restore puts one back in Open (and Needs you on Today).' }}{# F49: the tab here is called Open #}</p>
 <div class="card" id="review-log">
   {% for x in log %}
   <div class="item{{ ' tap-row' if x.href }}"><div class="item-main">
     {% if x.href %}<a class="item-link" href="{{ x.href }}">{{ x.title }}</a>{% else %}<div class="item-title">{{ x.title }}</div>{% endif %}
     <div class="item-sub"><span>{{ x.what }}</span><span><b>{{ x.did }}</b> {{ x.at|local_datetime }}</span></div></div>
     {% if x.status == 'dismissed' %}<div class="item-actions"><form method="post" action="/review/{{ x.id }}/restore">
-      <button class="btn" title="Put it back under Needs you">Restore</button></form></div>{% endif %}</div>
-  {% else %}{{ m.empty("archive", "Nothing here yet", "Items move here as you deal with them under Needs you.") }}{% endfor %}
+      <button class="btn" title="Put it back in Open">Restore</button></form></div>{% endif %}</div>
+  {% else %}{{ m.empty("archive", "Nothing here yet", "Items move here as you deal with them in Open.") }}{% endfor %}
   {{ m.more("review-log", log|length, total) }}
 </div>
 {% endif %}

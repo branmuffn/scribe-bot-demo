@@ -63,7 +63,7 @@ def local_datetime(ts: str | None) -> str:
         return ts
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone().strftime("%a %b %-d, %-I:%M %p").replace("AM", "am").replace("PM", "pm")
+    return dt.astimezone().strftime("%a %b %-d, %-I:%M %p")  # F48: "AM/PM" like every fixed label (Brian writes "7 AM")
 
 
 templates.env.filters["local_datetime"] = local_datetime
@@ -207,7 +207,7 @@ templates.env.filters["first_name"] = _first_name   # B8: "Dr. Nina Okafor" -> "
 
 
 def short_when(ts) -> str:
-    """'Nov 19, 12:07 pm' (no weekday, no year this year): short enough for a row's second line."""
+    """'Nov 19, 12:07 PM' (no weekday, no year this year): short enough for a row's second line."""
     if not ts:
         return ""
     try:
@@ -216,7 +216,7 @@ def short_when(ts) -> str:
         return str(ts)
     dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
     out = f"{dt:%b} {dt.day}" + (f", {dt.year}" if dt.year != datetime.now().year else "")
-    return out + ", " + dt.strftime("%-I:%M %p").lower()
+    return out + ", " + dt.strftime("%-I:%M %p")
 
 
 def mins(seconds) -> str:
@@ -277,12 +277,12 @@ templates.env.filters["due_group"] = due_group
 
 
 def when_back(ts: str | None) -> str:
-    """When a snoozed item returns: 'at 6:00 pm' (today), 'tomorrow 8:00 am', 'Mon Oct 26, 8:00 am'."""
+    """When a snoozed item returns: 'at 6:00 PM' (today), 'tomorrow 8:00 AM', 'Mon Oct 26, 8:00 AM'."""
     if not ts:
         return ""
     dt = datetime.fromisoformat(ts)
     dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
-    clock = dt.strftime("%-I:%M %p").lower()
+    clock = dt.strftime("%-I:%M %p")
     days = (dt.date() - datetime.now().astimezone().date()).days
     return f"at {clock}" if days == 0 else f"tomorrow {clock}" if days == 1 else f"{dt:%a %b} {dt.day}, {clock}"
 
@@ -508,7 +508,7 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
         data = {**latest, **live, "wifi_dbm": latest.get("wifi_dbm")} if live is not None else latest
         card = machine.card(data)
         return {"mc": card, "tiles": machine.tiles(card), "mc_live": live is not None, "mc_ts": latest.get("ts"),
-                "mc_live_at": datetime.now().astimezone().strftime("%-I:%M:%S %p").lower(),
+                "mc_live_at": datetime.now().astimezone().strftime("%-I:%M:%S %p"),
                 "mc_attention": stored["attention"], "mc_last_recording": stored["last_recording"],
                 "uptime_label": machine.uptime_label, "words": machine.LEVEL_WORDS,
                 "ranges": {k: machine.ranges_text(k) for k in machine.RANGES}, "ranges_full": list(machine.RANGES.items())}

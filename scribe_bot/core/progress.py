@@ -34,7 +34,7 @@ def local_time(ts: str | datetime | None) -> str:
     dt = _parse(ts) if isinstance(ts, str) else ts
     if dt is None:
         return ""
-    return dt.astimezone().strftime("%-I:%M %p").lower()
+    return dt.astimezone().strftime("%-I:%M %p")
 
 
 def duration_label(seconds: float | None) -> str:

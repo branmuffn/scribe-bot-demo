@@ -32,7 +32,7 @@ def _when(ts: str) -> str:
     except (TypeError, ValueError):
         return ts or ""
     dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone()
-    return dt.strftime("%a %b %-d, %Y, %-I:%M %p").replace("AM", "am").replace("PM", "pm")
+    return dt.strftime("%a %b %-d, %Y, %-I:%M %p")  # F48: "AM/PM" like every fixed label (Brian writes "7 AM")
 
 
 def conversation_md(conn: sqlite3.Connection, cid: int, transcript: bool = True, level: int = 1) -> str:

@@ -98,7 +98,7 @@ def test_pending_job_waits_its_turn(conn):
 
 
 def test_local_time_format():
-    assert progress.local_time(datetime(2026, 10, 19, 16, 9).astimezone()) == "4:09 pm"
+    assert progress.local_time(datetime(2026, 10, 19, 16, 9).astimezone()) == "4:09 PM"
     assert progress.duration_label(14 * 60) == "14 min" and progress.duration_label(3.6 * 60) == "3.6 min"
 
 

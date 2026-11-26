@@ -360,7 +360,7 @@ def extract_conversation(conn: sqlite3.Connection, conversation_id: int, *, appr
         return {"status": "skipped_private", "cost_usd": 0.0}
 
     system, user, n = _prompt(conn, conversation_id)
-    summary = f"conversation #{conversation_id} transcript ({n} lines, {len(user)} chars)"
+    summary = f"talk #{conversation_id} transcript ({n} lines, {len(user)} chars)"
     spent = 0.0
     last_error = "invalid AI output"
     for attempt in range(2):  # one retry on invalid output
@@ -457,7 +457,7 @@ def detail_conversation(conn: sqlite3.Connection, conversation_id: int, *, appro
         return {"status": "skipped_private"}
     system, user, n = _detail_prompt(conn, conversation_id)
     try:
-        call = router.run(conn, TASK, system, user, sent_summary=f"conversation #{conversation_id} transcript ({n} lines) for detailed notes",
+        call = router.run(conn, TASK, system, user, sent_summary=f"talk #{conversation_id} transcript ({n} lines) for detailed notes",
                           conversation_id=conversation_id, area=conv["area"], approved=approved, factory=factory, chain=chain,
                           max_tokens=6000)
     except (router.NeedsApproval, router.Blocked, router.CallFailed) as e:

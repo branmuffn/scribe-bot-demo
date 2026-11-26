@@ -45,7 +45,7 @@ def shorten(conn: sqlite3.Connection, cid: int, *, approved: bool = True, factor
     if chain is None:
         chain = [router.HAIKU] + [x for x in router.task_config(conn, TASK)["chain"] if list(x) != router.HAIKU]
     try:
-        call = router.run(conn, TASK, SYSTEM, user, sent_summary=f"conversation #{cid} title and {len(tasks)} task titles (short names)",
+        call = router.run(conn, TASK, SYSTEM, user, sent_summary=f"talk #{cid} title and {len(tasks)} task titles (short names)",
                           conversation_id=cid, area=c["area"], approved=approved, factory=factory, chain=chain, max_tokens=4000)
     except (router.NeedsApproval, router.Blocked, router.CallFailed) as e:
         return {"status": "failed", "error": str(e)}

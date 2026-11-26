@@ -13,7 +13,7 @@
 <section class="card pad stack compare-col" aria-labelledby="v-{{ v.key }}">
   <div class="row" style="justify-content:space-between;align-items:baseline">
     <h2 id="v-{{ v.key }}" style="margin:0">{{ v.label }}</h2>
-    <span class="meta">{{ v.note }} · ${{ '%.3f'|format(v.cost or 0) }}</span></div>
+    <span class="meta">{{ v.note }} · {{ v.cost|usd(3) }}</span></div>
   {% if v.title %}<p><b>{{ v.title }}</b></p>{% endif %}
   <p>{{ v.summary or "No summary" }}</p>
   <h3>Tasks ({{ v.tasks|length }})</h3>

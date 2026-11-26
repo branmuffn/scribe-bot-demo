@@ -581,8 +581,22 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
         title = {404: "Not here", 410: "Gone"}.get(code, "That didn't work")
         hint = detail if isinstance(detail, str) and detail and detail != "Not Found" else \
             "This page doesn't exist. It may have been deleted, or the link is wrong."
-        return templates.TemplateResponse(request, "error.html", {"nav": "", "area": area_of(request), "title": title,
-                                                                  "hint": hint}, status_code=code)
+        # F85 (500 pass): the page was drawn without the database, so its header lost the Today and Inbox counts, the
+        # bell's count and the status dot (a More menu stood in for it), as if they had been cleared. It reads them now;
+        # if the database is the trouble, the plain frame still shows.
+        from scribe_bot.web import routes
+        conn = None
+        try:
+            conn = db.connect(request.app.state.cfg.db_path, any_thread=True)
+            page = routes.render(request, "error.html", "", conn, title=title, hint=hint)
+        except sqlite3.Error:
+            page = templates.TemplateResponse(request, "error.html", {"nav": "", "area": area_of(request), "title": title,
+                                                                      "hint": hint})
+        finally:
+            if conn is not None:
+                conn.close()
+        page.status_code = code
+        return page
 
     @app.exception_handler(StarletteHTTPException)
     async def on_http_error(request: Request, exc: StarletteHTTPException):

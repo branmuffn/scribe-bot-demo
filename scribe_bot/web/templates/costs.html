@@ -55,15 +55,15 @@
 </details>
 
 <section class="section">
-  {{ m.section("By conversation", by_conv|length, help="What each conversation cost. Key tests and spend outside Scribe Bot appear as “Other”.") }}
+  {{ m.section("By talk", by_conv|length, help="What each talk cost. Key tests and spend outside Scribe Bot appear as “Other”.") }}
   <div class="card">
     {% for r in by_conv %}
     <div class="item{{ ' tap-row' if r.conversation_id }}"><div class="item-main">
-      {% if r.conversation_id %}<a class="item-link" href="/conversations/{{ r.conversation_id }}">{{ r.conv_title or 'Conversation' }}</a>
+      {% if r.conversation_id %}<a class="item-link" href="/conversations/{{ r.conversation_id }}">{{ r.conv_title or 'Talk' }}</a>
       {% else %}<div class="item-title">Other (key tests, spend matched to the console)</div>{% endif %}
       <div class="item-sub"><span>{{ r.last|local_datetime }}</span><span>{{ (r.models or '').split(',')|map('model_label')|join(', ') }}</span>
         <span>{{ r.calls }} call{{ 's' if r.calls != 1 }}</span><span title="Tokens sent / received">{{ '{:,}'.format(r.tin) }} / {{ '{:,}'.format(r.tout) }} tokens</span></div></div>
-      <div class="item-actions"><b class="cost">${{ '%.3f'|format(r.usd or 0) }}</b></div></div>
+      <div class="item-actions"><b class="cost">{{ r.usd|usd(3) }}</b></div></div>
     {% else %}{{ m.empty("cloud", "No AI calls yet", "Costs appear here after the first Summarize.") }}{% endfor %}
   </div>
 </section>
@@ -73,9 +73,9 @@
   <div class="card"><div class="table-wrap"><table>
     <thead><tr><th>When</th><th>Task</th><th>Model</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr><td data-label="When">{{ r.time|local_datetime }}</td><td data-label="Task">{{ 'Matched to the Anthropic console' if r.status == 'adjustment' else r.task }}{% if r.conv_title %} · <a href="/conversations/{{ r.conversation_id }}">{{ r.conv_title }}</a>{% endif %}</td>
-        <td data-label="Model">{{ '—' if r.status == 'adjustment' else r.model|model_label }}</td><td data-label="Status">{{ r.status }}</td>
-        <td data-label="Tokens" class="num">{{ r.tokens_in or 0 }} / {{ r.tokens_out or 0 }}</td><td data-label="Cost" class="num">${{ '%.4f'|format(r.cost_usd or 0) }}</td></tr>
+      <tr><td data-label="When">{{ r.time|local_datetime }}</td><td data-label="Task">{{ 'Matched to the Anthropic console' if r.status == 'adjustment' else r.task|ledger_task }}{% if r.conv_title %} · <a href="/conversations/{{ r.conversation_id }}">{{ r.conv_title }}</a>{% endif %}</td>
+        <td data-label="Model">{{ '—' if r.status == 'adjustment' else r.model|model_label }}</td><td data-label="Status">{{ r.status|ledger_status }}</td>
+        <td data-label="Tokens" class="num">{{ '{:,}'.format(r.tokens_in or 0) }} / {{ '{:,}'.format(r.tokens_out or 0) }}</td><td data-label="Cost" class="num">{{ r.cost_usd|usd(4) }}</td></tr>
     {% endfor %}</tbody></table></div></div>
 </details>
 {% endblock %}

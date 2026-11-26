@@ -41,9 +41,9 @@ def test_export_only_the_picked_talks(env):
     ids = [r[0] for r in conn.execute("SELECT id FROM conversation WHERE deleted_at IS NULL ORDER BY id")]
     assert len(ids) >= 2
     md = client.get(f"/conversations/export.md?ids={ids[0]}").text
-    assert md.startswith("# Scribe Bot export · 1 conversations")
+    assert md.startswith("# Scribe Bot export · 1 talk\n")
     md2 = client.get(f"/conversations/export.md?ids={ids[0]},{ids[1]},x").text
-    assert md2.startswith("# Scribe Bot export · 2 conversations")
+    assert md2.startswith("# Scribe Bot export · 2 talks")
     page = client.get("/conversations").text
     assert "data-pick-mode" in page and 'id="pick-bar"' in page and 'class="fab" href="/capture"' in page
 

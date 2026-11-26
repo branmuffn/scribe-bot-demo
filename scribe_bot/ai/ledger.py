@@ -1,6 +1,6 @@
 """Data Ledger (CLAUDE.md rule 2): one row for every outbound call, including blocked and failed ones.
 
-sent_summary describes what was sent ("conversation #12 transcript, 240 lines") and never contains the content.
+sent_summary describes what was sent ("talk #12 transcript, 240 lines") and never contains the content.
 Months are calendar months in UTC, matching the ledger's UTC timestamps.
 """
 from __future__ import annotations

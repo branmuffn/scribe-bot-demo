@@ -354,7 +354,7 @@ def test_trash_hides_everything_from_it_and_restores(env):
     assert "owes you" not in client.get("/people").text
     trash = client.get("/conversations?trash=1").text
     assert "Weekly sync with Alex" in trash and 'action="/conversations/1/restore"' in trash and "kept until" in trash
-    assert "This conversation is in Trash" in client.get("/conversations/1").text
+    assert "This talk is in Trash" in client.get("/conversations/1").text
     assert 'aria-label="Trash, 1 items"' in client.get("/conversations").text   # count for screen readers only (no badge)
     client.post("/conversations/1/restore")
     assert "Review the launch deck" in client.get("/tasks").text and "Trash · " not in client.get("/conversations").text
@@ -698,7 +698,7 @@ def test_search_results_open_the_exact_line(env):
 def test_search_groups_by_conversation_with_tabs_filters_and_one_conversation(env, monkeypatch):
     client, conn, _ = env
     page = client.get("/search?q=budget").text
-    assert 'class="card result-group"' in page and 'href="/conversations/1">' in page and "in 1 conversation" in page
+    assert 'class="card result-group"' in page and 'href="/conversations/1">' in page and "in 1 talk" in page
     assert ">Lines <span class=\"n\">" in page and ">People <span class=\"n\">0</span>" not in page   # tab counts (0 hidden, 2026-11-21: tabs fit)
     said = conn.execute("SELECT sp.person_id FROM segment g JOIN speaker sp ON sp.id = g.speaker_id "
                         "WHERE g.text LIKE '%budget%'").fetchone()[0]

@@ -15,7 +15,7 @@
   <div class="card">
     {% for g in mentioned %}
     <div class="item mentioned-item"><div class="item-main"><div class="item-title">{{ g.name }}</div>
-      <div class="item-sub"><span>{{ g.facts }} note{{ 's' if g.facts != 1 }}</span><span>{{ g.convs }} conversation{{ 's' if g.convs != 1 }}</span><span>last {{ g.last|local_date }}</span></div>
+      <div class="item-sub"><span>{{ g.facts }} note{{ 's' if g.facts != 1 }}</span><span>{{ g.convs }} talk{{ 's' if g.convs != 1 }}</span><span>last {{ g.last|local_date }}</span></div>
       {% if g.samples %}<p class="inbox-preview">“{{ g.samples|join('”, “') }}”</p>{% endif %}</div>
       <div class="item-actions">
         <form method="post" action="/people/mentioned"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="add"><button class="btn btn-primary btn-sm">{{ m.icon("plus") }} Add</button></form>

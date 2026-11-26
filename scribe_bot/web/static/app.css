@@ -550,7 +550,8 @@ a.tile { cursor: pointer; transition: border-color .15s, background .15s } a.til
 details.template { display: block } details.template > summary { list-style: none; cursor: pointer }
 details.template > summary::-webkit-details-marker { display: none }
 details.template > summary .chev { display: inline-flex; vertical-align: -5px; margin-right: var(--s1); transition: transform .2s var(--ease) }
-details.template[open] > summary .chev { transform: rotate(90deg) }   /* group summaries come as one paragraph per topic */
+details.template[open] > summary .chev { transform: rotate(90deg) }
+details.template[open] .tpl-peek { display: none }   /* F95: the cut-off first line sat above the same text, whole, in the box */   /* group summaries come as one paragraph per topic */
 /* "Show more" at the end of a long list */
 .show-more { justify-content: center; color: var(--acc); font-weight: 560; text-decoration: none }
 /* Search: one card per conversation, its best hits under the title; filters fold away */
@@ -2518,8 +2519,8 @@ html[data-density="comfortable"] .conv-row .cr-ic { flex-basis: 44px; width: 44p
 /* B31: Data Ledger and Backups fold away (tap the heading) and have a filter box */
 .fold-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--s2) }
 .fold-sec > summary::-webkit-details-marker { display: none }
-.fold-sec > summary .chev .icon { width: 14px; height: 14px; transition: transform .18s; transform: rotate(-90deg) }
-.fold-sec[open] > summary .chev .icon { transform: none }
+.fold-sec > summary .chev .icon { width: 14px; height: 14px; transition: transform .18s }   /* F92: › closed, ⌄ open (it was ⌃ closed, › open) */
+.fold-sec[open] > summary .chev .icon { transform: rotate(90deg) }
 .rows-q { margin: var(--s2) 0 }
 tr[hidden], .item[hidden] { display: none }
 

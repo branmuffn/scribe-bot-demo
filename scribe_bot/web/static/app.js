@@ -280,13 +280,13 @@
     { path: "/", spot: ".page-head", title: "1. Record",
       text: "Record in Google Recorder as usual. The recording syncs to the M14 in seconds and shows up here on Today." },
     { path: "/", spot: "#needs-you|.page-head", title: "2. Approve",
-      text: "New recordings wait here under Needs you. Each shows how long it takes and what it costs. AI notes gives a summary and tasks; Transcript only is free and stays on the M14." },
+      text: "New recordings wait here under Needs you. Each shows how long it takes and what it costs. Summarize gives a summary and tasks; Transcribe is free and stays on the M14." },
     { path: "conv", spot: "#check-strip", title: "3. Read",
-      text: "Each conversation opens with this strip: what you owe, what others owe you, and anything worth a second look." },
+      text: "Each talk opens with this strip: what you owe, what others owe you, and anything worth a second look." },
     { path: "conv", spot: "#sec-owe .item|#speakers", title: "4. Fix",
       text: "Tap Done when a task is finished. The ⋯ button has Change person, Edit and Remove. Tap a speaker's name to rename them. Every change can be undone." },
     { path: "/search", spot: '.main input[name="q"]', title: "5. Find",
-      text: "Search finds any word in any transcript, task, decision or person, one card per conversation, with filters and your recent searches. Everything else is under ⋯ and ⚙. That's the tour!" },
+      text: "Search finds any word in any transcript, task, decision or person, one card per talk, with filters and your recent searches. Everything else is under ⋯ and ⚙. That's the tour!" },
   ];
   function tourState() { try { return JSON.parse(localStorage.getItem("tour") || "null"); } catch (_) { return null; } }
   function setTour(st) { try { if (st) localStorage.setItem("tour", JSON.stringify(st)); else localStorage.removeItem("tour"); } catch (_) {} }

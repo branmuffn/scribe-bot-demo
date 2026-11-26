@@ -19,7 +19,7 @@
     {# B6 (Brian, 2026-11-25): Trash sits on the talk's top row like Gmail's, not inside ⋯ (one place, so not in both) #}
     {% if not c.deleted_at %}<form method="post" action="/conversations/{{ c.id }}/delete" class="cv-trash">
       <button class="icon-btn" aria-label="Move to Trash" title="Move to Trash">{{ m.icon("trash") }}</button></form>{% endif %}
-    {% call m.menu("this conversation") %}
+    {% call m.menu("this talk") %}
       <div class="menu-label menu-info">{{ (c.started_at or c.created_at)|local_datetime }}{% if recording_title and recording_title != c.title %} · from “{{ recording_title|recorder_title }}”{% endif %}<br>
         {# F28: "Processed only on the M14 · AI cost $0.029" contradicted itself on the demo; a local talk with no AI spend shows no cost #}
         {#- F64 (screen pass): a made-up talk with no AI calls said "example AI cost $0.000"; the cost shows only when there is one #}
@@ -99,7 +99,7 @@
           <input type="hidden" name="special" value="">
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits>
         </form>
-        <form {{ m.hx("/speakers/" ~ s.id ~ "/color", "conv") }} class="swatches" aria-label="Color in this conversation">
+        <form {{ m.hx("/speakers/" ~ s.id ~ "/color", "conv") }} class="swatches" aria-label="Color in this talk">
           <span class="meta">Color</span>{% for hex, l in person_colors.items() %}<button name="color" value="{{ hex }}" class="swatch{{ ' on' if s.color == hex }}" style="background:{{ hex }}" aria-label="{{ l }}" title="{{ l }}"></button>{% endfor %}
           <button name="color" value="" class="btn btn-ghost" title="Back to the automatic color">Auto</button></form>
         {# B3 (Brian, 2026-11-25): the two person links on one compact row (they took two full lines) #}
@@ -117,7 +117,7 @@
 </header>
 
 {% if c.deleted_at %}
-<div class="notice" role="status">{{ m.icon("trash") }}<div style="flex:1"><b>This conversation is in Trash.</b> Its tasks and notes are hidden
+<div class="notice" role="status">{{ m.icon("trash") }}<div style="flex:1"><b>This talk is in Trash.</b> Its tasks and notes are hidden
   everywhere else. It's removed for good on {{ gone_on|local_date }}.</div>
   <form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn btn-primary">Restore</button></form></div>
 {% endif %}
@@ -295,7 +295,7 @@ Decisions:
       <div class="item-sub">{% if processing.started %}<span>{{ processing.started }} → {{ processing.eta if processing.done else ('~' ~ processing.eta) }}</span>{% endif %}
         <span><b>{{ processing.elapsed or '—' }}</b> for a {{ processing.minutes }} min recording</span></div></div></div>
     <div class="item"><div class="item-main"><div class="item-title">AI</div>
-      <div class="item-sub">{% for a in ai_calls %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ a.model }}</span><span>{{ a.calls }} call{{ 's' if a.calls != 1 }} · ${{ '%.3f'|format(a.cost) }}{% if a.last %} · <small>{{ a.last|short_date }}</small>{% endif %}</span>
+      <div class="item-sub">{% for a in ai_calls %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ a.model }}</span><span>{{ a.calls }} call{{ 's' if a.calls != 1 }} · {{ a.cost|usd(3) }}{% if a.last %} · <small>{{ a.last|short_date }}</small>{% endif %}</span>
         {% else %}<span>None yet</span>{% endfor %}</div></div></div>
   </div>
 </details>

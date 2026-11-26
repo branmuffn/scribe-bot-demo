@@ -5,13 +5,13 @@
 {% macro hit(h, title=None) %}
 {% set kinds = {'segment': 'Line', 'summary': 'Summary', 'task': 'Task', 'decision': 'Decision', 'fact': 'Note', 'person': 'Person', 'capture': 'Capture'} %}
 {% if h.kind == 'person' %}{% set href = "/people/" ~ h.ref_id %}{% elif h.kind == 'capture' %}{% set href = "/capture" %}
-{% elif h.cid %}{% set href = "/conversations/" ~ h.cid ~ ('?tx=1#L' ~ h.line if h.line is defined and h.line is not none else '#sec-summary' if h.kind == 'summary' else '') %}
+{% elif h.cid %}{% set href = "/conversations/" ~ h.cid ~ ('?tx=1#L' ~ h.line if h.line is defined and h.line is number else '#sec-summary' if h.kind == 'summary' else '') %}
 {% else %}{% set href = "/tasks" %}{% endif %}
 <div class="item tap-row hit"><div class="item-main">
   <a class="item-link snip" href="{{ href }}">{{ h.snip|e|replace('[[', '<mark>'|safe)|replace(']]', '</mark>'|safe) }}</a>
   <div class="item-sub"><span class="badge badge-outline">{{ kinds.get(h.kind, h.kind|capitalize) }}</span>
     {% if title %}<span>{{ title }}</span>{% endif %}{% if h.said_by %}<span>{{ h.said_by }}</span>{% endif %}
-    {% if h.line is defined and h.line is not none %}<span>line {{ h.line + 1 }}</span>{% endif %}</div>
+    {% if h.line is defined and h.line is number %}<span>line {{ h.line + 1 }}</span>{% endif %}</div>
 </div></div>
 {% endmacro %}
 {% block back %}<a class="back-link" href="/">‹ Today</a>{% endblock %}
@@ -60,7 +60,7 @@
 </div>
 
 {% if conv is defined %}
-<div class="section-head"><h2>“{{ q }}” in {{ conv.title if conv else 'this conversation' }}</h2><span class="count">{{ total }}</span>
+<div class="section-head"><h2>“{{ q }}” in {{ conv.title if conv else 'this talk' }}</h2><span class="count">{{ total }}</span>
   <a class="aside meta" href="{{ request.url.remove_query_params(['conv', 'n']) }}">← All results</a></div>
 <div class="card" id="conv-hits">
   {% for h in hits %}{{ hit(h) }}{% else %}{{ m.empty("search", "Nothing found here") }}{% endfor %}
@@ -71,7 +71,7 @@
   Add another word or a filter to narrow it down.</div>
 <div class="card">{% for h in hits %}{{ hit(h, h.conv_title) }}{% else %}{{ m.empty("search", "Nothing matches these filters") }}{% endfor %}</div>
 {% else %}
-<div class="meta" style="margin-bottom:var(--s2)">{{ counts[tab] }} hit{{ 's' if counts[tab] != 1 }}{% if n_groups %} in {{ n_groups }} conversation{{ 's' if n_groups != 1 }}{% endif %}</div>
+<div class="meta" style="margin-bottom:var(--s2)">{{ counts[tab] }} hit{{ 's' if counts[tab] != 1 }}{% if n_groups %} in {{ n_groups }} talk{{ 's' if n_groups != 1 }}{% endif %}</div>
 {% if other %}
 <div class="card result-group">
   {% for r in other %}{{ hit(r) }}{% endfor %}
@@ -86,7 +86,7 @@
       <div class="item-actions badges">{{ m.area_badge(g.area, g.status in ('done', 'transcribed')) }}<span class="badge badge-outline">{{ g.hits }} hit{{ 's' if g.hits != 1 }}</span></div></div>
     {% for h in g.rows %}{{ hit(h) }}{% endfor %}
     {% if g.hits > g.rows|length %}<a class="item show-more" href="{{ request.url.remove_query_params(['n']).include_query_params(conv=g.id) }}">
-      All {{ g.hits }} in this conversation ›</a>{# F65 (screen pass): links that go on use ›, like the rest of the app (was →) #}{% endif %}
+      All {{ g.hits }} in this talk ›</a>{# F65 (screen pass): links that go on use ›, like the rest of the app (was →) #}{% endif %}
   </div>
   {% else %}{% if not other %}<div class="card">{{ m.empty("search", "Nothing found for “" ~ q ~ "”", "Try fewer or different words, or clear a filter.") }}</div>{% endif %}
   {% endfor %}

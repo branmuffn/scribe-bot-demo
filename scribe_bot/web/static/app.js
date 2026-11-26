@@ -980,7 +980,7 @@
     }, 1500);
   }
   var lastPart = 0;
-  window.ScribeFix = { send: send, regroup: regroup, busy: function () { return !!part || Date.now() - lastPart < 900; } };
+  window.ScribeFix = { send: send, busy: function () { return !!part || Date.now() - lastPart < 900; } };
   function closeMenu() { if (menu) { menu.remove(); menu = null; } }
   function endPart() {
     if (!part) return;
@@ -1770,7 +1770,7 @@ document.addEventListener("change", function (e) {
   }
   function start(id) { on = id; picked = {}; paint(); }
   function stop() { on = null; picked = {}; paint(); }
-  window.ScribePick = { stop: stop, active: function () { return !!on; } };
+  window.ScribePick = { active: function () { return !!on; } };
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
     var s = e.target.closest("[data-pk-start]");

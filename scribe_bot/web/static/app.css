@@ -950,7 +950,6 @@ h1 { font-size: 1.5rem }
 /* ===== Redesign v2 (Brian, 2026-11-21) ===== */
 /* Readable rows: a title may take two lines and the second line wraps instead of being cut off */
 .item-title, .item-link, .r1-t { -webkit-box-orient: vertical; line-height: 1.3 }
-.r1-t > :not(small) { }
 .item-sub { flex-wrap: wrap; white-space: normal; row-gap: 1px }
 .r1-t small { white-space: normal }
 .task-row .item-sub, .unsure-row .item-sub { font-size: .78rem }
@@ -1537,7 +1536,7 @@ html { -webkit-tap-highlight-color: transparent }
 .pp-q { border: 0 !important; outline: 0 !important; box-shadow: none !important; -webkit-appearance: none; appearance: none; background: transparent; flex: 1; font-size: 16px; color: var(--ink); min-width: 0; padding: 0; height: 100% }
 .pp-scroll { position: relative; overflow-y: auto; flex: 1; margin: 8px -16px 0; padding: 0 34px env(safe-area-inset-bottom) 16px; overscroll-behavior: contain }
 .pp-sec { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; font-weight: 700 }
-.pp-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; margin: 0 -10px;
+.pp-row { display: flex; align-items: center; gap: 12px; text-align: left; border: 0; background: none; padding: 8px 10px; margin: 0 -10px;
   width: calc(100% + 20px); border-radius: 12px; color: var(--ink); font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent }
 .pp-row:active { background: color-mix(in srgb, var(--acc) 9%, var(--surface)) }
 @media (hover: hover) { .pp-row:hover { background: color-mix(in srgb, var(--acc) 5%, var(--surface)) } }

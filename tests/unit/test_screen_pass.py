@@ -554,3 +554,29 @@ def test_headings_never_skip_a_level(demo):  # noqa: F811
             bad.append((urlsplit(u).path, "starts at h%d" % levels[0]))
         bad += [(urlsplit(u).path, "h%d then h%d" % (a, b)) for a, b in zip(levels, levels[1:]) if b > a + 1]
     assert len(seen) > 25 and not bad, bad
+
+
+def test_every_open_fold_turns_its_chevron(demo):  # noqa: F811
+    """F127 (2026-11-26, 500 dark pass): Help's open "What each button does" still pointed › like a closed fold; only
+    Help had no [open] rule. Every fold with a chevron, on every page, turns it when open."""
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    seen, todo, classes = set(), list(START), set()
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        for d in re.finditer(r'<details\b([^>]*)>\s*<summary\b[^>]*>(.*?)</summary>', r.text, re.S):
+            if 'class="chev"' in d.group(2):
+                c = re.search(r'class="([^"]*)"', d.group(1))
+                classes.add(c.group(1) if c else "")
+    assert len(classes) >= 5, classes
+    for c in classes:
+        assert any(re.search(r"\.%s\[open\][^{]*\.chev[^{]*\{[^}]*rotate" % re.escape(t), css) for t in c.split()), c

@@ -1101,6 +1101,7 @@ form.toolbar:has(#people-q) { gap: 6px } form.toolbar:has(#people-q) .btn { padd
 /* Help: short folding sections; "what each button does" as a tidy list */
 .help-sec > summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; padding: 6px 0 } .help-sec > summary::-webkit-details-marker { display: none }
 .help-sec > summary h2 { margin: 0; font-size: 1.05rem }
+.help-sec > summary .chev .icon { transition: transform .18s } .help-sec[open] > summary .chev .icon { transform: rotate(90deg) }   /* F127: the open fold still pointed › like a closed one */
 .help-dl h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 6px } .help-dl h3:first-child { margin-top: 0 }
 .help-dl dl { margin: 0; display: grid; gap: 8px } .help-dl dt { font-weight: 650 } .help-dl dd { margin: 0 0 2px; color: var(--ink-2); font-size: .92rem; line-height: 1.4 }
 /* Review / Needs you: a speaker to name is one row (tap = sheet with the clip) */

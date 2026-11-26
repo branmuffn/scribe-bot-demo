@@ -41,12 +41,6 @@ DEFAULT_PROFILE = "all_claude"
 MODEL_NAMES = {"claude-sonnet-5-5": "Claude Sonnet", "claude-haiku-5-5": "Claude Haiku", "gemini-4-argon": "Gemini Argon",
                "gemini-3.8-flash": "Gemini Flash", "gpt-6.1-sol": "GPT Sol", "gpt-6-luna": "GPT Luna"}
 
-
-def describe(key: str) -> str:
-    """"Budget Mix: Claude Haiku → Gemini Flash → GPT Luna": which models a profile uses for summaries, in the order
-    tried (Brian, 2026-11-20: the names alone didn't say which models they were)."""
-    chain = PROFILES[key]["chains"]["extract"]
-    return f"{PROFILES[key]['label']}: " + " → ".join(MODEL_NAMES.get(m, m) for _, m in chain)
 # Cheapest model per provider, for the Accounts & Keys "Test" button.
 PING_MODELS = {"anthropic": "claude-haiku-5-5", "google": "gemini-3.5-flash-lite", "openai": "gpt-6-luna"}
 TYPE_ORDER = {"free": 0, "credits": 1, "paid": 2}

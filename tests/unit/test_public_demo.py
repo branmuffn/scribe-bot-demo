@@ -193,7 +193,7 @@ def test_pages_pass_every_value_their_templates_need(demo):
             assert demo.get(p).status_code == 200, p
     finally:
         web.templates.env.undefined = old
-    assert set(seen) <= {"common", "on_today", "people", "trash"}, dict(seen)
+    assert set(seen) <= {"common", "people", "trash"}, dict(seen)
 
 
 def test_demo_has_one_claude_account(demo):

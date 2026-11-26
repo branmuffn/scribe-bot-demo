@@ -1,11 +1,11 @@
 {# Needs you: the M14 line, review items (recordings to OK, speakers to name, inbox, cloud approvals, glossary), older
-   recordings and old tasks. Shown on Today (on_today) and as Review › Open (old Discord links open /review); Review ›
+   recordings and old tasks, shown as Review › Open (old Discord links open /review); Review ›
    Snoozed shows the snoozed review items the same way, ready to act on. #}
 {% import "macros.html" as m with context %}
 {% if m14 %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/status"><span class="status-dot bad"></span>The M14 needs attention</a>
   <div class="item-sub">{{ m14|join(' · ')|capitalize }}</div></div>
   <div class="item-actions">{{ m.snooze_menu("/needs/m14/later") }}</div></div></div></section>{% endif %}
-{% if not (speakers or inbox or approvals or glossary or m14 or stale or reminders) %}{% if not on_today and tab == 'open' %}
+{% if not (speakers or inbox or approvals or glossary or m14 or stale or reminders) %}{% if tab == 'open' %}
 <div class="card">{{ m.empty("check-circle", "All caught up", "New recordings, speakers to name, unsure tasks and glossary suggestions appear here.") }}</div>{% endif %}
 {% else %}
 
@@ -15,7 +15,7 @@
   <div class="card" data-cap="3" data-all="/review">{% for t in reminders %}{{ m.task_row(t, people, show_owner=True, show_conv=True, reminder=True) }}{% endfor %}</div>
 </section>
 {% endif %}
-{% if not on_today and inbox_count %}
+{% if inbox_count %}
 <section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/inbox">{{ inbox_count }} recording{{ 's' if inbox_count != 1 }} waiting in Inbox</a>
   <div class="item-sub">Open the Inbox to choose Summarize or Transcribe.</div></div><span class="chev meta">{{ m.icon("chev") }}</span></div></div></section>
 {% endif %}

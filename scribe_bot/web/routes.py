@@ -583,7 +583,6 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
     overdue_theirs = [{**dict(t), "nudge": nudge(t)} for t in overdue_theirs]
     cap = float(setting(conn, "global_cap_usd", str(DEFAULT_CAP_USD)))
     month = spend(conn, month_start())
-    awaiting = conn.execute("SELECT count(*) FROM recording WHERE status = 'awaiting_approval'").fetchone()[0]
     needs = needs_you(conn, area)
     n_inbox = inbox_count(conn)
     inbox_hours = (conn.execute("SELECT coalesce(sum(duration_s), 0) FROM recording WHERE status IN "
@@ -598,47 +597,13 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
                              f"AND {LIVE_TASK}", args).fetchone()[0]
     return render(request, "today.html", "today", conn, overnight=overnight_card(conn), due=due, overdue_theirs=overdue_theirs, **needs, week=week(request, conn),
                   recent=recent, n_waiting=n_waiting,
-                  next_up=next_up(due, needs, n_inbox, today, inbox_hours), n_inbox=n_inbox, inbox_hours=inbox_hours,
-                  on_today=True, people=people(conn), cleanup=cleanup_devices.counts(conn),
+                  n_inbox=n_inbox, inbox_hours=inbox_hours, people=people(conn), cleanup=cleanup_devices.counts(conn),
                   cleanup_ask=conn.execute("SELECT device, title FROM device_cleanup WHERE status = 'ask' ORDER BY recorded_at").fetchall(),
-                  jobs=progress.active_jobs(conn), awaiting=awaiting, month_spend=month, cap=cap,
+                  jobs=progress.active_jobs(conn), month_spend=month, cap=cap,
                   spend_alert=cap and month / cap >= 0.8, worker=worker_status(request.app.state.cfg),
                   demo_mode=request.app.state.cfg.demo,
                   paused=setting(conn, "pipeline_paused", "0") == "1", show_help=setting(conn, "help_dismissed") != "1",
                   tour_conv=tour_conversation(conn))
-
-
-def next_up(due: list, needs: dict, n_inbox: int, today: str, inbox_hours: float = 0) -> dict | None:
-    """Today's one "Next up" card (Brian, 2026-11-20): the single most useful thing to do now. In order: your
-    oldest late task, a reminder that's due, a speaker to name, a task due in the next 2 days, then the Inbox."""
-    def task(t, kicker):
-        try:   # due can be words ("before Nov 15th", "Friday"): show those as written (crashed Today, 2026-11-21)
-            d = date.fromisoformat(t["due"][:10]) if t["due"] else None
-        except ValueError:
-            d = None
-        when = ("" if not t["due"] else f"due {t['due']}" if d is None else "late" if t["due"] < today
-                else "due today" if t["due"] == today else f"due {d:%a %b %-d}")
-        return {"kicker": kicker, "title": t["title"], "sub": " · ".join(x for x in (when, t["conv_title"]) if x),
-                "done": f"/tasks/{t['id']}/done", "href": f"/conversations/{t['conversation_id']}" if t["conversation_id"] else "/tasks"}
-    late = [t for t in due if t["due"] and t["due"] <= today]
-    if late:
-        return task(late[0], "Next up · your task")
-    if needs["reminders"]:
-        return task(needs["reminders"][0], "Next up · reminder")
-    if needs["speakers"]:
-        x = needs["speakers"][0]
-        return {"kicker": "Next up · who is this?", "title": f"Name a speaker in “{x['r']['conv_title'] or 'a talk'}”",
-                "sub": f"{x['s']['talk_seconds'] / 60:.1f} min of talking" + (f" · sounds like {x['payload']['guess']}"
-                                                                           if x["payload"].get("guess") else ""),
-                "href": "#needs-you", "cta": "Name them"}
-    soon = (date.fromisoformat(today) + timedelta(days=2)).isoformat()
-    nxt = [t for t in due if t["due"] and t["due"][:10] <= soon]
-    if nxt:
-        return task(nxt[0], "Next up · your task")
-    if n_inbox:
-        return {"kicker": "Next up · Inbox", "title": f"{n_inbox} recording{'s' if n_inbox != 1 else ''} waiting for your OK",
-                "sub": f"{inbox_hours:.1f} h of audio · sort, filter and read transcripts there", "href": "/inbox", "cta": "Open"}
-    return None
 
 
 def needs_you(conn: sqlite3.Connection, area: str) -> dict:
@@ -738,8 +703,7 @@ def demo_remove(conn: sqlite3.Connection = Conn):
 @router.get("/progress/active", response_class=HTMLResponse)
 def progress_fragment(request: Request, conn: sqlite3.Connection = Conn):
     """The Today page's live Processing card (HTMX polls this every 15 s while something is running)."""
-    awaiting = conn.execute("SELECT count(*) FROM recording WHERE status = 'awaiting_approval'").fetchone()[0]
-    return templates.TemplateResponse(request, "_progress.html", {"jobs": progress.active_jobs(conn), "awaiting": awaiting})
+    return templates.TemplateResponse(request, "_progress.html", {"jobs": progress.active_jobs(conn)})
 
 
 @router.get("/progress/talks", response_class=HTMLResponse)
@@ -2660,8 +2624,7 @@ def review_data(conn: sqlite3.Connection, area: str = "all", snoozed: bool = Fal
         r["est"] = {**e, "cost": ai_cost(r["duration_s"])}
     return {"speakers": speakers, "inbox": inbox, "approvals": approvals, "glossary": glossary, "recordings": recordings,
             "older": older, "recordings_total": totals(recordings), "older_total": totals(older),
-            "m14_wait": progress.queue_wait_s(conn, r=rt) if recordings or older else 0,
-            "ai_step_s": rt["ai_extract"][1] if recordings or older else 0}
+            "m14_wait": progress.queue_wait_s(conn, r=rt) if recordings or older else 0}
 
 
 def review_label(conn: sqlite3.Connection, r: sqlite3.Row) -> tuple[str, str]:
@@ -2768,7 +2731,7 @@ def inbox_page(request: Request, sort: str = "newest", show: str = "all", has: s
                   rng=rng, longest=longest, n_on=len(chosen) + (lo is not None or hi is not None) + bool(start or end),
                   chosen=chosen, fx=inbox_svc.FX, chips=chips, clear_url=url(**{k: "" for k in [*chosen, *rng]}),
                   sorts=inbox_svc.SORTS, hours=sum(x["duration_s"] or 0 for x in items) / 3600,
-                  m14_wait=data["m14_wait"], ai_step_s=data["ai_step_s"], meeting_types=prompts.MEETING_TYPES,
+                  m14_wait=data["m14_wait"], meeting_types=prompts.MEETING_TYPES,
                   recordings_total=data["recordings_total"], n_ready=len(data["recordings"]))
 
 
@@ -2851,7 +2814,7 @@ def inbox_transcript(request: Request, rid: int, conn: sqlite3.Connection = Conn
         raise HTTPException(404, "No transcript for that recording")
     text = inbox_svc.read(it["transcript"])
     return render(request, "inbox_transcript.html", "inbox", conn, it=it, turns=inbox_svc.parse(text),
-                  words=len(text.split()), meeting_types=prompts.MEETING_TYPES)
+                  words=len(text.split()))
 
 
 @router.post("/inbox/{rid}/transcript")
@@ -3595,7 +3558,7 @@ def settings_page(request: Request, group: str = "home", tested: int | None = No
                   settings_groups=settings_home(request, conn, ctx),
                   providers=(provs := accounts_by_provider(request, conn)), summary_templates=templates_,
                   ai=ai_cards(conn, provs, ai_router.profile(conn)) if group == "ai" else None,
-                  account_types=ACCOUNT_TYPES, profiles=ai_router.PROFILES, describe_profile=ai_router.describe, profile=ai_router.profile(conn),
+                  account_types=ACCOUNT_TYPES, profile=ai_router.profile(conn),
                   paused=setting(conn, "pipeline_paused", "0") == "1",
                   quick_titles=setting(conn, "quick_titles", "1") != "0",
                   added={"ok": bool(ok), "message": msg} if added else None,

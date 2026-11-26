@@ -6,7 +6,6 @@ from datetime import datetime
 
 from scribe_bot.core import db, queue
 from scribe_bot.pipeline import control, recording
-from scribe_bot.web.routes import next_up
 from scribe_bot.worker import resume_if_due
 from test_web_pages import env, one  # noqa: F401
 
@@ -17,9 +16,6 @@ def test_today_survives_a_due_date_written_in_words(env):
     conn.execute("UPDATE task SET due = 'before Nov 15th', remind_at = '2020-01-01T00:00:00+00:00', status = 'open', "
                  "owner_person_id = 1 WHERE id = ?", (tid,))
     assert client.get("/").status_code == 200
-    card = next_up([], {"reminders": [{"id": 1, "title": "T", "due": "before Nov 15th", "conv_title": None,
-                                       "conversation_id": None}], "speakers": []}, 0, "2026-11-21")
-    assert card["sub"] == "due before Nov 15th"
 
 
 def test_a_paused_stage_goes_back_to_waiting_without_using_an_attempt(env, tmp_path):

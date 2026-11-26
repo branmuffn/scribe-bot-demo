@@ -373,6 +373,13 @@ def test_a_line_link_moves_the_one_k_mark():
     assert 'ls.forEach(function (l) { l.classList.remove("cursor"); });' in js
 
 
+def test_the_linked_line_drops_its_tint_once_k_moves_on():
+    """F119 (live check): the #L5 tint stayed on line 6 after k marked line 7, so two lines looked marked."""
+    css = _static("app.css")
+    assert ".lines:has(.line.cursor) .line:target:not(.cursor) { background: none; box-shadow: none }" in css
+    assert css.index(".line:target {") < css.index(".line:target:not(.cursor)")   # later rule wins
+
+
 def test_copy_says_it_copied_and_keeps_the_buttons_icon():
     """F112 (1024 pass): "c" copies the summary through a button inside the shut ⋯ menu, so "Copied ✓" showed nowhere.
     F113: putting the label back as text dropped the button's icon, and a second tap kept "Copied ✓" for good."""

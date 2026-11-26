@@ -256,3 +256,91 @@ def test_trash_and_not_sorted_have_their_own_heading(demo):
     assert "<h1>Not sorted</h1>" in unsorted and "<h1>Talks</h1>" not in unsorted
     talks = demo.get("/conversations").text
     assert "<h1>Talks</h1>" in talks and 'class="fab"' in talks
+
+
+def test_merging_shows_what_each_person_brings(demo):
+    """F98 (500 pass): Merge 2 people showed counts only on the second name ("4 talks, 0 tasks, 1 note", though the
+    People list said "you owe 2"), so the first name had none and ticking another left them on the wrong row. Every
+    row now has its own counts, in the People list's words, and the single merge says whose tasks move."""
+    page = demo.get("/people/merge-many?ids=2,3").text
+    assert page.count('class="meta pick-sub"') == 2
+    assert "tasks," not in page and " 0 " not in re.sub(r"<[^>]+>", " ", page.split("<form", 1)[1].split("</form>", 1)[0])
+    assert re.search(r'pick-sub">\d+ talks?', page)
+    me = demo.get("/people/merge-many?ids=1,2").text
+    assert me.count('class="meta pick-sub"') == 2 and "owes you" not in me.split("pick-sub", 2)[1]
+    assert "they owe you," in _tpl("merge.html")
+
+
+def test_a_speaker_name_opens_on_the_first_tap_and_its_menu_matches(demo):
+    """F99 (500 pass): with a line's ⋯ fix panel open, tapping a speaker's name only closed the panel; the name
+    needed a second tap. F100: its "Who said this line?" menu was drawn inverted (white in Dark, black in Light),
+    unlike every other menu."""
+    js = _static("app.js")
+    closer = js.split('var KINDS = "details.speaker-chip', 1)[1].split("})();", 1)[0]
+    assert 'if (t.closest(".lines .who, .who-pin-btn, [data-open-sheet]")) return;' in closer
+    assert ".split-bar.fix-menu { background: var(--surface); color: var(--ink); border: 1px solid var(--line) }" in _static("app.css")
+
+
+def test_the_reading_pane_clears_new_says_its_layout_and_fits_the_people_bar(demo):
+    """1440 pass: a talk opened in the pane loses its New badge (F101), the pane's Layout buttons say which one is on
+    from the start (F102), the empty People pane talks about people (F103), the People bar fits beside the pane (F104)."""
+    ui = _static("ui.js")
+    assert 'row.querySelectorAll(".badge-new").forEach(function (x) { x.remove(); });' in ui
+    assert 'b.setAttribute("aria-pressed", html.dataset.pane === k[0]);' in ui
+    assert 'x.setAttribute("aria-pressed", on); });' in ui
+    assert '"Pick a recording to see it here." : "Pick a task to see it here."' in ui
+    people = demo.get("/people", headers={"accept": "text/html"}).text
+    assert "Pick a person to see them here." in people and "to read it here" not in people
+    talks = demo.get("/conversations", headers={"accept": "text/html"}).text
+    assert "Pick a talk to read it here." in talks
+    assert "@media (min-width: 960px) { .people-tools .lb-q { flex-basis: 140px } }" in _static("app.css")
+
+
+def test_an_empty_grow_spacer_has_no_minimum_width(demo):
+    """F105 (1024 pass): the reading pane's bar is "Open full page", an empty .grow spacer, Layout and ✕. The spacer kept
+    .grow's 10rem minimum, so in a ~310px pane Layout and ✕ sat past the right edge. A talk's bar (Talks, spacer,
+    Summarize, ⋯) and the tour's buttons have the same spacer."""
+    css = _static("app.css")
+    assert ".grow { flex: 1; min-width: 10rem }" in css and ".grow:empty { min-width: 0 }" in css
+    assert css.index(".grow:empty { min-width: 0 }") > css.index(".grow { flex: 1; min-width: 10rem }")
+    for name in ("base.html", "conversation.html"):
+        assert '<span class="grow"></span>' in _tpl(name)
+
+
+def test_no_line_comment_swallows_code():
+    """F102 slip: a comment added at the end of a line ran on into the next statement, so `g.appendChild(b)` became
+    part of the comment and the Layout buttons were never built. No trailing // comment may hold a statement."""
+    import glob
+    code = re.compile(r'(\w\.\w+\s*=\s*[^=].*;|\w\([^)]*\);)')
+    found = []
+    for f in sorted(glob.glob(str(WEB / "static" / "*.js"))):
+        for i, line in enumerate(open(f, encoding="utf-8"), 1):
+            m = re.search(r"\s{2,}//\s(.*)$", line)
+            if m and code.search(m.group(1)):
+                found.append(f"{f.rsplit('/', 1)[1]}:{i}")
+    assert found == []
+
+
+def test_esc_closes_the_pane_unless_a_pop_up_is_open():
+    """F106 (1024 pass): Esc closed the reading pane only when no <details> at all was open, so with the sidebar's
+    More places open it never closed. F107: Esc pressed inside the pane closes it too. F108: on a short screen with
+    More open, Add recording was squashed from 60 to 38 px."""
+    ui = _static("ui.js")
+    assert 'document.querySelector("details[open], dialog[open], .picking")' not in ui
+    pops = re.search(r"var POPS = \[([^\]]*)\]", ui).group(1)
+    kinds = re.findall(r'"([\w-]+)"', pops)
+    for k in ("row-menu", "fx-sheet", "edit", "speaker-chip", "filters"):
+        assert k in kinds
+    for k in ("side-more", "fold-sec", "q-more", "section"):   # folds that stay open are not pop-ups
+        assert k not in kinds
+    assert "parent.postMessage({ sbPaneEsc: 1 }, location.origin)" in ui and "e.data.sbPaneEsc) escClose()" in ui
+    assert "closePane(); if (at) at.focus();" in ui
+    assert ".sidebar > * { flex-shrink: 0 }" in _static("app.css")
+
+
+def test_the_empty_pane_shows_the_layout_switch_not_a_dead_close():
+    """F109 (1024 pass): with nothing open, the Talks/People pane showed a ✕ that did nothing. It shows the Layout switch
+    instead, like the empty pane on Inbox, Tasks and Today."""
+    css = _static("app.css")
+    assert ".rpane.empty .rpane-bar > :not(.grow):not(.dp-layout) { display: none }" in css
+    assert ":not(.grow):not([data-rpane-close]) { display: none }" not in css

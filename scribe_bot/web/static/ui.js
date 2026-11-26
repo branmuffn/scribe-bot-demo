@@ -77,7 +77,7 @@
   function openIn(href, row) {
     var p = pane(), f = frame(); if (!p || !f) return;
     document.querySelectorAll("#conv-list .item.current, #people-list .item.current").forEach(function (x) { x.classList.remove("current"); });
-    if (row) row.classList.add("current");
+    if (row) { row.classList.add("current"); row.querySelectorAll(".badge-new").forEach(function (x) { x.remove(); }); }   // F101: opened, so no longer New
     p.classList.remove("empty"); f.src = href; p.dataset.href = href;
     var full = p.querySelector("[data-rpane-full]"); if (full) full.href = href;
   }
@@ -99,8 +99,24 @@
     var full = closest(e.target, "[data-rpane-full]");
     if (full) { e.preventDefault(); var p = pane(); if (p && p.dataset.href) location.href = p.dataset.href; }
   });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && paneOn() && pane() && !pane().classList.contains("empty") && !document.querySelector("details[open], dialog[open], .picking")) closePane();
+  /* F106 (1024 pass): Esc closed the pane only while every <details> on the page was shut, so with the sidebar's More
+     places open (or a folded list group) it never closed. Only a pop-up that is open holds it back now.
+     F107: Esc pressed inside the pane (after a click there) closes it too, and the keys go back to the list. */
+  var POPS = ["speaker-chip", "tag-add", "line-edit", "edit", "filters", "row-menu", "chip-menu", "ts-row", "fx-sheet"]
+    .map(function (k) { return "details." + k + "[open]"; }).join(", ") + ", dialog[open], .picking";
+  function escClose() {
+    if (!paneOn() || !pane() || pane().classList.contains("empty") || document.querySelector(POPS)) return;
+    var at = document.querySelector("#conv-list .item.current a.item-link, #people-list .item.current a.item-link");
+    closePane(); if (at) at.focus();
+  }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") escClose(); });
+  if (inPane) document.addEventListener("keydown", function (e) {   // capture: before app.js shuts what's open
+    var a = document.activeElement;
+    if (e.key !== "Escape" || document.querySelector(POPS) || (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))) return;
+    try { parent.postMessage({ sbPaneEsc: 1 }, location.origin); } catch (_) {}
+  }, true);
+  if (!inPane) window.addEventListener("message", function (e) {
+    if (e.origin === location.origin && e.data && e.data.sbPaneEsc) escClose();
   });
   // a page inside the pane that leaves its talk or person (a delete, a merge): the list may have changed, so reload it
   document.addEventListener("load", function (e) {
@@ -727,7 +743,7 @@ document.addEventListener("click", function (e) {
       var inbox = !!document.getElementById("inbox-list"), p = document.createElement("aside");
       p.className = "dpane"; p.setAttribute("aria-hidden", "true");
       p.innerHTML = '<svg class="icon"><use href="#i-' + (inbox ? "inbox" : "check") + '"/></svg><span></span>';
-      p.lastChild.textContent = inbox ? "Pick a recording to see it here" : "Pick a task to see it here";
+      p.lastChild.textContent = inbox ? "Pick a recording to see it here." : "Pick a task to see it here.";   // F103: same full stop as Talks and People
       var d = document.createElement("div"); d.className = "dpane-drag"; d.title = "Drag to resize";
       document.body.appendChild(p); document.body.appendChild(d);
     }
@@ -779,7 +795,8 @@ document.addEventListener("click", function (e) {
     var g = document.createElement("span"); g.className = "dp-layout"; g.setAttribute("role", "group"); g.setAttribute("aria-label", "Layout");
     [["none", none || "Pop up"], ["right", "Right"], ["below", "Below"]].forEach(function (k) {
       var b = document.createElement("button"); b.type = "button"; b.dataset.paneSet = k[0]; b.title = k[1]; b.setAttribute("aria-label", "Layout: " + k[1]);
-      b.className = "dp-lay dp-lay-" + k[0] + (html.dataset.pane === k[0] ? " on" : ""); b.innerHTML = "<i></i>"; g.appendChild(b);
+      b.className = "dp-lay dp-lay-" + k[0] + (html.dataset.pane === k[0] ? " on" : ""); b.setAttribute("aria-pressed", html.dataset.pane === k[0]);   // F102: says which layout is on from the start
+      b.innerHTML = "<i></i>"; g.appendChild(b);
     });
     return g;
   }
@@ -803,7 +820,7 @@ document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".dp-lay"); if (!b) return;
     var open = document.querySelector(SHEETS.split(", ").map(function (s) { return s + "[open]"; }).join(", "));
     setTimeout(function () {   // the sheet stays open in its new place
-      document.querySelectorAll(".dp-lay").forEach(function (x) { x.classList.toggle("on", x.dataset.paneSet === html.dataset.pane); });
+      document.querySelectorAll(".dp-lay").forEach(function (x) { var on = x.dataset.paneSet === html.dataset.pane; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); });
       if (open) { open.open = true; addClose(open); }
       split(); refit();
     }, 0);

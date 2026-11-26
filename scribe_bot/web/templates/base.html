@@ -167,7 +167,7 @@
   <div class="rpane-bar"><a class="btn btn-ghost btn-sm" data-rpane-full href="#">Open full page {{ m.icon("chev") }}</a>{# F50: same tab, so › like every same-tab Open (↗ is for new tab) #}<span class="grow"></span>
     <button type="button" class="icon-btn" data-rpane-close aria-label="Close the preview" title="Close the preview">{{ m.icon("x") }}</button></div>
   <iframe name="rpane" title="Preview" data-rpane-frame></iframe>
-  <div class="rpane-empty"><span>{{ m.icon("chat") }}</span><p>Pick {{ 'a person' if request.url.path == '/people' else 'a talk' }} to read it here.</p></div>
+  <div class="rpane-empty">{% if request.url.path == '/people' %}<span>{{ m.icon("users") }}</span><p>Pick a person to see them here.</p>{% else %}<span>{{ m.icon("chat") }}</span><p>Pick a talk to read it here.</p>{% endif %}</div>
 </aside>{% endif %}
 </body>
 </html>

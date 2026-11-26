@@ -333,7 +333,7 @@ def test_esc_closes_the_pane_unless_a_pop_up_is_open():
         assert k in kinds
     for k in ("side-more", "fold-sec", "q-more", "section"):   # folds that stay open are not pop-ups
         assert k not in kinds
-    assert "parent.postMessage({ sbPaneEsc: 1 }, location.origin)" in ui and "e.data.sbPaneEsc) escClose()" in ui
+    assert "parent.postMessage({ sbPaneEsc: 1 }, location.origin)" in ui and "e.data.sbPaneEsc) { popOpen = false; escClose(); }" in ui
     assert "closePane(); if (at) at.focus();" in ui
     assert ".sidebar > * { flex-shrink: 0 }" in _static("app.css")
 
@@ -344,3 +344,45 @@ def test_the_empty_pane_shows_the_layout_switch_not_a_dead_close():
     css = _static("app.css")
     assert ".rpane.empty .rpane-bar > :not(.grow):not(.dp-layout) { display: none }" in css
     assert ":not(.grow):not([data-rpane-close]) { display: none }" not in css
+
+
+def test_j_and_k_load_the_transcript_and_carry_on_from_the_marked_line():
+    """F110 (1024 pass): the transcript loads when its section opens, so before that j/k did nothing. F111: after a
+    "line 6" link, k jumped back to line 1, and e couldn't fix the line the link marked."""
+    js = _static("app.js")
+    assert '(e.key === "j" || e.key === "k") && (lines().length || txLater())' in js
+    assert "if (!ls.length) { pend = k; return; }" in js
+    assert 'addEventListener("htmx:afterSettle", function () { if (pend && lines().length)' in js
+    assert 'var mk = document.querySelector(".line.cursor");' in js
+    assert 'e.key === "e" && document.querySelector(".line.cursor")' in js
+    assert "cursor >= 0 && lines()[cursor]" not in js
+
+
+def test_copy_says_it_copied_and_keeps_the_buttons_icon():
+    """F112 (1024 pass): "c" copies the summary through a button inside the shut ⋯ menu, so "Copied ✓" showed nowhere.
+    F113: putting the label back as text dropped the button's icon, and a second tap kept "Copied ✓" for good."""
+    js = _static("app.js")
+    assert "var t = copy.textContent;" not in js
+    assert "copy.innerHTML = copy.dataset.was" in js and "if (!copy.dataset.was) copy.dataset.was = copy.innerHTML;" in js
+    assert '!copy.getClientRects().length) ScribeToast(' in js
+    assert "writeText(text.trim()).then(done, function () {" in js
+    assert "window.ScribeToast = note;" in _static("ui.js")
+
+
+def test_esc_with_a_menu_open_closes_only_the_menu_not_the_pane():
+    # F114: app.js loads first and shuts Quick settings on Esc before ui.js looked, so the pane closed too
+    ui = _static("ui.js")
+    assert 'window.addEventListener("keydown", function (e) { if (e.key === "Escape") popOpen = !!document.querySelector(POPS) || typing(); }, true);' in ui
+    assert "|| popOpen || document.querySelector(POPS)) return;" in ui
+    assert "{ popOpen = false; escClose(); }" in ui   # Esc inside the pane isn't held back by an old note
+    assert ".ctx-menu" in ui.split("var POPS =")[1].split("var popOpen")[0]   # a right-click menu holds the pane too
+    base = (Path(__file__).parents[2] / "scribe_bot/web/templates/base.html").read_text()
+    assert base.index("/static/app.js") < base.index("/static/ui.js")   # why the note is needed
+
+
+def test_esc_while_typing_in_a_list_box_leaves_the_pane_open():
+    # F115: Esc in the top search (after "/") closed the reading pane; inside the pane a box already held it back
+    ui = _static("ui.js")
+    assert "function typing() { var a = document.activeElement;" in ui
+    assert "|| typing(); }, true);" in ui
+    assert 'if (e.key !== "Escape" || document.querySelector(POPS) || typing()) return;' in ui   # same rule inside the pane

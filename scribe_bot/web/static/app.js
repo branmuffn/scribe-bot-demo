@@ -101,8 +101,16 @@
       var src = document.querySelector(copy.dataset.copy);
       if (!src) return;
       var text = src.value !== undefined ? src.value : src.textContent;
-      var done = function () { var t = copy.textContent; copy.textContent = "Copied ✓"; setTimeout(function () { copy.textContent = t; }, 1600); };
-      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text.trim()).then(done);
+      /* F112 (1024 pass): "c" copied the summary from a button inside a shut menu, so "Copied ✓" showed nowhere; a note
+         shows instead. F113: putting the label back as plain text dropped the button's icon (and a second tap within
+         1.6 s kept "Copied ✓" for good). */
+      var done = function () {
+        if (!copy.dataset.was) copy.dataset.was = copy.innerHTML;
+        copy.textContent = "Copied ✓"; clearTimeout(copy._t);
+        copy._t = setTimeout(function () { copy.innerHTML = copy.dataset.was; delete copy.dataset.was; }, 1600);
+        if (window.ScribeToast && !copy.getClientRects().length) ScribeToast(copy.dataset.copy === "#recap" ? "Summary copied" : "Copied");
+      };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text.trim()).then(done, function () { if (window.ScribeToast) ScribeToast("Couldn't copy"); });
       else { src.hidden = false; src.select(); document.execCommand("copy"); src.hidden = true; done(); }
     }
   });
@@ -182,8 +190,25 @@
   }
 
   // Keyboard shortcuts (desktop): space play/pause · j/k next/previous line · / search · ? help
-  var cursor = -1;
   var GO = { h: "/", c: "/conversations", t: "/tasks", p: "/people", r: "/review", s: "/settings" }, goAt = 0;
+  /* F110 (1024 pass): the transcript loads when its section opens, so before that j/k found no lines and did nothing.
+     Now the key opens the section and moves to the line once the lines arrive.
+     F111: after a "line 6" link, k went back to line 1; it now carries on from the marked line. */
+  var pend = null;
+  function txLater() { var b = document.getElementById("tx-body"); return !!(b && b.hasAttribute("hx-get")); }
+  function step(k) {
+    var ls = lines(), a = player();
+    openTranscript();
+    if (!ls.length) { pend = k; return; }
+    var mk = document.querySelector(".line.cursor");   // F111: start from the line a "line 6" link marked, not line 1
+    var cursor = mk ? ls.indexOf(mk) : current ? ls.indexOf(current) : -1;
+    cursor = Math.max(0, Math.min(ls.length - 1, cursor + (k === "k" ? 1 : -1)));   // Brian: k = next, j = previous
+    ls.forEach(function (l) { l.classList.remove("cursor"); });
+    ls[cursor].classList.add("cursor");
+    ls[cursor].scrollIntoView({ block: "center" });
+    if (a) a.currentTime = parseFloat(ls[cursor].dataset.start);
+  }
+  document.addEventListener("htmx:afterSettle", function () { if (pend && lines().length) { var k = pend; pend = null; step(k); } });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {   // close open edit panels (works while typing in them too)
       var open = document.querySelectorAll(".line-edit[open], details.edit[open], .speaker-chip[open], .row-menu[open]");
@@ -198,23 +223,16 @@
     if (e.key === " " && a && !(document.activeElement && document.activeElement.tagName === "BUTTON")) {
       e.preventDefault();
       if (a.paused) a.play(); else a.pause();
-    } else if ((e.key === "j" || e.key === "k") && lines().length) {
-      var ls = lines();
-      openTranscript();
-      if (current && cursor < 0) cursor = ls.indexOf(current);
-      cursor = Math.max(0, Math.min(ls.length - 1, cursor + (e.key === "k" ? 1 : -1)));   // Brian: k = next, j = previous
-      ls.forEach(function (l) { l.classList.remove("cursor"); });
-      ls[cursor].classList.add("cursor");
-      ls[cursor].scrollIntoView({ block: "center" });
-      if (a) a.currentTime = parseFloat(ls[cursor].dataset.start);
+    } else if ((e.key === "j" || e.key === "k") && (lines().length || txLater())) {
+      step(e.key);
     } else if (e.key === "/") {
       e.preventDefault();
       var q = document.querySelector('input[name="q"]');
       if (q) q.focus(); else location.href = "/search";
     } else if (e.key === "g") {
       goAt = Date.now();
-    } else if (e.key === "e" && cursor >= 0 && lines()[cursor]) {
-      var ed = lines()[cursor].querySelector(".line-edit");
+    } else if (e.key === "e" && document.querySelector(".line.cursor")) {   // F111: also the line a link marked
+      var ed = document.querySelector(".line.cursor").querySelector(".line-edit");
       if (ed) { e.preventDefault(); ed.open = true; var f = ed.querySelector("select, textarea"); if (f) f.focus(); }
     } else if (e.key === "c") {
       var cp = document.querySelector('[data-copy="#recap"]');

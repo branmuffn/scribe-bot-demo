@@ -1,5 +1,6 @@
 """Web app pages and actions against a temp database seeded with synthetic rows (never real data)."""
 import json
+import re
 import subprocess
 from datetime import date, timedelta
 
@@ -1497,7 +1498,7 @@ def test_person_picker_data(env):
     assert alex["sub"].startswith("In 1 talk")
     assert any(p["name"] == "Alex Example" for p in j["suggested"]) and len(j["suggested"]) <= 5
     css = client.get("/static/app.css").text
-    assert "--chev-r:" in css and "@media (hover: hover) { .tap-row:hover" in css   # crisp arrows; no sticky square hover on phones
+    assert "--chev-r:" in css and re.search(r"@media \(hover: hover\) \{[^{}]*\.tap-row:hover", css)   # crisp arrows; no sticky square hover on phones
 
 
 def test_prefetch_does_not_mark_a_talk_opened(env):

@@ -778,3 +778,74 @@ def test_f134_a_picked_segment_stands_out_from_its_track_in_both_themes():
         track = _lum(tok["surface-2"])
         for sel, name in paints.items():
             assert _lum(tok[name]) - track > (0.02 if theme == "light" else 0.04), (theme, sel, name)
+
+
+def _swipe_block() -> str:
+    js = _static("app.js")
+    return js[js.index("/* Swipe rows, v3"):js.index("/* Tap outside to get out")]
+
+
+def test_f141_swipe_buttons_fill_the_gap_and_settle_on_a_spring():
+    """F141 (Brian, 2026-11-26: "the swiping animation is very poor … the animation and color and ux of it sucks").
+    The buttons take an equal share of the gap the row leaves (no label cut in half), fade and grow in, and the first
+    one takes the strip with a pop past the point of no return. The row settles on a spring at the finger's speed, a
+    leaving row flies off and can't be grabbed mid-flight, and reduced motion skips the animation."""
+    js, css = _swipe_block(), _static("app.css")
+    assert 'L.style.setProperty("--p"' in js and 'L.style.setProperty("--n", a.length)' in js
+    assert ".sw-b { flex: 0 0 calc(var(--p, 0) * 1px / var(--n, 1))" in css
+    assert "opacity: clamp(0, calc((var(--p, 0) / var(--n, 1) - 18) / 34), 1)" in css
+    assert ".sw-layer.sw-full .sw-b:first-child .sw-in, .sw-layer.sw-pick .sw-go .sw-in { opacity: 1; transform: scale(1.12) }" in css
+    assert "requestAnimationFrame(step)" in js and "prefers-reduced-motion: reduce" in js
+    assert "if (h._leaving) { st = null; return; }" in js
+    assert "sw-anim" not in css + js and "transitionDuration" not in js   # the old CSS-timed settle is gone
+
+
+def test_f141_every_swipe_colour_has_a_light_and_two_dark_shades(demo):
+    """Every colour a row's swipe action names has its own shade in light, in system dark and in picked Dark, and the
+    strip behind the buttons is that colour (no page showing through between buttons)."""
+    import html as _h
+    import json
+    css = _static("app.css")
+    used = set()
+    for _, page in _crawl(demo):
+        for raw in re.findall(r"data-sw='([^']*)'", page):
+            for side in json.loads(_h.unescape(raw)).values():
+                used |= {a.get("c", "ink") for a in side}
+    assert used >= {"red", "green", "ink"}, used
+    for c in used:
+        assert re.search(rf"\.sw-c-{c} \{{ --sw-c: #[0-9a-f]{{6}} \}}", css), c
+        assert f':root:not([data-theme="light"]) .sw-c-{c} {{ --sw-c:' in css, c
+        assert f':root[data-theme="dark"] .sw-c-{c} {{ --sw-c:' in css, c
+    assert ".sw-layer { position: absolute; z-index: 0; display: flex; overflow: hidden; background: var(--sw-c) }" in css
+
+
+def test_f139_holding_a_transcript_line_copies_it_on_a_phone(demo):
+    """F139 (Brian, 2026-11-26: "hold a line to copy it" didn't work on his phone; only a computer's right-click had
+    Copy line). A touch hold on a line copies time, who and words, lights the line, and its lift doesn't open Fix words."""
+    ui = _static("ui.js")
+    block = ui[ui.index("/* F139"):ui.index("function lineMenu")]
+    assert 'e.pointerType !== "touch"' in block and 'closest(e.target, ".lines .line[data-seg]")' in block
+    assert 'copy(txt, "Line")' in block and 'classList.add("holding")' in block
+    assert 'document.addEventListener("click", function (e) { if (justHeld(e.target))' in block
+    assert "Copy line\", fn: function () { copy(lineText(line), \"Line\")" in ui   # right-click copies the same text
+    assert ".lines .line.holding {" in _static("app.css")
+    page = demo.get("/conversations/1?tx=1").text
+    line = page[page.index('class="line'):]
+    line = line[:line.index("</details>")]
+    assert 'data-seg="' in line and 'class="who"' in line and "data-edit-url" in line and 'class="t"' in line
+
+
+def _z(css: str, selector: str) -> list[int]:
+    return [int(z) for z in re.findall(re.escape(selector) + r"\s*\{[^}]*?z-index:\s*(\d+)", css)]
+
+
+def test_f140_the_peeking_side_bar_floats_over_the_top_bar():
+    """F140 (Brian, 2026-11-26): hovering the folded side bar opened it under the search bar, because the top bar was
+    lifted over it (R4-06). The side bar, and above all its peek, now sit over the top bar; only the top bar's own open
+    menus (and sheets) go higher."""
+    css = _static("app.css")
+    top = max(_z(css, ".dtop"))
+    assert min(_z(css, "html.side-rail .sidebar.peek")) > top
+    side = [int(z) for z in re.findall(r"  \.sidebar \{[^}]*z-index:\s*(\d+)", css)]
+    assert side and min(side) > top, (side, top)
+    assert max(_z(css, ".dtop:has(details[open])")) > min(_z(css, "html.side-rail .sidebar.peek"))   # its menus still win

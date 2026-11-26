@@ -17,7 +17,7 @@
   --side: 264px;                     /* desktop sidebar width (brand + 🔔 ⋯ ⚙ fit) */
   --content: 760px;                  /* reading width, as rated */
   /* Light theme */
-  --bg: #fafaf9; --surface: #ffffff; --surface-2: #f5f5f4; --ink: #1c1917; --ink-2: #44403c; --muted: #6b6560;
+  --bg: #fafaf9; --surface: #ffffff; --surface-2: #f5f5f4; --raised: #ffffff; --ink: #1c1917; --ink-2: #44403c; --muted: #6b6560;
   --line: #e7e5e4; --line-strong: #d6d3d1;
   --acc: #1d4ed8; --acc-ink: #ffffff; --acc-soft: #dbeafe; --acc-soft-ink: #1e3a8a;
   --ok: #15803d; --ok-soft: #dcfce7; --bad: #b91c1c; --bad-soft: #fee2e2; --warn: #a16207; --warn-soft: #fef3c7;
@@ -33,7 +33,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
+    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --raised: #48413c; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
     --line: #3d3734; --line-strong: #57504b;
     --acc: #93c5fd; --acc-ink: #172554; --acc-soft: #1e3a5f; --acc-soft-ink: #dbeafe;
     --ok: #4ade80; --ok-soft: #14361f; --bad: #f87171; --bad-soft: #451a1a; --warn: #fbbf24; --warn-soft: #3d2e0a;
@@ -48,7 +48,7 @@
 @media all {
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
+    --bg: #1c1917; --surface: #262220; --surface-2: #302b28; --raised: #48413c; --ink: #f5f5f4; --ink-2: #d6d3d1; --muted: #b8b2ac;
     --line: #3d3734; --line-strong: #57504b;
     --acc: #93c5fd; --acc-ink: #172554; --acc-soft: #1e3a5f; --acc-soft-ink: #dbeafe;
     --ok: #4ade80; --ok-soft: #14361f; --bad: #f87171; --bad-soft: #451a1a; --warn: #fbbf24; --warn-soft: #3d2e0a;
@@ -107,7 +107,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 .
   font-size: var(--fs-sm); font-weight: 550; border: 0; background: none; cursor: pointer; position: relative }
 .seg a::after, .seg button::after { content: ""; position: absolute; inset: -4px 0 }   /* 44px hit area */
 .seg a:hover { text-decoration: none; color: var(--ink) }
-.seg .on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow) }
+.seg .on { background: var(--raised); color: var(--ink); box-shadow: var(--shadow) }
 .topbar .seg a { padding: 0 var(--s2) }
 
 /* Phone bottom tab bar */
@@ -1271,7 +1271,7 @@ select:not(.qp-native):not([multiple]) { -webkit-appearance: none; appearance: n
 .seg-switch { display: flex; width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; margin: 0 }
 .seg-opt { flex: 1; min-width: 0; min-height: 38px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; border: 0;
   border-radius: 9px; background: none; color: var(--muted); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; line-height: 1.15 }
-.seg-opt.on, .seg-opt:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow) }
+.seg-opt.on, .seg-opt:has(input:checked) { background: var(--raised); color: var(--ink); box-shadow: var(--shadow) }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--acc); outline-offset: -2px }
 /* Process at A: the switch, then two rows in the same style as the sheet */
 .pat-panel { margin: 10px 0 2px } .pat-panel .acts { margin: 4px 0 0 }
@@ -1346,23 +1346,36 @@ summary .count, .section-head .count { white-space: nowrap; overflow: hidden; te
 .cl-keep { border: 0; background: none; color: var(--muted); font: inherit; font-size: .85rem; font-weight: 600; padding: 10px 8px; cursor: pointer }
 .cl-notice { align-items: center } .cl-notice .chev-r { margin-left: auto }
 .card + .cl-lead { margin-top: 12px }
-/* Swipe to show buttons (Brian picked B, 2026-11-21) */
-/* Swipe rows (2026-11-22 rebuild): the row is one solid piece sliding over a colored layer */
+/* Swipe rows v3 (Brian, 2026-11-26: "the animation and color and ux of it sucks"): the row slides as one solid piece
+   over a strip in the first action's colour. --p is the gap the row leaves and --n the number of actions: each button
+   takes an equal share of the gap, and its icon and label fade and grow in as it opens, so nothing is ever cut in half.
+   Past the point of no return (.sw-full) the first action takes the whole gap with a small pop. JS springs the row. */
 .sw-host { position: relative; z-index: 1; background: var(--surface); will-change: transform; touch-action: pan-y }
-.sw-host.sw-anim { transition: transform .3s cubic-bezier(.2, .9, .25, 1) }
-.sw-fold { transition: height .2s cubic-bezier(.4, 0, .2, 1), opacity .2s; opacity: 0; padding-top: 0 !important; padding-bottom: 0 !important; border-top-color: transparent !important; min-height: 0 !important }
-.sw-layer { position: absolute; z-index: 0; display: flex; overflow: hidden }   /* full card width, 1px inset top and bottom: sharp, no color at the row edges */
+.sw-fold { transition: height .22s cubic-bezier(.4, 0, .2, 1), opacity .18s; opacity: 0; padding-top: 0 !important; padding-bottom: 0 !important; border-top-color: transparent !important; min-height: 0 !important }
+.sw-layer { position: absolute; z-index: 0; display: flex; overflow: hidden; background: var(--sw-c) }
 .sw-layer.sw-l { flex-direction: row-reverse }   /* the first action sits at the outer edge */
-.sw-b { flex: 0 0 88px; border: 0; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; font: 600 .74rem/1.1 system-ui, sans-serif; padding: 0 4px; cursor: pointer; transition: flex-basis .2s ease }
-.sw-i { width: 22px; height: 22px; stroke: currentColor; fill: none }
+.sw-b { flex: 0 0 calc(var(--p, 0) * 1px / var(--n, 1)); min-width: 0; border: 0; padding: 0; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; color: #fff; background: var(--sw-c); cursor: pointer; -webkit-tap-highlight-color: transparent }
+.sw-in { display: flex; flex-direction: column; align-items: center; gap: 5px; font: 600 .72rem/1.1 system-ui, sans-serif; letter-spacing: .01em;
+  opacity: clamp(0, calc((var(--p, 0) / var(--n, 1) - 18) / 34), 1); transform: scale(clamp(.72, calc(.72 + (var(--p, 0) / var(--n, 1) - 18) / 160), 1)) }
+.sw-i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2 }
 .sw-t { white-space: nowrap }
-.sw-layer.sw-full .sw-b:first-child { flex: 1 1 auto }
-.sw-layer.sw-full .sw-b:not(:first-child) { flex-basis: 0; overflow: hidden; padding: 0 }
-.sw-layer.sw-l.sw-full .sw-b:first-child { align-items: flex-end; padding-right: 26px }
-.sw-layer.sw-r.sw-full .sw-b:first-child { align-items: flex-start; padding-left: 26px }
-.sw-c-red { background: #dc2626 } .sw-c-green { background: #16a34a } .sw-c-blue { background: #2563eb }
-.sw-c-ink { background: #64748b } .sw-c-dark { background: #475569 } .sw-c-amber { background: #d97706 }
+.sw-layer.sw-full .sw-b:first-child, .sw-layer.sw-pick .sw-b.sw-go { flex-basis: calc(var(--p, 0) * 1px) }
+.sw-layer.sw-full .sw-b:not(:first-child), .sw-layer.sw-pick .sw-b:not(.sw-go) { flex-basis: 0 }
+.sw-layer.sw-full .sw-b:first-child .sw-in, .sw-layer.sw-pick .sw-go .sw-in { opacity: 1; transform: scale(1.12) }
+.sw-layer.sw-snap .sw-b, .sw-layer.sw-pick .sw-b { transition: flex-basis .2s cubic-bezier(.2, .9, .25, 1) }
+.sw-layer.sw-snap .sw-in, .sw-layer.sw-pick .sw-in { transition: transform .22s cubic-bezier(.3, 1.6, .5, 1), opacity .12s }
+/* one colour per kind of action, a little deeper in dark so it doesn't glare; white text on every one */
+.sw-c-red { --sw-c: #e5383b } .sw-c-green { --sw-c: #1f9d55 } .sw-c-blue { --sw-c: #1a73e8 }
+.sw-c-amber { --sw-c: #dd7a0e } .sw-c-ink { --sw-c: #6b7280 } .sw-c-dark { --sw-c: #5b52e0 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sw-c-red { --sw-c: #cc3438 } :root:not([data-theme="light"]) .sw-c-green { --sw-c: #1d8a4c }
+  :root:not([data-theme="light"]) .sw-c-blue { --sw-c: #2f6fd6 } :root:not([data-theme="light"]) .sw-c-amber { --sw-c: #c06a0d }
+  :root:not([data-theme="light"]) .sw-c-ink { --sw-c: #5b5651 } :root:not([data-theme="light"]) .sw-c-dark { --sw-c: #5249c8 }
+}
+:root[data-theme="dark"] .sw-c-red { --sw-c: #cc3438 } :root[data-theme="dark"] .sw-c-green { --sw-c: #1d8a4c }
+:root[data-theme="dark"] .sw-c-blue { --sw-c: #2f6fd6 } :root[data-theme="dark"] .sw-c-amber { --sw-c: #c06a0d }
+:root[data-theme="dark"] .sw-c-ink { --sw-c: #5b5651 } :root[data-theme="dark"] .sw-c-dark { --sw-c: #5249c8 }
 
 /* Desktop + every-size audit (Brian, 2026-11-22: "check all the pop-ups on desktop; nothing cut off") */
 @media (min-width: 960px) {
@@ -1667,7 +1680,7 @@ details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-
 @media (min-width: 960px) {
   :root { --side: 256px }
   html.side-rail { --side: 72px }
-  .sidebar { gap: 2px; padding: 8px 12px 12px; width: var(--side); overflow-x: hidden; z-index: 40;
+  .sidebar { gap: 2px; padding: 8px 12px 12px; width: var(--side); overflow-x: hidden; z-index: 45;
     transition: width .2s cubic-bezier(.2, .9, .25, 1), box-shadow .2s }
   .sidebar .side-top { display: flex; align-items: center; gap: 4px; min-height: 56px; margin: 0 0 4px -10px }
   .sidebar .side-top .icon-btn { flex: none }
@@ -1693,13 +1706,15 @@ details[open] > .menu-panel, details[open] > .chip-panel, details[open] > .chip-
   html.side-rail .sidebar:not(.peek) .side-add { padding: 0 14px; gap: 0 }
   html.side-rail .sidebar:not(.peek) .navlist a .count { position: absolute; margin: 0; top: 6px; left: 34px; min-width: 9px; width: 9px; height: 9px; padding: 0; font-size: 0 }
   html.side-rail .sidebar .navlist a { position: relative }
-  html.side-rail .sidebar.peek { width: 256px; box-shadow: 0 10px 40px rgb(0 0 0 / .22) }
+  /* F140 (Brian, 2026-11-26): the collapsed side bar, opened by hovering, slid under the search bar (R4-06 lifted the
+     top bar to 44, over the side bar's 40). Peeking, it floats over everything on the page but sheets and menus. */
+  html.side-rail .sidebar.peek { width: 256px; box-shadow: 0 10px 40px rgb(0 0 0 / .22); z-index: 66 }
   .main, .main.wide { transition: margin .2s cubic-bezier(.2, .9, .25, 1) }
   /* top bar beside the sidebar: search (☷ advanced search on its right), 🔔, status, ⚙ */
   .dtop { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 16px 0 24px; margin-left: var(--side); transition: margin .2s cubic-bezier(.2, .9, .25, 1) }
   .dsearch { position: relative; flex: 1 1 auto; max-width: 720px; height: 48px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 16px;
     border-radius: 24px; background: var(--surface-2); transition: background .15s, box-shadow .15s }
-  .dsearch:focus-within, .dsearch:has(.adv-sheet[open]) { background: var(--surface); box-shadow: 0 1px 6px rgb(0 0 0 / .16) }
+  .dsearch:focus-within, .dsearch:has(.adv-sheet[open]) { background: var(--raised); box-shadow: 0 1px 6px rgb(0 0 0 / .16) }
   .dsearch > form { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 100% }
   .dsearch > form .icon { color: var(--muted) }
   .dsearch input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; box-shadow: none; padding: 0; font: inherit; font-size: 16px; color: var(--ink) }
@@ -2295,7 +2310,7 @@ html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
   .dp-layout { display: inline-flex; gap: 2px; padding: 2px; margin-left: auto; margin-right: 6px; border-radius: 8px; background: var(--surface-2); flex: none }
   .sh-head .dp-layout + [data-fx-close], .fx-head .dp-layout + [data-fx-close] { margin-left: 0 }
   .dp-lay { width: 30px; height: 26px; min-height: 0 !important; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; display: grid; place-items: center; color: var(--muted) }
-  .dp-lay.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12) }
+  .dp-lay.on { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12) }
   .dp-lay i { width: 16px; height: 12px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; box-sizing: border-box }
   .dp-lay-right i::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 6px; background: currentColor }
   .dp-lay-below i::after { content: ""; position: absolute; right: 0; bottom: 0; width: 8px; height: 5px; background: currentColor }
@@ -2430,6 +2445,7 @@ html[data-pnotes="paragraph"] .fact-row[hidden] { display: none !important }
    got this only once a swipe had started, so the first swipe on a row could also scroll the page sideways or jitter). */
 [data-sw]:not(details), details[data-sw] > summary { touch-action: pan-y }
 .lines .line.flash { background: var(--acc-soft); transition: background .6s ease }   /* U12: right-click › Go to their first line */
+.lines .line.holding { background: color-mix(in srgb, var(--acc) 8%, transparent); transition: background .45s ease }   /* F139: a held line fills in as it copies */
 /* U12 (Brian, 2026-11-25: on a computer the ＋ Tag box spanned the whole line): on wider screens it opens as a small
    field with Add, right beside ＋ Tag, on the same line as the other tags; phones keep the full-width field for typing. */
 @media (min-width: 600px) {

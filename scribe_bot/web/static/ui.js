@@ -15,8 +15,8 @@
   document.addEventListener("click", function (e) {
     if (!closest(e.target, "[data-side-toggle]")) return;
     var side = document.querySelector(".sidebar");
-    var rail = !html.classList.contains("side-rail") || (side && side.classList.contains("peek") && false);
-    if (side && side.classList.contains("peek")) { rail = false; side.classList.remove("peek"); }
+    var rail = !html.classList.contains("side-rail");   // the toggle while peeking pins it open
+    if (side) side.classList.remove("peek");
     html.classList.toggle("side-rail", rail); cookie("side", rail ? "rail" : "open");
   });
   document.addEventListener("mouseover", function (e) {
@@ -445,8 +445,44 @@
   }
   function copy(text, what) {
     var done = function () { if (window.ScribeToast) window.ScribeToast(what + " copied"); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+    var old = function () {   // no clipboard API (plain http, older phones): the textarea way
+      var ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand("copy"); } catch (_) {} ta.remove();
+      if (window.ScribeToast) window.ScribeToast(ok ? what + " copied" : "Couldn't copy");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) navigator.clipboard.writeText(text).then(done, old); else old();
   }
+  function lineText(line) {
+    var who = line.querySelector(".who"), words = line.querySelector("[data-edit-url]"), ts = (line.querySelector(".t") || {}).textContent || "";
+    var text = words ? (words.dataset.editValue || words.textContent).trim() : "", name = who ? who.textContent.trim() : "";
+    return text && (ts.trim() ? ts.trim() + " " : "") + (name ? name + ": " : "") + text;
+  }
+  /* F139 (Brian, 2026-11-26: "hold a line to copy it" didn't work on his phone; only a computer's right-click had Copy
+     line). Press and hold a transcript line on a touch screen: it lights up, then the whole line (time, who, words) is
+     copied with a "Line copied" note, like holding the summary. Moving the finger (a scroll) cancels it; the buttons in
+     the line (time, name, ⋯) keep their own taps. */
+  var lh = null, lheld = null;
+  function lhStop(e) { if (!lh || (e && e.type === "pointermove" && Math.hypot(e.clientX - lh.x, e.clientY - lh.y) < 10)) return;
+    clearTimeout(lh.t); lh.line.classList.remove("holding"); lh = null; }
+  document.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch") return;
+    var line = closest(e.target, ".lines .line[data-seg]");
+    if (!line || closest(e.target, "button, a, summary, input, textarea, select, details[open], form, [contenteditable]")) return;
+    lh = { line: line, x: e.clientX, y: e.clientY, t: setTimeout(function () {
+      var l = lh && lh.line; lh = null; if (!l) return;
+      l.classList.remove("holding"); var txt = lineText(l); if (!txt) return;
+      lheld = { line: l, at: Date.now() }; copy(txt, "Line");
+      try { getSelection().removeAllRanges(); } catch (_) {}
+      l.classList.add("flash"); setTimeout(function () { l.classList.remove("flash"); }, 900);
+    }, 450) };
+    line.classList.add("holding");
+  });
+  ["pointerup", "pointercancel", "pointermove"].forEach(function (ev) { document.addEventListener(ev, lhStop, true); });
+  addEventListener("scroll", function () { lhStop(); }, { passive: true, capture: true });
+  function justHeld(t) { return lheld && Date.now() - lheld.at < 900 && closest(t, ".lines .line") === lheld.line; }
+  document.addEventListener("contextmenu", function (e) { if (lh || justHeld(e.target)) e.preventDefault(); });   // no phone menu over it
+  document.addEventListener("click", function (e) { if (justHeld(e.target)) { e.preventDefault(); e.stopPropagation(); lheld = null; } }, true);   // the lift isn't a tap
+  document.addEventListener("selectionchange", function () { if (lheld && Date.now() - lheld.at < 900) { var s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); } });
   function editIt(x) { if (!x || !window.ScribeEdit) return; delete x.dataset.wrapped; if (x.dataset.editValue) x.textContent = x.dataset.editValue; window.ScribeEdit(x); }
   function mirror(panel) {   // a ⋯ menu's own items, so the right-click and the ⋯ do exactly the same thing
     var out = [];
@@ -463,12 +499,12 @@
   function lineMenu(line) {
     var seek = line.querySelector("[data-seek]"), who = line.querySelector(".who"), words = line.querySelector("[data-edit-url]"),
         fix = line.querySelector("details.line-edit"), ts = (line.querySelector(".t") || {}).textContent || "";
-    var text = words ? (words.dataset.editValue || words.textContent).trim() : "", name = who ? who.textContent.trim() : "";
+    var text = words ? (words.dataset.editValue || words.textContent).trim() : "";
     return [seek && { i: "play", t: "Play from " + ts.trim(), fn: function () { seek.click(); } },
       who && { i: "users", t: "Who said this…", fn: function () { who.click(); } },
       words && { i: "pencil", t: "Fix words", fn: function () { editIt(words); } },
       fix && { i: "dots", t: "More fixes (who, words, join)", fn: function () { fix.open = true; } }, "-",
-      text && { i: "copy", t: "Copy line", fn: function () { copy((ts ? ts.trim() + " " : "") + (name ? name + ": " : "") + text, "Line"); } },
+      text && { i: "copy", t: "Copy line", fn: function () { copy(lineText(line), "Line"); } },
       { i: "copy", t: "Copy link to this line", fn: function () { copy(location.origin + location.pathname + "?tx=1#" + line.id, "Link");   /* R4-10: ?tx=1 sends the transcript with the page, so the link opens at once */ } }];
   }
   function speakerMenu(id, seg) {

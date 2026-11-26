@@ -2052,133 +2052,176 @@ document.addEventListener("click", function (e) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync); else sync();
 })();
 
-/* Swipe rows (rebuilt 2026-11-22, Brian: "text overlapping, not smooth, low res"; like iPhone Mail / Gmail).
-   A row with data-sw='{"l":[...],"r":[...]}' follows your finger as one solid piece over a colored layer behind it:
-   "l" = swipe right-to-left, "r" = left-to-right. Each action {t: label, i: icon, c: color, f: form selector} submits
-   that form in the row, so it behaves exactly like its own button. A short swipe shows the buttons; a long swipe (past
-   55% of the row) does the FIRST action straight away (a small buzz marks the point); letting go early springs back. */
+/* Swipe rows, v3 (Brian, 2026-11-26: "the swiping animation is very poor and low quality … the animation and color and
+   ux of it sucks"). Modelled on iPhone Mail and Gmail. A row with data-sw='{"l":[...],"r":[...]}' follows the finger
+   1:1 as one solid piece over a coloured strip ("l" = swipe right-to-left, "r" = left-to-right). Each action
+   {t: label, i: icon, c: colour, f: form selector} submits that form in the row, exactly like its own button.
+   - The buttons fill exactly the gap the row leaves, each an equal share, so a label is never cut in half; its icon
+     and label fade and grow in as the gap opens.
+   - Past 55% of the row the first action takes the whole strip with a small pop (the point where letting go does it);
+     back under 55% the other buttons return. Letting go earlier keeps the buttons open (past 40% of their width, or
+     after a flick) or springs the row back.
+   - Every settle is a spring that starts at the finger's own speed, so a flick and a slow let-go both feel natural,
+     with a hint of bounce when buttons open and none when the row closes. A row that leaves (Delete, Done, Dismiss…)
+     flies off at the finger's speed and the gap folds shut. */
 (function () {
-  var BW = 88, FULL = 0.55, st = null, open = null;
+  var BW = 76, FULL = 0.55, st = null, open = null;
+  var still = matchMedia("(prefers-reduced-motion: reduce)");
   function host(row) { return row.tagName === "DETAILS" ? row.querySelector(":scope > summary") : row; }
   function acts(row, side) { try { return JSON.parse(row.dataset.sw)[side] || []; } catch (e) { return []; } }
+  function layer(row) { var L = row.parentElement && row.parentElement.querySelector(":scope > .sw-layer"); return L && L._row === row ? L : null; }
   function build(row, side) {
-    // the layer sits beside the row, not inside it (a closed Inbox <details> hides everything but its summary).
-    // 2026-11-22 night (Brian: "low res", text touching the color, overlap on Notifications): the color now spans the
-    // whole card width (the card's own rounded corners clip it, no scaling = sharp text), and the moving row carries
-    // its card's background out to the card edges, so its text always keeps its normal gap from the color.
+    // the strip sits beside the row, not inside it (a closed Inbox <details> hides everything but its summary). It spans
+    // the whole card width under the row; the moving row carries its card's background out to the card edges.
     var h = host(row), box = row.parentElement, L = box.querySelector(":scope > .sw-layer"), a = acts(row, side);
     if (L && L._row === row && L.dataset.side === side) return L;
     if (L) L.remove();
     if (getComputedStyle(box).position === "static") box.style.position = "relative";
     L = document.createElement("div"); L._row = row; L.dataset.side = side;
     L.className = "sw-layer sw-" + side + " sw-c-" + (a[0].c || "ink");
+    L.style.setProperty("--n", a.length);
     box.classList.add("sw-box");                               // nothing slides the page sideways
     var top = row.offsetTop + (h === row ? 0 : h.offsetTop), left = row.offsetLeft + (h === row ? 0 : h.offsetLeft);
     var pl = Math.max(0, left), pr = Math.max(0, box.clientWidth - left - h.offsetWidth);
-    L.style.cssText = "inset:auto;top:" + (top + 1) + "px;left:0;width:" + box.clientWidth + "px;height:" + (h.offsetHeight - 2) + "px";
+    L.style.cssText += ";top:" + (top + 1) + "px;left:0;width:" + box.clientWidth + "px;height:" + (h.offsetHeight - 2) + "px";   // 1px in from the row edges: no colour fringe
     var bg = getComputedStyle(box).backgroundColor;
     h.style.setProperty("--sw-bg", bg && bg !== "rgba(0, 0, 0, 0)" ? bg : "var(--surface)");
     h.style.boxShadow = "-" + pl + "px 0 0 var(--sw-bg), " + pr + "px 0 0 var(--sw-bg)";
     a.forEach(function (x) {
       var b = document.createElement("button"); b.type = "button"; b.className = "sw-b sw-c-" + (x.c || "ink"); b.dataset.sel = x.f;
-      if (x.i) b.insertAdjacentHTML("beforeend", '<svg class="sw-i" aria-hidden="true"><use href="#i-' + x.i.replace(/\W/g, "") + '"/></svg>');
-      var t = document.createElement("span"); t.className = "sw-t"; t.textContent = x.t; b.appendChild(t);
-      L.appendChild(b);
+      b.setAttribute("aria-label", x.t);
+      var w = document.createElement("span"); w.className = "sw-in";
+      if (x.i) w.insertAdjacentHTML("beforeend", '<svg class="sw-i" aria-hidden="true"><use href="#i-' + x.i.replace(/\W/g, "") + '"/></svg>');
+      var t = document.createElement("span"); t.className = "sw-t"; t.textContent = x.t; w.appendChild(t);
+      b.appendChild(w); L.appendChild(b);
     });
     box.insertBefore(L, row); h.classList.add("sw-host");
     return L;
   }
-  var frame = 0, want = null;
-  // B37/N11 (Brian, 2026-11-25: smoother swiping): a row let go with speed settles at that speed (a quick flick snaps,
-  // a slow release glides), the way native lists do; ms = how long the settle takes (default .3 s).
-  function move(row, dx, anim, ms) {
-    var h = host(row);
-    if (anim) { cancelAnimationFrame(frame); frame = 0; want = null; h.style.transitionDuration = ms ? ms + "ms" : ""; h.classList.add("sw-anim"); h.style.transform = dx ? "translate3d(" + dx + "px,0,0)" : ""; return; }
-    h.classList.remove("sw-anim"); want = [h, dx];   // follow the finger once per screen frame
-    if (!frame) frame = requestAnimationFrame(function () { frame = 0; if (want) want[0].style.transform = "translate3d(" + want[1] + "px,0,0)"; want = null; });
+  // one place moves a row: its transform, and the strip's gap (--p) that sizes the buttons
+  function put(row, x) {
+    var h = host(row); h._x = x;
+    h.style.transform = x ? "translate3d(" + x.toFixed(2) + "px,0,0)" : "";
+    var L = layer(row); if (L) L.style.setProperty("--p", Math.abs(x).toFixed(1));
+  }
+  function stop(row) { var h = host(row); if (h._raf) { cancelAnimationFrame(h._raf); h._raf = 0; } }
+  // a damped spring from where the row is, at velocity v (px/ms), to x = to; done() when it rests there
+  function spring(row, to, v, bounce, done) {
+    stop(row);
+    var h = host(row), x = h._x || 0, vel = (v || 0) * 1000, k = 420, c = 2 * Math.sqrt(k) * (bounce ? 0.78 : 1), last = 0;
+    if (still.matches) { put(row, to); if (done) done(); return; }
+    function step(now) {
+      var dt = last ? Math.min(0.034, (now - last) / 1000) : 1 / 60; last = now;
+      for (var i = 0; i < 4; i++) { vel += (-k * (x - to) - c * vel) * dt / 4; x += vel * dt / 4; }
+      if (Math.abs(x - to) < 0.5 && Math.abs(vel) < 20) { put(row, to); h._raf = 0; if (done) done(); return; }
+      put(row, x); h._raf = requestAnimationFrame(step);
+    }
+    h._raf = requestAnimationFrame(step);
+  }
+  // a row that does its action flies off the way it was going, at least as fast as the finger
+  function flyOff(row, sign, v, done) {
+    stop(row);
+    var h = host(row), x = h._x || 0, end = sign * (h.offsetWidth + 24), sp = Math.max(1.6, Math.abs(v || 0)) * sign, last = 0;
+    h._leaving = true;
+    if (still.matches) { put(row, end); done(); return; }
+    function step(now) {
+      var dt = last ? Math.min(34, now - last) : 16; last = now;
+      sp *= 1.06; x += sp * dt;
+      if ((x - end) * sign >= 0) { put(row, end); h._raf = 0; done(); return; }
+      put(row, x); h._raf = requestAnimationFrame(step);
+    }
+    h._raf = requestAnimationFrame(step);
   }
   function cleanup(row) {
     var h = host(row);
-    h.classList.remove("sw-host", "sw-anim"); h.style.boxShadow = "";
-    var L = row.parentElement && row.parentElement.querySelector(":scope > .sw-layer"); if (L && L._row === row) L.remove();
+    stop(row); h.classList.remove("sw-host"); h.style.boxShadow = ""; h.style.transform = ""; h._x = 0; h._leaving = false;
+    var L = layer(row); if (L) L.remove();
     if (row.parentElement && !row.parentElement.querySelector(":scope > .sw-layer")) row.parentElement.classList.remove("sw-box");
   }
-  function reset(row) {   // back to normal: no layer, no transform left behind
-    var h = host(row); move(row, 0, true); if (open === row) open = null;
-    setTimeout(function () { if (!h.style.transform) cleanup(row); }, 320);
-  }
-  function fold(row) {   // a row that's leaving (Delete, Done, Dismiss…) folds shut smoothly, like Gmail
-    var L = row.parentElement && row.parentElement.querySelector(":scope > .sw-layer");
+  function close(row, v) { if (open === row) open = null; spring(row, 0, v || 0, false, function () { cleanup(row); }); }
+  function fold(row) {   // a row that's leaving folds shut smoothly, like Gmail
+    var L = layer(row);
     [row, L].forEach(function (el) { if (!el) return; el.style.height = el.offsetHeight + "px"; el.style.overflow = "hidden"; });
     void row.offsetHeight;
     [row, L].forEach(function (el) { if (!el) return; el.classList.add("sw-fold"); el.style.height = "0px"; });
   }
-  function fire(row, sel) {
+  function fire(row, sel, sign, v) {
     var f = row.querySelector(sel);
-    if (f && f.hasAttribute("data-sw-keep")) { move(row, 0, true); setTimeout(function () { f.requestSubmit(); }, 150); return; }   // Summarize: the row stays, its cost page opens
-    fold(row);
-    setTimeout(function () { if (f) f.requestSubmit(); }, 200);
-    setTimeout(function () { if (row.isConnected) { row.classList.remove("sw-fold"); row.style.height = row.style.overflow = ""; cleanup(row); move(row, 0, true); } }, 1500);   // a row that stays comes back
+    if (f && f.hasAttribute("data-sw-keep")) { close(row, v); setTimeout(function () { f.requestSubmit(); }, 120); return; }   // Summarize: the row stays, its cost page opens
+    row.dataset.swJust = Date.now();
+    flyOff(row, sign, v, function () {
+      fold(row);
+      if (f) f.requestSubmit();
+      setTimeout(function () { if (row.isConnected) { row.classList.remove("sw-fold"); row.style.height = row.style.overflow = ""; cleanup(row); } }, 1500);   // a row that stays comes back
+    });
+  }
+  function full(L, on) {   // past the point of no return: the first action takes the strip, with a pop
+    if (!L || L.classList.contains("sw-full") === on) return;
+    L.classList.add("sw-snap"); L.classList.toggle("sw-full", on);
+    clearTimeout(L._snap); L._snap = setTimeout(function () { L.classList.remove("sw-snap"); }, 220);
   }
   document.addEventListener("touchstart", function (e) {
     var t = e.target;
-    if (open && !(t.closest && t.closest(".sw-layer"))) { var o = open; reset(o); if (t.closest && t.closest("[data-sw]") === o) { st = { eat: true }; return; } }
+    if (open && !(t.closest && t.closest(".sw-layer"))) { var o = open; close(o); if (t.closest && t.closest("[data-sw]") === o) { st = { eat: true }; return; } }
     var row = t.closest && t.closest("[data-sw]");
     if (!row || e.touches.length !== 1 || (row.tagName === "DETAILS" && row.open) || t.closest(".sw-layer, input, textarea, select")
         || (row.closest(".picking"))) { st = null; return; }
     // a finger that starts at the left edge opens the drawer (ui.js), never a row swipe (Brian, 2026-11-23: an edge swipe
     // sent rows to Trash)
     if (e.touches[0].clientX <= 28 && innerWidth < 960 && document.getElementById("drawer")) { st = null; return; }
-    st = { row: row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, on: false, w: host(row).offsetWidth, v: 0, lx: e.touches[0].clientX, lt: e.timeStamp };
+    var h = host(row); if (h._leaving) { st = null; return; }   // already on its way out
+    st = { row: row, x: e.touches[0].clientX - (h._x || 0), y: e.touches[0].clientY, dx: h._x || 0, on: false, w: h.offsetWidth,
+           v: 0, lx: e.touches[0].clientX, lt: e.timeStamp, side: null };
+    if (h._raf) { stop(row); st.on = true; st.side = h._x < 0 ? "l" : h._x > 0 ? "r" : null; st.L = layer(row); }   // caught mid-settle: carry on from there
   }, { passive: true });
   document.addEventListener("touchmove", function (e) {
     if (!st || st.eat) return;
     var x = e.touches[0].clientX, dx = x - st.x, dy = e.touches[0].clientY - st.y;
     if (!st.on) {
-      if (Math.hypot(dx, dy) < 7) return;                          // decide only after a real move: early jitter no longer cancels
-      if (Math.abs(dy) > Math.abs(dx) * 0.8) { st = null; return; }   // scrolling, not swiping
+      if (Math.hypot(dx, dy) < 8) return;                           // decide only after a real move
+      if (Math.abs(dy) > Math.abs(dx) * 0.85) { st = null; return; }  // scrolling, not swiping
       st.x = x - (dx > 0 ? 1 : -1); dx = x - st.x;                    // no jump: the row starts right under the finger
+      st.on = true;
     }
-    var dt = e.timeStamp - st.lt; if (dt > 0) { st.v = 0.6 * ((x - st.lx) / dt) + 0.4 * st.v; st.lx = x; st.lt = e.timeStamp; }
+    var dt = e.timeStamp - st.lt; if (dt > 0) { st.v = 0.65 * ((x - st.lx) / dt) + 0.35 * st.v; st.lx = x; st.lt = e.timeStamp; }
     var side = dx < 0 ? "l" : "r", a = acts(st.row, side);
-    st.on = true;
-    if (!a.length) { st.side = null; move(st.row, dx / 6); return; }   // nothing that way: a small rubber band
-    if (st.side !== side) { st.side = side; st.L = build(st.row, side); st.full = false; }
+    if (!a.length) {                                                 // nothing that way: a soft rubber band
+      if (st.side) { var L0 = layer(st.row); if (L0) L0.remove(); st.side = null; }
+      var d = Math.abs(dx); put(st.row, (dx < 0 ? -1 : 1) * d * 40 / (d + 120)); st.dx = 0; return;
+    }
+    if (st.side !== side) { st.side = side; st.L = build(st.row, side); st.L.classList.remove("sw-full"); }
     st.dx = dx;
-    var full = Math.abs(dx) > st.w * FULL;
-    if (full !== st.full) { st.full = full; st.L.classList.toggle("sw-full", full); }
-    move(st.row, dx);
+    full(st.L, Math.abs(dx) > st.w * FULL);
+    put(st.row, dx);
   }, { passive: true });
-  function settle(dist, v) {   // ms to cover dist px at the finger's speed v (px/ms), kept between 140 and 320 ms
-    var sp = Math.abs(v); return sp > 0.2 ? Math.round(Math.max(140, Math.min(320, Math.abs(dist) / sp))) : 0;
-  }
   document.addEventListener("touchend", function () {
     if (!st) return;
     var s = st; st = null;
     if (s.eat || !s.on) return;
-    if (!s.side) { move(s.row, 0, true); return; }
-    var a = acts(s.row, s.side), sign = s.dx < 0 ? -1 : 1, shown = a.length * BW;
-    var fling = s.v * sign > 0.5;                                      // a quick flick counts, like native lists
-    var back = s.v * sign < -0.3;                                      // flicked back toward the start: close
-    if (s.full && !back) { var to = sign * (s.w + 40), ms = settle(to - s.dx, s.v) || 200; move(s.row, to, true, ms); s.row.dataset.swJust = Date.now(); setTimeout(function () { fire(s.row, a[0].f); }, ms); }
-    else if (!back && (Math.abs(s.dx) > shown * 0.45 || (fling && Math.abs(s.dx) > 24))) { move(s.row, sign * shown, true, settle(sign * shown - s.dx, s.v)); open = s.row; s.row.dataset.swJust = Date.now(); }
-    else { move(s.row, 0, true, settle(s.dx, s.v)); if (open === s.row) open = null; var r = s.row; setTimeout(function () { if (!host(r).style.transform) cleanup(r); }, 340); }
+    if (!s.side) { spring(s.row, 0, s.v, false); return; }
+    var a = acts(s.row, s.side), sign = s.dx < 0 ? -1 : 1, shown = a.length * BW, toward = s.v * sign;
+    var back = toward < -0.25;                                       // flicked back toward the start: close
+    if (!back && (Math.abs(s.dx) > s.w * FULL || (toward > 1.1 && Math.abs(s.dx) > shown))) {   // past the point, or a hard flick beyond the buttons
+      full(s.L, true); fire(s.row, a[0].f, sign, s.v);
+    } else if (!back && (Math.abs(s.dx) > shown * 0.4 || (toward > 0.3 && Math.abs(s.dx) > 20))) {
+      full(s.L, false); open = s.row; s.row.dataset.swJust = Date.now(); spring(s.row, sign * shown, s.v, true);
+    } else { full(s.L, false); close(s.row, s.v); }
   });
   // The browser took the touch over (it started scrolling, or a call came in): the row goes back instead of staying
   // half-swiped (B37: rows were left stuck partway).
-  document.addEventListener("touchcancel", function () { if (st && st.on && st.row) reset(st.row); st = null; });
+  document.addEventListener("touchcancel", function () { if (st && st.on && st.row) close(st.row); st = null; });
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".sw-b");
     if (b) {
       e.preventDefault(); e.stopPropagation();
-      var row = b.closest(".sw-layer")._row;
-      if (row) { open = null; move(row, (b.parentElement.dataset.side === "l" ? -1 : 1) * (host(row).offsetWidth + 40), true); setTimeout(function () { fire(row, b.dataset.sel); }, 200); }
+      var L = b.closest(".sw-layer"), row = L._row;
+      if (row) { open = null; L.classList.add("sw-pick"); b.classList.add("sw-go"); fire(row, b.dataset.sel, L.dataset.side === "l" ? -1 : 1, 1.2); }   // the tapped one fills the strip as the row leaves
       return;
     }
     var r = e.target.closest && e.target.closest("[data-sw]");   // the lift right after a swipe must not open the row
     if (r && r.dataset.swJust && Date.now() - r.dataset.swJust < 400) { e.preventDefault(); e.stopPropagation(); }
   }, true);
-  document.addEventListener("htmx:beforeRequest", function () { if (open) reset(open); });
+  document.addEventListener("htmx:beforeRequest", function () { if (open) close(open); });
 })();
 
 /* Tap outside to get out (Brian, 2026-11-22): every small pop-up panel (a speaker's "Who is it?", ＋ Tag, a line's

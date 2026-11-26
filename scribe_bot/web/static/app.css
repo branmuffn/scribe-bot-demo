@@ -2706,3 +2706,13 @@ html[data-density="comfortable"] { --lead: 44px }
   border-top-color: transparent !important; transition: height .24s cubic-bezier(.2, .9, .25, 1), opacity .18s, padding .24s, margin .24s }
 .qa-wait { opacity: .6; transition: opacity .15s }
 @media (prefers-reduced-motion: reduce) { .qa-fold, .tick, .tick::before { transition: none !important; animation: none !important } .qa-done .tick { animation: none } }
+
+/* F136 sweep (Brian, 2026-11-26, found live): on a computer a Talks row tinted when you pointed at it, but Tasks, Inbox
+   and others didn't (or used a different tint). Every list row you can click or tap (Talks, Inbox, People, Tasks on
+   every tab, Today, Review, Search, the bell) now gets the same accent tint, wide and rounded like the pressed look.
+   8% accent: at least 4 lightness points (CIE L*) from the card's own colour in light and dark, so it shows (5% didn't). */
+:root { --row-hover: color-mix(in srgb, var(--acc) 8%, var(--surface)) }
+@media (hover: hover) {
+  :is(.tap-row, .row1, .st-row, .task-row, .fact-row, .in-row > summary, .sp-row > summary, .mention-row):hover {
+    border-radius: 0; background: var(--row-hover); box-shadow: 0 0 0 10px var(--row-hover); clip-path: inset(0 -10px round 12px) }
+}

@@ -167,3 +167,61 @@ def test_f138_every_quick_action_is_marked(demo):  # noqa: F811
     nid = demo.db().execute("SELECT id FROM notification WHERE dismissed_at IS NULL LIMIT 1").fetchone()[0]
     r = demo.post(f"/notifications/{nid}/dismiss", headers={"X-Quick": "1", "referer": "http://testserver/notifications"}, follow_redirects=False)
     assert r.status_code == 200 and r.json()["undo"]["label"] == "Notification dismissed"
+
+
+def _lstar(h: str) -> float:
+    def lin(c: float) -> float:
+        return c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    y = .2126 * lin(r) + .7152 * lin(g) + .0722 * lin(b)
+    return 116 * (y ** (1 / 3) if y > 216 / 24389 else (24389 / 27 * y + 16) / 116) - 16
+
+
+def _mix(a: str, b: str, p: float) -> str:   # color-mix(in srgb, a p, b)
+    return "#" + "".join("%02x" % round(int(a[i:i + 2], 16) * p + int(b[i:i + 2], 16) * (1 - p)) for i in (1, 3, 5))
+
+
+def test_f136_every_clickable_list_row_gets_the_same_hover_tint(demo):  # noqa: F811
+    """F136 sweep (found live): a Talks row tinted on hover, a Tasks row didn't, Inbox used another tint. Every row you
+    can click (a tap-row, a task or note that opens its sheet, a row that is a link or a summary) on every page is
+    covered by one hover rule, the last word on row hover, and the tint shows: 4+ L* from the card in light and dark."""
+    css = _static("app.css")
+    rules = _css_rules(css)
+    mine = [(i, sel) for i, (ctx, sel, b) in enumerate(rules) if "(hover: hover)" in ctx and "var(--row-hover)" in b]
+    assert len(mine) == 1, mine
+    at, sel = mine[0]
+    covered = set(re.findall(r"\.([\w-]+)", sel))
+    rowsel = re.compile(r"\.(%s)\b" % "|".join(sorted(covered)))
+    later = [s for ctx, s, b in rules[at + 1:] if ":hover" in s and rowsel.search(s) and "background" in b]
+    assert not later, later
+    kinds, bad = set(), []
+    for u, html in _crawl(demo):
+        for m in re.finditer(r'<(div|a|summary|details)\s+class="([^"]*)"[^>]*>(?=(.{0,1500}))', html, re.S):
+            tag, cls, after = m.group(1), set(m.group(2).split()), m.group(3)
+            clickable = ("item" in cls and ("tap-row" in cls or re.match(r'(?:(?!<div class="item[ "]).)*data-open-sheet', after, re.S))) \
+                or (tag == "a" and "row1" in cls) or (tag == "summary" and cls & {"in-sum", "sp-sum", "mention-row"})
+            if not clickable:
+                continue
+            row = cls | ({"in-row"} if "in-sum" in cls else set()) | ({"sp-row"} if "sp-sum" in cls else set())
+            kinds.add(next(iter(sorted(row & covered)), "?"))
+            if not row & covered:
+                bad.append((u, sorted(cls)))
+    assert not bad, bad[:5]
+    assert {"tap-row", "task-row", "in-row", "row1"} <= kinds, kinds
+    p = float(re.search(r"--row-hover: color-mix\(in srgb, var\(--acc\) (\d+)%, var\(--surface\)\)", css).group(1)) / 100
+    tok = {k: re.findall(rf"--{k}: (#[0-9a-f]{{6}})", css) for k in ("acc", "surface")}
+    for acc, surf in ((tok["acc"][0], tok["surface"][0]), (tok["acc"][1], tok["surface"][1])):   # light, dark
+        assert abs(_lstar(_mix(acc, surf, p)) - _lstar(surf)) >= 4, (acc, surf, p)
+
+
+def test_f137_help_and_tour_describe_the_new_done_and_select(demo):  # noqa: F811
+    """F137 (Brian, 2026-11-26): help said "The circle: Done." and "initials circles become round checkboxes", and the
+    tour named a ⋯ button that is gone. Help and the tour describe the green done circle and the square select box."""
+    html = demo.get("/help").text
+    dl = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    assert "round checkbox" not in dl
+    assert re.search(r"The done circle .{0,80}green", dl), dl[:200]
+    for who in ("Tasks › Select", "People › Select"):
+        assert re.search(re.escape(who) + r".{0,160}square", dl), who
+    tour = re.search(r"var TOUR = \[(.*?)\];", _static("app.js"), re.S).group(1)
+    assert "The ⋯ button" not in tour and re.search(r"circle.{0,40}green", tour)

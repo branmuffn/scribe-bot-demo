@@ -3549,7 +3549,7 @@ SCHEDULE_INFO = {
     "export": ("Readable export", "daily 1:30 AM"), "trash-purge": ("Empty old trash", "daily 1:45 AM"),
     "backup": ("Encrypted backup", "daily 2:00 AM"), "reconcile": ("Check for missed recordings", "daily 2:30 AM"),
     "original_cleanup": ("Remove processed phone originals", "daily 3:00 AM"),
-    "restore-test": ("Restore test", "monthly, 3:00 AM"), "briefing": ("Morning briefing", "daily 7:00 AM"),
+    "restore-test": ("Restore test", "monthly 3:00 AM"), "briefing": ("Morning briefing", "daily 7:00 AM"),
     "task-cleanup": ("Tidy old tasks", "Sundays 5:30 PM"), "weekly-review": ("Weekly review", "Sundays 6:00 PM"),
 }
 
@@ -3754,8 +3754,10 @@ def set_offline(request: Request, on: int = Form(...), conn: sqlite3.Connection 
 
 @router.post("/settings/pause")
 def set_pause(request: Request, on: int = Form(...), conn: sqlite3.Connection = Conn):
-    """Pause/resume processing: while paused, new recordings wait (nothing is transcribed or sent); schedules still run."""
-    set_setting(conn, "pipeline_paused", "1" if on else "0")
+    """Pause/resume processing: while paused, new recordings wait (nothing is transcribed or sent); schedules still run.
+    F125: the same pause as Processing's, so a Pause here also drops an earlier "Resume at 1 AM" (it used to keep it,
+    and processing restarted at 1 AM on its own)."""
+    control.pause(conn) if on else control.resume(conn, "now")
     return back(request, "/status")
 
 

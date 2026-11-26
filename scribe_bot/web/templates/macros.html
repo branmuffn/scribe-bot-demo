@@ -404,8 +404,9 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 
 {# One recording being processed (Today's live card and Status, DECISION S): step, bar with %, time left, ready time,
    and each step on tap. data-job lets app.js keep "Each step" open across the card's 15 s refresh. #}
-{% macro progress_item(j, here=False) %}{# here = on that talk's own page: the title is plain text (a link there swapped in
-   just this card as a bare page, Brian 2026-11-21) #}
+{% macro progress_item(j, here=False, ctl=True) %}{# here = on that talk's own page: the title is plain text (a link there swapped in
+   just this card as a bare page, Brian 2026-11-21). ctl=False on pages with their own Pause/Resume bar (Processing,
+   Status): the card keeps only its own Cancel, so the same Pause isn't offered twice (F124). #}
 <div class="item progress-item{{ ' tap-row' if j.conversation_id and not here }}"><div class="item-main">
   {% if j.conversation_id and not here %}<a class="item-link" href="/conversations/{{ j.conversation_id }}">{{ j.title|recorder_title }}</a>{% else %}<div class="item-title">{{ j.title|recorder_title }}</div>{% endif %}
   {% if j.preview %}<p class="inbox-preview prog-preview">“{{ j.preview }}”</p>{% endif %}
@@ -413,12 +414,12 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   <div class="progress-bar"><div class="meter" role="progressbar" aria-label="Processing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ j.percent }}"><span style="width:{{ j.percent }}%"></span></div><b>{{ j.percent }}%</b></div>
   {% if not j.paused %}<div class="item-sub">{% if j.started %}<span>started {{ j.started }}</span>{% elif j.starts %}<span>starts ~{{ j.starts }}</span>{% else %}<span>waiting its turn</span>{% endif %}
     {% if j.current %}<span>about {{ j.remaining_s|duration }} left</span>{% endif %}<span><b>ready ~{{ j.eta }}</b></span></div>{% endif %}
-  {% if not j.done %}<div class="prog-ctl">
-    {% if not j.paused %}<form method="post" action="/processing/pause"><button class="chip" title="Stops at the next safe point; nothing is lost">❚❚ Pause</button></form>
+  {% if not j.done and (ctl or (j.paused and j.can_cancel)) %}<div class="prog-ctl">
+    {% if not ctl %}{% elif not j.paused %}<form method="post" action="/processing/pause"><button class="chip" title="Stops at the next safe point; nothing is lost">❚❚ Pause</button></form>
     {% else %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="now"><button class="chip chip-on">▶ Resume now</button></form>
       {# F58 (screen pass): fixed times say AM like every other time (F48); this one said "1 am" #}
-      {% if not j.resume_label %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="tonight"><button class="chip">☾ Resume at 1 AM</button></form>{% endif %}
-      {% if j.can_cancel %}<form method="post" action="/processing/{{ j.job_id }}/cancel"><button class="chip chip-bad" title="Back to the Inbox; half-done files are deleted">✕ Cancel</button></form>{% endif %}{% endif %}
+      {% if not j.resume_label %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="tonight"><button class="chip">☾ Resume at 1 AM</button></form>{% endif %}{% endif %}
+    {% if j.paused and j.can_cancel %}<form method="post" action="/processing/{{ j.job_id }}/cancel"><button class="chip chip-bad" title="Back to the Inbox; half-done files are deleted">✕ Cancel</button></form>{% endif %}
   </div>{% endif %}
   <details class="steps" data-job="{{ j.job_id }}"><summary>Each step</summary>
     <ol>{% for s in j.stages %}
@@ -430,8 +431,8 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 
 {# B39 (Brian, 2026-11-25): the processing list shows the running recording (and the next one) in full; the rest of
    the queue folds into one line with its own compact rows, each with its turn's start and ready times. #}
-{% macro progress_list(jobs, show=2) %}
-{% for j in jobs[:show] %}{{ progress_item(j) }}{% endfor %}
+{% macro progress_list(jobs, show=2, ctl=True) %}
+{% for j in jobs[:show] %}{{ progress_item(j, ctl=ctl) }}{% endfor %}
 {% if jobs|length > show %}{% set rest = jobs[show:] %}
 <details class="q-more" data-remember="q-more"><summary class="item"><span>{{ rest|length }} more waiting</span><span class="meta">all done ~{{ rest[-1].eta }}</span></summary>
   {% for j in rest %}<div class="item q-row"><div class="item-main">

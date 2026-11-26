@@ -215,12 +215,13 @@
 {% endif %}
 {% if group == 'templates' %}
 <section class="section" id="templates">
-  {{ m.section("", help="What the AI is told for each meeting type, on top of the standard instructions. Applies to new recordings and re-runs; nothing re-runs by itself. {me} means you.") }}
+  {{ m.section("", help="What the AI is told for each meeting type, on top of the standard instructions.") }}
   <div class="card">{% for t in summary_templates %}
     <details class="item template"><summary class="item-main"><span class="chev">{{ m.icon("chev") }}</span><b>{{ t.label }}</b>{% if t.custom %} <span class="badge">Edited</span>{% endif %}
       <div class="item-sub{{ ' tpl-peek' if t.text }}">{{ (t.text or 'Standard instructions only (the 1:1 layout you rated 28/28).')|truncate(110) }}</div></summary>
       <form method="post" action="/settings/templates/{{ t.kind }}" class="stack" style="margin-top:var(--s2)">
-        <textarea name="text" rows="4" aria-label="{{ t.label }} template">{{ t.text }}</textarea>
+        <textarea name="text" rows="4" aria-label="{{ t.label }} template" aria-describedby="tpl-note-{{ t.kind }}">{{ t.text }}</textarea>
+        <p class="meta" id="tpl-note-{{ t.kind }}">{me} means you. Saving changes new recordings and re-runs only; nothing re-runs by itself.</p>
         <div class="row"><button class="btn btn-primary">Save</button>{% if t.custom %}<button class="btn btn-ghost" name="reset" value="1">Reset to default</button>{% endif %}</div>
       </form></details>{% endfor %}</div>
 </section>

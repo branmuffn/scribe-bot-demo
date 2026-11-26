@@ -477,3 +477,54 @@ def test_no_fixed_colour_turns_unreadable_in_dark():
                 if risky and not any(s.strip() in dark for s in sel.split(",")):
                     bad.append(f"{sel} {{ {prop}: {h} }}")
     assert not bad, bad
+
+
+def test_what_me_means_shows_on_a_phone_too(demo):
+    """F121 (500 dark pass): Settings › Summary templates explained "{me}" only in the section help, which phones
+    hide, so on a phone the text box showed "{me}" with no word on what it is. Each template now says it under its box."""
+    page = demo.get("/settings/templates").text
+    notes = re.findall(r'<p class="meta" id="tpl-note-([\w-]+)">\{me\} means you\.', page)
+    boxes = re.findall(r'aria-describedby="tpl-note-([\w-]+)"', page)
+    assert notes and notes == boxes                                   # one note per template, tied to its box
+    assert "{me} means you" not in re.sub(r'<p class="meta" id="tpl-note-.*?</p>', "", page)   # said once each, not twice
+
+
+def test_every_schedule_reads_the_same_way():
+    """F122 (500 dark pass): Settings › Backups & schedules said "monthly, 3:00 AM" while every other schedule
+    reads "daily 2:00 AM" or "Sundays 6:00 PM", with no comma."""
+    from scribe_bot.web.routes import SCHEDULE_INFO
+    odd = [when for _, when in SCHEDULE_INFO.values()
+           if not re.fullmatch(r"(daily|weekly|monthly|(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days) \d{1,2}:\d{2} (AM|PM)", when)]
+    assert not odd, odd
+
+
+def test_the_load_tile_compares_like_with_like():
+    """F123 (500 dark pass): Status › Load showed "0.7 of 8" and "Good" while its tip said "Good under 0.7 · Watch
+    0.7–1": the tile shows the total across 8 threads but the ranges were per thread. The tip now uses the same total."""
+    from scribe_bot.core import machine
+    load = next(t for t in machine.tiles(machine.card({"load1": 0.7, "cpus": 8})) if t["key"] == "load")
+    assert load["value"] == "0.7 of 8" and load["level"] == "ok"
+    assert "Good under 5.6 · Watch 5.6–8 · Problem 8 or more" in load["tip"]
+    assert machine.ranges_text("load") == "Good under 0.7 · Watch 0.7–1 · Problem 1 or more"   # legend: per thread
+
+
+def test_one_pause_per_page(demo):
+    """F124 (500 dark pass): Processing showed ❚❚ Pause in its top bar, on the running recording's card and again in
+    that recording's history row; Status did the same. All of them pause everything. Pages with their own bar now
+    show it once; Today, which has no bar, keeps the card's Pause."""
+    for path in ("/processing", "/status"):
+        page = demo.get(path).text
+        assert 'class="progress-bar"' in page, path                    # a recording is running in the demo
+        assert page.count('action="/processing/pause"') + page.count('action="/settings/pause"') == 1, path
+    assert demo.get("/").text.count('action="/processing/pause"') >= 1
+
+
+def test_pausing_from_status_cancels_a_timed_resume(demo):
+    """F125: Processing › ☾ Resume at 1 AM, then Status › Pause, left the 1 AM restart in place."""
+    from scribe_bot.pipeline import control
+    demo.post("/processing/resume", data={"when": "tonight"})
+    demo.post("/settings/pause", data={"on": "1"})
+    page = demo.get("/processing").text
+    assert "<b>Paused</b>" in page and "until" not in page.split('class="ctl-bar"')[1].split("</div>")[0]
+    demo.post("/settings/pause", data={"on": "0"})
+    assert control is not None and "Processing now" in demo.get("/processing").text

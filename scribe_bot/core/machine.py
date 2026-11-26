@@ -110,9 +110,11 @@ def level(key: str, value: float | None) -> str:
     return "bad" if value <= problem else "warn" if value <= watch else "ok"
 
 
-def ranges_text(key: str) -> str:
-    """'Good under 80 °C · Watch 80–89 · Problem 90 or more' (plain words for the legend and hover)."""
+def ranges_text(key: str, scale: float = 1) -> str:
+    """'Good under 80 °C · Watch 80–89 · Problem 90 or more' (plain words for the legend and hover). `scale` puts a
+    per-thread range in the same units as a total (the Load tile shows "0.7 of 8", so its ranges are out of 8 too)."""
     _, unit, watch, problem, higher_worse, _ = RANGES[key]
+    watch, problem = round(watch * scale, 2), round(problem * scale, 2)
     f = (lambda v: f"{v:g}{unit}")
     if higher_worse:
         return f"Good under {f(watch)} · Watch {f(watch)}–{f(problem)} · Problem {f(problem)} or more"
@@ -455,14 +457,14 @@ def tiles(d: dict) -> list[dict]:
     """One tile per reading that has a value; readings this Mac can't give are left out, not shown as 'unknown'."""
     L, out = d["levels"], []
 
-    def add(key, name, value, level, tip):
+    def add(key, name, value, level, tip, scale=1):
         if value is not None:
             out.append({"key": key, "name": name, "value": value, "level": level,
-                        "tip": tip + (" " + ranges_text(key) + "." if key in RANGES else "")})
+                        "tip": tip + (" " + ranges_text(key, scale) + "." if key in RANGES else "")})
     add("cpu_pct", "CPU", d["cpu_pct"] is not None and f"{d['cpu_pct']:.0f}% busy" or None, L["cpu_pct"],
         "How hard the processor is working. Near 100% while transcribing is normal.")
     add("load", "Load", d["load1"] is not None and f"{d['load1']:.1f}" + (f" of {d['cpus']}" if d["cpus"] else "") or None,
-        L["load"], "Work waiting for the processor's threads.")
+        L["load"], "Work waiting for the processor's threads.", scale=d["cpus"] or 1)
     add("temp_c", "Temperature", d["temp_c"] is not None and f"{d['temp_c']:.0f} °C" or None, L["temp_c"], "How hot the processor is.")
     add("fans", "Fans", d["fan_rpm"] and f"{d['fan_rpm']:,} RPM" or None, "ok", "Fans speed up when the Mac is busy or warm.")
     add("speed_limit", "Heat slowdown", d["speed_limit"] is not None and

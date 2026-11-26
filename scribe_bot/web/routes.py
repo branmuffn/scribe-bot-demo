@@ -40,6 +40,16 @@ def _id_or_none(v):
         return None
 
 
+def _id_list(raw: str) -> list[int]:
+    """Ids from a form's "3,5,8" list, in order; anything that isn't a whole number is skipped."""
+    return [int(x) for x in raw.split(",") if x.strip().isdigit()]
+
+
+def _ids(raw: str) -> list[int]:
+    """The same, each id once."""
+    return list(dict.fromkeys(_id_list(raw)))
+
+
 OptId = Annotated[int | None, Form(), BeforeValidator(_id_or_none)]   # a form field; validator inside Annotated so it runs
 
 router = APIRouter()
@@ -945,7 +955,7 @@ def conversations_export(request: Request, fmt: str, person: int | None = None, 
     """The Conversations list as filtered now, newest first by default; summaries only unless transcript=1. `ids`
     (Brian, 2026-11-20: Select › tick talks › Export) exports just the picked ones."""
     where, args = conv_where(request, person, type, start, end, 0)
-    picked = [int(x) for x in ids.split(",") if x.strip().isdigit()][:EXPORT_MAX]
+    picked = _id_list(ids)[:EXPORT_MAX]
     if picked:
         where = ["c.deleted_at IS NULL", f"c.id IN ({','.join('?' * len(picked))})"]; args = picked
     ids = [r[0] for r in conn.execute(f"SELECT c.id FROM conversation c WHERE {' AND '.join(where)} ORDER BY "
@@ -1302,7 +1312,7 @@ def trash_conversation(cid: int, conn: sqlite3.Connection = Conn):
 
 
 def _talk_ids(ids: str) -> list[int]:
-    return [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+    return _id_list(ids)[:200]
 
 
 @router.get("/talks-bulk/ai", response_class=HTMLResponse)
@@ -2286,10 +2296,6 @@ def add_person(request: Request, name: str = Form(...), area: str = Form("both")
     return RedirectResponse(f"/people/{pid}", status_code=303)
 
 
-def _ids(raw: str) -> list[int]:
-    return list(dict.fromkeys(int(x) for x in raw.split(",") if x.strip().isdigit()))
-
-
 @router.get("/people/merge-many", response_class=HTMLResponse)
 def merge_many_page(request: Request, ids: str = "", conn: sqlite3.Connection = Conn):
     """People › Select › Merge (Brian, 2026-11-21, "like selecting emails in Gmail"): pick whose name to keep."""
@@ -2417,9 +2423,7 @@ def delete_many(ids: str = Form(...), conn: sqlite3.Connection = Conn):
         rows = [r for pid in pids for r in people_svc.undo_rows(conn, pid)]
         uid = undo.save(conn, f"Removed {len(pids)} {'person' if len(pids) == 1 else 'people'}", rows)
         for pid in pids:
-            undo.removed(conn, uid, "person", "id = ?", (pid,))
-            undo.removed(conn, uid, "voiceprint", "person_id = ?", (pid,))
-            people_svc.delete(conn, pid)
+            _delete_with_undo(conn, uid, pid)
     return RedirectResponse("/people", status_code=303)
 
 
@@ -2432,11 +2436,15 @@ def delete_person(pid: int, conn: sqlite3.Connection = Conn):
     if pid == ME:
         raise HTTPException(400, "You can't delete yourself")
     with db.transaction(conn):
-        uid = undo.save(conn, "Person deleted", people_svc.undo_rows(conn, pid))
-        undo.removed(conn, uid, "person", "id = ?", (pid,))
-        undo.removed(conn, uid, "voiceprint", "person_id = ?", (pid,))
-        people_svc.delete(conn, pid)
+        _delete_with_undo(conn, undo.save(conn, "Person deleted", people_svc.undo_rows(conn, pid)), pid)
     return RedirectResponse("/people", status_code=303)
+
+
+def _delete_with_undo(conn: sqlite3.Connection, uid: int, pid: int) -> None:
+    """Delete one person, keeping their row and voiceprint in Undo action uid."""
+    undo.removed(conn, uid, "person", "id = ?", (pid,))
+    undo.removed(conn, uid, "voiceprint", "person_id = ?", (pid,))
+    people_svc.delete(conn, pid)
 
 
 # The same 8 colors the talk-time bar uses automatically (app.css .talk), so a picked color never clashes.
@@ -2741,7 +2749,7 @@ def inbox_merge(request: Request, ids: str = Form(...), conn: sqlite3.Connection
     if stop := demo_stop(request, "audio", "/inbox"):
         return stop
     try:
-        new_id = merge_svc.merge(conn, request.app.state.cfg, [int(x) for x in ids.split(",") if x.strip().isdigit()])
+        new_id = merge_svc.merge(conn, request.app.state.cfg, _id_list(ids))
     except merge_svc.MergeError as e:
         raise HTTPException(400, str(e))
     with db.transaction(conn):   # Undo splits it back while it's still waiting (2026-11-25), like Unmerge
@@ -2971,7 +2979,7 @@ def inbox_bulk(request: Request, ids: str = Form(...), what: str = Form(...), me
         return RedirectResponse(f"/inbox-bulk/ai?ids={','.join(x.strip() for x in ids.split(',') if x.strip().isdigit())}", status_code=303)
     if what != "skip" and (stop := demo_stop(request, "run", "/inbox")):
         return stop
-    for rec_id in [int(x) for x in ids.split(",") if x.strip().isdigit()]:
+    for rec_id in _id_list(ids):
         ingest.backlog_to_review(conn, rec_id, request.app.state.cfg)   # does nothing unless it's an older recording
         r = conn.execute("SELECT id FROM review_item WHERE kind = 'approval' AND status = 'open' AND ref_id = ? "
                          "AND conversation_id IS NULL ORDER BY id DESC LIMIT 1", (rec_id,)).fetchone()

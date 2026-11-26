@@ -416,12 +416,16 @@
         a.x || function () { submit(row.querySelector(a.f)); }, a.c === "red" ? "danger" : ""));
     });
     if (!menu.children.length) { menu = null; return; }
+    openAt(e);
+  });
+  // the menu opens at the pointer, kept on screen, with its first item focused
+  function openAt(e) {
     document.body.appendChild(menu);
     var w = menu.offsetWidth, h = menu.offsetHeight;
     menu.style.left = Math.max(8, Math.min(e.clientX, innerWidth - w - 8)) + "px";
     menu.style.top = Math.max(8, e.clientY + h > innerHeight - 8 ? e.clientY - h : e.clientY) + "px";
     var first = menu.querySelector("button"); if (first) first.focus({ preventScroll: true });
-  });
+  }
   /* C4 round 2 (Brian, 2026-11-25: "various things don't right click"): everything that isn't a list row gets a menu
      that fits it. A transcript line (play, who said it, fix words, copy), a speaker, a tag or pill, any text you can
      edit, the summary, a link, and anywhere else on a page that has a ⋯ menu (its items, mirrored). Selected text,
@@ -436,11 +440,7 @@
       if (x === "-") { if (menu.lastChild && menu.lastChild.tagName !== "HR") menu.appendChild(sep()); return; }
       var b = item(x.i || "dots", x.t, x.fn, x.cls); if (x.on) b.setAttribute("aria-checked", "true"); menu.appendChild(b);
     });
-    document.body.appendChild(menu);
-    var w = menu.offsetWidth, h = menu.offsetHeight;
-    menu.style.left = Math.max(8, Math.min(e.clientX, innerWidth - w - 8)) + "px";
-    menu.style.top = Math.max(8, e.clientY + h > innerHeight - 8 ? e.clientY - h : e.clientY) + "px";
-    var first = menu.querySelector("button"); if (first) first.focus({ preventScroll: true });
+    openAt(e);
     return true;
   }
   function copy(text, what) {

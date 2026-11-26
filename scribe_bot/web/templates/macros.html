@@ -116,10 +116,6 @@
   {%- else %}<span class="badge badge-local" title="Processed only on the M14">{{ icon("home") }}Local</span>{% endif -%}
 {%- endmacro %}
 
-{% macro type_badge(t) -%}
-  {%- if t %}<span class="badge badge-outline">{{ {'1:1': '1:1', 'multi': 'Group', 'learning': 'Learning', 'personal': 'Personal'}.get(t, t) }}</span>{% endif -%}
-{%- endmacro %}
-
 {% macro status_badge(s) -%}
   {%- if s and s not in ('done', 'extracted') %}<span class="badge badge-warn">{{ {'transcribing': 'Transcribing.', 'transcribed': 'Transcribed', 'failed': 'Failed'}.get(s, s|capitalize) }}</span>{% endif -%}
 {%- endmacro %}
@@ -138,13 +134,6 @@
   <div class="item-actions"><form method="post" action="/search/history/remove"><input type="hidden" name="q" value="{{ r.q }}">
     <button class="btn btn-ghost btn-icon" title="Remove from history" aria-label="Remove “{{ r.q }}” from history">{{ icon("x") }}</button></form></div></div>
 {% endmacro %}
-{# Before you approve a recording: both choices side by side, with time on the M14 and the AI cost. #}
-{% macro est_choices(e, private=False, label=None) -%}
-{# One quiet line under the recording (Brian 2026-10-22: the colored boxes looked bad and broke on narrow widths). #}
-<p class="est">{% if label %}<b>{{ label }}:</b> {% endif %}
-  {%- if not private %}<span class="est-opt cloud" title="Speech and speakers on the M14, then the transcript goes to Claude for the summary, tasks and decisions">{{ icon("cloud") }}With AI ~{{ e.ai_s|duration }} · ~${{ '%.2f'|format(e.cost) }}</span>{% endif %}
-  <span class="est-opt local" title="Speech and speakers only. Nothing leaves the M14">{{ icon("lock") }}Transcript only ~{{ e.local_s|duration }} · free</span></p>
-{%- endmacro %}
 {% macro none_found() %}<div class="empty compact">None found</div>{% endmacro %}
 
 {% macro section(title, count=None, id=None, help=None) %}
@@ -163,22 +152,6 @@ method="post" action="{{ action }}"{% if tgt %} hx-post="{{ action }}" hx-target
 <a class="{{ cls }}" href="{{ href }}" hx-get="{{ href }}" hx-target="#{{ slot }}" hx-swap="innerHTML"{% if include %} hx-include="{{ include }}"{% endif %}>{% if ic %}{{ icon(ic) }} {% endif %}{{ label }}</a>
 {%- endmacro %}
 {% macro confirm_slot(slot) %}<div class="confirm-slot" id="{{ slot }}" aria-live="polite"></div>{% endmacro %}
-
-{# Pick an existing person or type a new name. #}
-{% macro person_picker(action, people, label="Change person", selected=None, tgt=None, oob=None, extra=None) %}
-<details class="edit picker"><summary>{{ label }}</summary>
-  <form {{ hx(action, tgt, oob) }} class="picker-form">
-    <label class="sr-only" for="pp-{{ action|replace('/', '-') }}">Person</label>
-    {# Options come from the page's one #people-options list when the picker opens (app.js): one copy per page, not per row. #}
-    {# Brian, 2026-11-21: picking a name saves it; "＋ Someone new…" shows a name box (Enter or tapping away saves). #}
-    <select id="pp-{{ action|replace('/', '-') }}" name="person_id" data-people data-selected="{{ selected or '' }}" data-autosave>
-      <option value="">Who?</option>
-    </select>
-    <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="grow qp-new" hidden data-enter-submits>
-  </form>
-  {% if extra %}{{ extra }}{% endif %}
-</details>
-{% endmacro %}
 
 {% macro line_link(item, conversation_id=None) -%}
   {%- if item.line is number -%}

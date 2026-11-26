@@ -415,3 +415,15 @@ def test_esc_while_typing_in_a_list_box_leaves_the_pane_open():
     assert "function typing() { var a = document.activeElement;" in ui
     assert "|| typing(); }, true);" in ui
     assert 'if (e.key !== "Escape" || document.querySelector(POPS) || typing()) return;' in ui   # same rule inside the pane
+
+
+def test_every_shared_macro_is_used():
+    """Tidiness pass (2026-11-26): est_choices, type_badge and person_picker were left over from older screens. A macro
+    nothing calls is dead weight in every page's template load."""
+    import re
+    src = _tpl("macros.html")
+    pages = "".join(p.read_text() for p in (WEB / "templates").rglob("*.html"))
+    py = "".join(p.read_text() for p in (WEB.parent).rglob("*.py"))
+    unused = [n for n in re.findall(r"\{%-? macro (\w+)\(", src)
+              if len(re.findall(rf"\b{n}\(", pages)) <= 1 and not re.search(rf"\b{n}\b", py)]
+    assert unused == []

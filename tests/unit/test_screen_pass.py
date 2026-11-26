@@ -640,3 +640,20 @@ def test_what_to_check_counts_only_open_tasks(demo):  # noqa: F811
     strip = demo.get(f"/conversations/{cid}").text.split('id="check-strip"', 1)[1].split("</nav>", 1)[0]
     shown = re.search(r'>(\d+) you owe<', strip)
     assert (int(shown.group(1)) if shown else 0) == n_open, (cid, n_open, strip)
+
+
+def test_compare_on_a_demo_talk_offers_the_other_model(demo):  # noqa: F811
+    """F133: a demo talk's notes are labelled 'demo', but the ledger says Claude Sonnet made them. The ⋯ menu offered
+    'Compare with Claude Sonnet', the same model. It must offer the one that didn't make the notes."""
+    from scribe_bot.ai import extract
+    conn = demo.db()
+    row = conn.execute("SELECT c.id, l.model FROM conversation c JOIN ledger_entry l ON l.conversation_id = c.id "
+                       "WHERE c.processed_by = 'demo' AND c.deleted_at IS NULL AND l.status = 'ok' "
+                       "AND l.model LIKE 'claude%' LIMIT 1").fetchone()
+    assert row, "demo data has a talk with an AI ledger row"
+    cid, made_by = row
+    other = extract.other_model(conn, cid)[1]
+    assert ("sonnet" in made_by) != ("sonnet" in other), (made_by, other)
+    html = demo.get(f"/conversations/{cid}").text
+    assert "Compare with Claude %s" % ("Sonnet" if "sonnet" in made_by else "Haiku") not in html
+    assert "Compare with Claude" in html

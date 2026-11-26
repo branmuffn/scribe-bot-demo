@@ -408,6 +408,10 @@ COMPARE_MODELS = (router.SONNET, router.HAIKU)
 def other_model(conn: sqlite3.Connection, conversation_id: int) -> list:
     """[provider, model] to compare against: Haiku if Sonnet made the current notes, else Sonnet."""
     by = (conn.execute("SELECT processed_by FROM conversation WHERE id = ?", (conversation_id,)).fetchone()[0] or "")
+    if "claude" not in by:   # e.g. the demo's "demo" label: the ledger says which model made the notes
+        row = conn.execute("SELECT model FROM ledger_entry WHERE conversation_id = ? AND status = 'ok' "
+                           "AND model LIKE 'claude%' ORDER BY id DESC LIMIT 1", (conversation_id,)).fetchone()
+        by = row[0] if row else by
     return router.HAIKU if "sonnet" in by else router.SONNET
 
 

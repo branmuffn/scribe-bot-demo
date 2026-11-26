@@ -1078,7 +1078,7 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
                   mine=mine, theirs=theirs, check=check, recording_title=rec["title"] if rec else None,
                   decisions=decisions, facts=grouped, n_facts=len(facts), takeaways=json.loads(c["takeaways"] or "[]"),
                   people=people(conn), has_audio=has_audio, preview=preview, rerun_pending=ai_jobs.pending_for(conn, cid), compare_pending=ai_jobs.compare_pending(conn, cid),
-                  compare_ready=extract.compared(conn, cid) is not None, compare_model=model_label((ai_router.HAIKU if "sonnet" in (c["processed_by"] or "") else ai_router.SONNET)[1]),
+                  compare_ready=extract.compared(conn, cid) is not None, compare_model=model_label(extract.other_model(conn, cid)[1]),
                   compare_queued=request.query_params.get("compare") == "queued",
                   rerun_queued=request.query_params.get("rerun") == "queued", processing=processing, ai_calls=ai_calls,
                   meeting_types=prompts.MEETING_TYPES, speaking=(sp := talk.speaking(conn, cid)), speaking_tips=talk.tips(sp) if sp else [],

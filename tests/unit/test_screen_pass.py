@@ -101,7 +101,7 @@ def test_f62_durations_say_min(demo):
     person = demo.get("/people/2").text
     m = re.search(r'id="talk-time".*?<span class="r1-v">([^<]+)</span>', person, re.S)
     if m:
-        assert re.fullmatch(r"\d+ (s|min)|\d+ h( \d+ min)?", m.group(1)), m.group(1)
+        assert re.fullmatch(r"\d+ talks?, (\d+ (s|min)|\d+ h( \d+ min)?)", m.group(1)), m.group(1)
     for t in ("person.html", "people.html", "macros.html"):
         assert "|hours" not in _tpl(t)
 
@@ -723,3 +723,19 @@ def test_every_back_link_is_the_same_text_link(demo):  # noqa: F811
             if "back-link" not in cls.split() or not inner.startswith("‹ ") or "<" in inner:
                 bad.append((u, cls, inner[:60]))
     assert n > 15 and not bad, bad
+
+
+def test_talk_time_says_what_it_covers_and_who_the_rest_is(demo):  # noqa: F811
+    """D-SP-5 (Brian, 2026-11-26: 5A): "Talk time 7 min · Priya 40% · you 35%" didn't say the minutes are every talk you
+    were both in, or who the other 25% is. Now "3 talks, 7 min" and "Priya 40%, you 35%, others 25%", adding to 100."""
+    seen = 0
+    for (pid,) in demo.db().execute("SELECT id FROM person WHERE id != 1"):
+        html = demo.get(f"/people/{pid}").text
+        m = re.search(r'id="talk-time">.*?<small>(.*?)</small></span><span class="r1-v">(.*?)</span>', html, re.S)
+        if not m:
+            continue
+        seen += 1
+        assert re.fullmatch(r"\d+ talks?, .+", m.group(2)), m.group(2)
+        shares = [int(x) for x in re.findall(r"(\d+)%", m.group(1))]
+        assert ", you " in m.group(1) and sum(shares) == 100 or (len(shares) == 2 and sum(shares) == 100), m.group(1)
+    assert seen

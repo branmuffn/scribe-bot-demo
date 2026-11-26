@@ -49,7 +49,7 @@
   {{ m.section("Unsure tasks", inbox|length) }}
   <div class="card" data-cap="3" data-all="/tasks?tab=inbox">
     {% for x in inbox %}
-    <div class="item rv-unsure{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is not none %}?tx=1#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
+    <div class="item rv-unsure{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is not none %}?tx=1#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
         {% else %}<div class="item-title">{{ x.t.title if x.t else x.payload.title or 'Item' }}</div>{% endif %}
         <div class="item-sub"><span>{{ x.payload.reason or "The AI wasn't sure" }}</span>{% if x.r.conv_title %}<span>{{ x.r.conv_title }}</span>{% endif %}</div></div>
       <div class="item-actions">
@@ -68,7 +68,7 @@
   {{ m.section("Cloud approvals", approvals|length) }}
   <div class="card" data-cap="3" data-all="/review">
     {% for x in approvals %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
         <div class="item-sub">
           {% if x.payload.model %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ x.payload.model }}</span>{% endif %}
           {% if x.payload.account %}<span>{{ x.payload.account }}</span>{% endif %}
@@ -89,7 +89,7 @@
   {{ m.section("Glossary suggestions", glossary|length) }}
   <div class="card" data-cap="3" data-all="/review">
     {% for x in glossary %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
+    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
         {% if x.g %}<div class="item-sub">heard as {{ x.variants|join(', ') }}</div>{% endif %}</div>
       <div class="item-actions">
         <form method="post" action="/review/{{ x.r.id }}/approve"><button class="btn btn-ok">{{ m.icon("check") }} Add</button></form>

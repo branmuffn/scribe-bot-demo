@@ -560,6 +560,6 @@ def chart(rows: list[dict], key: str, title: str, unit: str, lo: float, hi: floa
             "x_ticks": [(round(x, 1), label) for x, label in grid if label and PAD_L + 14 < x < CHART_W - 14],
             "thresholds": lines,
             "points": [[round(X(i), 1), round(Y(v), 1), local(i).strftime("%a %H:%M"), f"{v:.0f}{unit}"] for i, v in pts],
-            "now": f"{last[key]:.0f}{unit}", "now_at": datetime.fromisoformat(last["ts"]).astimezone().strftime("%-I:%M %p").lower(),
+            "now": f"{last[key]:.0f}{unit}", "now_at": datetime.fromisoformat(last["ts"]).astimezone().strftime("%-I:%M %p"),
             "low": f"{min(vals):.0f}{unit}", "avg": f"{sum(vals) / len(vals):.0f}{unit}",
             "high": f"{max(vals):.0f}{unit}"}

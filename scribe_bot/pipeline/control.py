@@ -51,7 +51,7 @@ def state(conn: sqlite3.Connection) -> dict:
     get = lambda k: (conn.execute("SELECT value FROM setting WHERE key = ?", (k,)).fetchone() or [None])[0]  # noqa: E731
     at = get("pipeline_resume_at")
     return {"paused": get("pipeline_paused") == "1", "resume_at": at,
-            "resume_label": datetime.fromisoformat(at).astimezone().strftime("%-I %p").lower() if at else None}
+            "resume_label": datetime.fromisoformat(at).astimezone().strftime("%-I %p") if at else None}
 
 
 def can_cancel(conn: sqlite3.Connection, job_id: int) -> bool:

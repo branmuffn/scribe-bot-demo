@@ -340,14 +340,14 @@ def test_settings_rows_space_the_dot_evenly(demo):
 
 
 def test_schedules_last_ran_at_their_own_time(demo):
-    """F35: "Encrypted backup · daily 2:00 AM · last ran Wed Nov 25, 11:05 pm": each made-up run now sits at its job's time."""
+    """F35: "Encrypted backup · daily 2:00 AM · last ran Wed Nov 25, 11:05 PM": each made-up run now sits at its job's time."""
     import re
     html = demo.get("/settings/backups").text
-    rows = re.findall(r"<span>(?:daily|monthly,|Sundays) (\d+:\d\d [AP]M)</span>\s*<span>last ran [^<]*?, (\d+:\d\d [ap]m)</span>", html)
+    rows = re.findall(r"<span>(?:daily|monthly,|Sundays) (\d+:\d\d [AP]M)</span>\s*<span>last ran [^<]*?, (\d+:\d\d [AP]M)</span>", html)
     assert len(rows) == 9
-    assert all(when.lower() == ran for when, ran in rows), rows
-    backups = re.findall(r"<span>Backup</span> <span>[^<]*?, (\d+:\d\d [ap]m)</span>", html)
-    assert backups and set(backups) == {"2:00 am"}
+    assert all(when == ran for when, ran in rows), rows
+    backups = re.findall(r"<span>Backup</span> <span>[^<]*?, (\d+:\d\d [AP]M)</span>", html)
+    assert backups and set(backups) == {"2:00 AM"}
 
 
 def test_ai_spend_line_lines_up_with_its_name(demo):
@@ -412,6 +412,14 @@ def test_open_and_open_in_new_tab_have_different_icons():
             assert (icon == "open") == ("new tab" in label), (icon, label)
 
 
+def test_open_full_page_has_the_same_tab_icon():
+    """F50: the preview's "Open full page" opens in this tab but wore the ↗ new-tab icon; it now has the › of every Open."""
+    import pathlib
+    base = pathlib.Path("scribe_bot/web/templates/base.html").read_text()
+    link = base.split("data-rpane-full")[1].split("</a>")[0]
+    assert 'icon("chev")' in link and 'icon("open")' not in link
+
+
 def test_me_label_never_doubles_up():
     """People showed "Me (me)" when person 1 was named "me"."""
     from scribe_bot.web.app import me_label
@@ -430,3 +438,28 @@ def test_demo_note_not_repeated_inside_the_preview(demo):
     """F46: People › pick a person with Reading pane = Below: the preview repeated "Clickable demo with made-up meetings"."""
     assert "Clickable demo with made-up" in demo.get("/people/5").text
     assert "Clickable demo with made-up" not in demo.get("/people/5", headers={"sec-fetch-dest": "iframe"}).text
+
+
+def test_times_say_am_pm_the_same_way_everywhere(demo):  # noqa: F811
+    """F48: the snooze menu said "8 AM" and the badge under it "back tomorrow 12:57 am"; Settings said "daily 2:00 AM · last
+    ran 2:00 am". Every time the app writes says AM/PM, like the fixed labels (and Brian's "7 AM")."""
+    import re
+    for url in ("/settings/backups", "/review", "/conversations", "/notifications?tab=all", "/status", "/processing", "/inbox"):
+        html = re.sub(r"<script.*?</script>|<style.*?</style>", "", demo.get(url).text, flags=re.S)
+        assert not re.findall(r"\d:\d\d (?:am|pm)\b", html), (url, re.findall(r".{30}\d:\d\d (?:am|pm)\b", html)[:3])
+
+
+def test_snoozed_badge_sits_on_its_own_line():
+    """F47: "Snoozed · back tomorrow 12:57 AM" ran straight into the item's name; every snoozed badge sits on its own line."""
+    import pathlib
+    review = pathlib.Path("scribe_bot/web/templates/_review.html").read_text()
+    assert review.count("Snoozed · back") == review.count('badge-outline snz">Snoozed · back') == 3
+    assert ".item-main > .snz { display: flex;" in _static("app.css")
+
+
+def test_review_names_its_own_open_tab(demo):  # noqa: F811
+    """F49: Review's Dismissed and Snoozed tabs said "under Needs you", a section that's on Today; here the tab is Open."""
+    for tab in ("dismissed", "snoozed", "done"):
+        html = demo.get(f"/review?tab={tab}").text
+        assert "under Needs you" not in html and "Needs you item" not in html, tab
+    assert "back in Open" in demo.get("/review?tab=dismissed").text

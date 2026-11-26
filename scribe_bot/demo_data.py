@@ -300,7 +300,7 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None, at) -> None:
         for dest, size in (("Drive A (demo)", 41_000_000 + d * 900_000), ("Drive B (demo)", 41_000_000 + d * 900_000)):
             conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES (?, 'backup', ?, ?, ?, 'ok')",
                          (dest, at("02:00", d), at("02:03", d), size))
-    # F35: each job's last run matches its own time ("daily 2:00 AM · last ran … 2:00 am", not "… 11:05 pm")
+    # F35: each job's last run matches its own time ("daily 2:00 AM · last ran … 2:00 AM", not "… 11:05 pm")
     conn.execute("INSERT INTO backup_run (destination, kind, started_at, finished_at, bytes, status) VALUES "
                  "('Drive A (demo)', 'restore_test', ?, ?, 41000000, 'ok')", (at("03:00", 12), at("03:12", 12)))
     for job, hhmm, days, weekday in (("export", "01:30", 0, None), ("trash-purge", "01:45", 0, None), ("backup", "02:00", 0, None),

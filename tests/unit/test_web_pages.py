@@ -11,7 +11,8 @@ from scribe_bot.core.settings import Settings
 from scribe_bot.web.app import create_app
 
 PMSET = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t90%; charged; 0:00 remaining present: true\n"
-YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
+def yesterday():   # worked out when used: a constant set at import went stale when a run crossed midnight
+    return (date.today() - timedelta(days=1)).isoformat()
 
 
 class FakeKeys:
@@ -48,7 +49,7 @@ def seed(conn, data_dir):
         conn.execute("INSERT INTO search_index (kind, ref_id, conversation_id, text) VALUES ('segment', ?, 1, ?)", (idx + 1, text))
     conn.execute("INSERT INTO search_index (kind, ref_id, conversation_id, text) VALUES ('summary', 1, 1, 'zephyr launch plan')")
     conn.execute("INSERT INTO task (id, conversation_id, title, owner_person_id, due, area, confidence, source_segment_id, created_at, updated_at) "
-                 "VALUES (1, 1, 'Review the launch deck', 1, ?, 'work', 0.9, 2, ?, ?)", (YESTERDAY, t, t))
+                 "VALUES (1, 1, 'Review the launch deck', 1, ?, 'work', 0.9, 2, ?, ?)", (yesterday(), t, t))
     conn.execute("INSERT INTO task (id, conversation_id, title, owner_person_id, area, confidence, source_segment_id, created_at, updated_at) "
                  "VALUES (2, 1, 'Send the budget', 2, 'work', 0.9, 3, ?, ?)", (t, t))
     conn.execute("INSERT INTO task (id, conversation_id, title, owner_person_id, area, confidence, inbox, created_at, updated_at) "
@@ -495,7 +496,7 @@ def test_needs_you_later_and_dismiss(env):
     assert "1 snoozed" in page and 'href="/review?tab=snoozed"' in page               # still in view: one line, to Review › Snoozed
     assert "Glossary suggestions" not in client.get("/review").text                 # Review › Open = Needs you
     review = client.get("/review?tab=snoozed").text
-    assert "Glossary suggestions" in review and "Snoozed · back tomorrow 8:00 am" in review and f'action="/review/{rid}/now"' in review
+    assert "Glossary suggestions" in review and "Snoozed · back tomorrow 8:00 AM" in review and f'action="/review/{rid}/now"' in review
     client.post(f"/review/{rid}/now")
     assert "1 glossary suggestion" in client.get("/").text
     client.post(f"/review/{rid}/dismiss")
@@ -683,7 +684,7 @@ def test_due_dates_read_like_words(env):
     from scribe_bot.web.app import day_label
     today = date.today()
     assert day_label(today.isoformat()) == "today" and day_label((today + timedelta(days=1)).isoformat()) == "tomorrow"
-    assert day_label(YESTERDAY) == "yesterday" and day_label("2020-03-04") == "Mar 4, 2020" and day_label("someday") == "someday"
+    assert day_label(yesterday()) == "yesterday" and day_label("2020-03-04") == "Mar 4, 2020" and day_label("someday") == "someday"
     assert "Overdue · due yesterday" in env[0].get("/tasks").text
 
 

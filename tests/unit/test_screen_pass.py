@@ -754,3 +754,27 @@ def test_right_click_on_a_talk_offers_both_exports_named_like_its_menu(demo):  #
     for ext, kind in (("md", "text/"), ("pdf", "application/pdf")):
         r = demo.get(f"/conversations/{cid}/export.{ext}")
         assert r.status_code == 200 and r.headers["content-type"].startswith(kind), (ext, r.status_code)
+
+
+def _theme_tokens() -> dict[str, dict[str, str]]:
+    """The colour tokens of the light theme and the picked-Dark theme, as {name: '#rrggbb'}."""
+    css = _static("app.css")
+    light = css[css.index(":root {"):css.index("/* Dark theme")]
+    dark = css[css.index(':root[data-theme="dark"] {'):]
+    dark = dark[:dark.index("}")]
+    return {name: dict(re.findall(r"--([\w-]+):\s*(#[0-9a-f]{6})", block)) for name, block in (("light", light), ("dark", dark))}
+
+
+def test_f134_a_picked_segment_stands_out_from_its_track_in_both_themes():
+    """F134 (live, Dark at 1440): the side bar's area switch painted its picked choice with --surface, which is
+    darker than the grey track in dark, so "All" sank out of sight. Every picked segment, pane-layout button and
+    focused search box sits on --surface-2 and must be clearly lighter than it, in light and in dark."""
+    css = _static("app.css")
+    picked = re.findall(r"([^{}]*(?:\.on\b|:checked|:focus-within)[^{}]*)\{([^}]*)\}", css)
+    paints = {sel.strip(): m.group(1) for sel, body in picked
+              if (m := re.search(r"background:\s*var\(--([\w-]+)\)", body)) and re.search(r"\.seg|\.dp-lay|\.dsearch", sel)}
+    assert len(paints) >= 4, paints
+    for theme, tok in _theme_tokens().items():
+        track = _lum(tok["surface-2"])
+        for sel, name in paints.items():
+            assert _lum(tok[name]) - track > (0.02 if theme == "light" else 0.04), (theme, sel, name)

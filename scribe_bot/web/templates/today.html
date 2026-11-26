@@ -7,12 +7,12 @@
 </div>
 
 {% if overnight %}{# S1, Brian picked A (2026-11-22): swipe either way (or ✕) to dismiss for today #}
-<div class="card overnight-card" id="overnight" data-sw='{{ {"l": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}], "r": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}]}|tojson }}'>
+<div class="card overnight-card" id="overnight" data-quick-row data-sw='{{ {"l": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}], "r": [{"t": "Dismiss", "i": "check", "c": "ink", "f": "form.on-dismiss"}]}|tojson }}'>
   <a class="item-link" href="/conversations?night=1" aria-label="See last night's talks"></a>
-  <span class="oc-ic" aria-hidden="true">☾</span>
+  <span class="oc-ic lead" aria-hidden="true">{{ m.icon("moon") }}</span>
   <div class="oc-main"><b>Overnight: {{ overnight.ok }} recording{{ 's' if overnight.ok != 1 }} transcribed</b>
     <div class="meta">{{ overnight.hours }} h of audio · done {{ overnight.last }}{% if overnight.bad %} · <span class="warn-text">{{ overnight.bad }} failed</span>{% endif %} · tap to see them</div></div>
-  <form method="post" action="/overnight/dismiss" class="on-dismiss"><button class="icon-btn" aria-label="Dismiss" title="Dismiss for today">{{ m.icon("x") }}</button></form>
+  <form method="post" action="/overnight/dismiss" class="on-dismiss" data-quick="fold"><button class="icon-btn" aria-label="Dismiss" title="Dismiss for today">{{ m.icon("x") }}</button></form>
 </div>
 {% endif %}
 {% if paused %}
@@ -47,8 +47,8 @@
     <p class="meta cl-lead">Scribe Bot deleted {{ cleanup_ask|length }} recording{{ 's' if cleanup_ask|length != 1 }} (30 days in Trash). Your phone or Mac may still have {{ 'them' if cleanup_ask|length != 1 else 'it' }}.</p>
     <ul class="cl-names">{% for r in cleanup_ask[:4] %}<li>{{ r.title|recorder_title }}</li>{% endfor %}{% if cleanup_ask|length > 4 %}<li class="meta">+{{ cleanup_ask|length - 4 }} more</li>{% endif %}</ul>
     <div class="acts">
-      <form method="post" action="/cleanup/answer"><button class="act pri"><span class="ib ib-ai">✓</span><span class="grow">Add to my cleanup list</span><span class="chev-r" aria-hidden="true">›</span></button></form>
-      <form method="post" action="/cleanup/answer"><input type="hidden" name="keep" value="1"><button class="act"><span class="ib ib-plain">✕</span><span class="grow">Keep them on my devices</span><span class="chev-r" aria-hidden="true">›</span></button></form>
+      <form method="post" action="/cleanup/answer"><button class="act pri"><span class="ib ib-ai" aria-hidden="true">{{ m.icon("check") }}</span><span class="grow">Add to my cleanup list</span><span class="chev-r" aria-hidden="true">›</span></button></form>
+      <form method="post" action="/cleanup/answer"><input type="hidden" name="keep" value="1"><button class="act"><span class="ib ib-plain" aria-hidden="true">{{ m.icon("x") }}</span><span class="grow">Keep them on my devices</span><span class="chev-r" aria-hidden="true">›</span></button></form>
     </div></div></details>
 {% endif %}
 {% if show_help %}

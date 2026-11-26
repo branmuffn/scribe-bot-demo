@@ -66,7 +66,7 @@
   {% endif %}
   <details class="fx-sheet in-row item" id="rec-{{ it.rec_id }}" data-pick-id="{{ it.rec_id }}" data-review="{{ x.r.id if x else '' }}" data-sw='{{ {"l": swl, "r": swr}|tojson }}'>
     <summary class="in-sum"><span class="row-cb in-cb" data-in-cb role="checkbox" aria-label="Pick" aria-checked="false"></span>{# Q3-A (Brian, 2026-11-21): ▶ first (blue = AI notes, white = transcript only), › last = opens #}
-      <span class="ib {{ 'ib-plain' if x and x.payload.private else 'ib-go' }}" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span>
+      <span class="ib lead {{ 'ib-plain' if x and x.payload.private else 'ib-go' }}" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span>
       <span class="r1-t">{{ name }}
         <small>{{ it.when|short_when }} · {{ it.duration_s|mins }}
           {%- if it.merged %} · {{ it.merged.n }} parts{% endif %}{% if it.transcript %} · {{ m.icon("note") }}{% endif %}
@@ -94,7 +94,7 @@
       <div class="acts">
         {% if not x.payload.private %}<button class="act pri" form="ai-{{ x.r.id }}"><span class="ib ib-ai"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Summarize</span><small>{{ x.est.ai_s|duration }} · ${{ '%.2f'|format(x.est.cost) }}</small><span class="chev-r" aria-hidden="true">›</span></button>{% endif %}
         <button class="act" form="ta-{{ x.r.id }}"><span class="ib ib-plain"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Transcribe</span><small>{{ x.est.local_s|duration }} · free</small><span class="chev-r" aria-hidden="true">›</span></button>
-        <label class="act"><span class="ib">≡</span><span class="grow">Type</span><select name="meeting_type" id="mt-{{ x.r.id }}" form="ai-{{ x.r.id }}" class="sh-select" aria-label="Meeting type">
+        <label class="act"><span class="ib" aria-hidden="true">{{ m.icon("lines") }}</span><span class="grow">Type</span><select name="meeting_type" id="mt-{{ x.r.id }}" form="ai-{{ x.r.id }}" class="sh-select" aria-label="Meeting type">
           <option value="">Auto</option>{% for k, label in meeting_types.items() %}<option value="{{ k }}" {{ 'selected' if k == x.type_guess }}>{{ label }}</option>{% endfor %}</select></label>
       </div>
       <div class="chips-row">
@@ -103,9 +103,9 @@
         {# Brian, 2026-11-21: two different "laters": Remind me (nothing is processed) and Process at… (sent at that time) #}
         {# F56 (screen pass): chips all use the drawn icons (＋ and ⏱ were text glyphs, a different size and weight) #}
         <button type="button" class="chip" data-panel="pat-{{ it.rec_id }}">{{ m.icon("calendar") }} Process at…</button>
-        <details class="chip-menu"><summary class="chip">{{ m.icon("clock") }} Remind me</summary><div class="chip-pop">{{ m.snooze_forms("/review/" ~ x.r.id ~ "/later", "/review/" ~ x.r.id ~ "/now" if x.r.snoozed_until and x.r.snoozed_until > now_iso else None) }}</div></details>
+        <details class="chip-menu"><summary class="chip">{{ m.icon("clock") }} Remind me</summary><div class="chip-pop">{{ m.snooze_forms("/review/" ~ x.r.id ~ "/later", "/review/" ~ x.r.id ~ "/now" if x.r.snoozed_until and x.r.snoozed_until > now_iso else None, quick="stay") }}</div></details>
         {% if it.merged %}<form method="post" action="/inbox/{{ it.rec_id }}/unmerge"><button class="chip">↶ Unmerge</button></form>{% endif %}
-        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss" data-quick="fold"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
       </div>
       {% else %}
       {# Brian, 2026-11-22: no separate "Get it ready" step; an older recording goes straight to AI notes or Transcript only #}
@@ -117,7 +117,7 @@
       </div>
       <div class="chips-row">{% if it.transcript %}<a class="chip" href="/inbox/{{ it.rec_id }}/transcript">{{ m.icon("note") }} Read</a>{% endif %}
         <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">{{ m.icon("plus") }} Transcript</button>
-        <form method="post" action="/inbox/bulk"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="skip"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form></div>
+        <form method="post" action="/inbox/bulk" data-quick="fold"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="skip"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form></div>
       {% endif %}
       {% if x %}
       {% if x.payload.process_at %}<div class="sched-box"><span>{{ m.icon("calendar") }} Set to {{ 'summarize' if x.payload.process_ai else 'transcribe' }} {{ x.payload.process_at|when_back }}.</span>
@@ -129,7 +129,7 @@
           <label class="seg-opt"><input type="radio" name="ai" value="0" form="pat-f-{{ it.rec_id }}" checked class="sr-only">Transcribe</label></div>
         <form id="pat-f-{{ it.rec_id }}" method="post" action="/review/{{ x.r.id }}/process-at" class="acts">
           <input type="hidden" name="meeting_type" data-type-copy="mt-{{ x.r.id }}" value="{{ x.type_guess or '' }}">
-          <button name="when" value="tonight" class="act"><span class="ib" aria-hidden="true">☾</span><span class="grow">Tonight, 1 AM</span><span class="chev-r" aria-hidden="true">›</span></button>
+          <button name="when" value="tonight" class="act"><span class="ib" aria-hidden="true">{{ m.icon("moon") }}</span><span class="grow">Tonight, 1 AM</span><span class="chev-r" aria-hidden="true">›</span></button>
           <div class="act qp-row" data-quick-pick role="button" tabindex="0"><span class="ib" aria-hidden="true">{{ m.icon("calendar") }}</span><span class="grow">Pick a day and time</span><span class="chev-r" aria-hidden="true">›</span>
             <input type="datetime-local" name="at" aria-label="Pick a day and time" class="qp-native" data-autosave><button name="when" value="pick" hidden data-qp-submit></button></div>
         </form></div>

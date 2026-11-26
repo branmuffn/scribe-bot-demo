@@ -452,6 +452,30 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
         except sqlite3.Error:   # a read-only copy (the public demo): nothing to tidy
             pass
 
+    def _quick_reply(made: list[int], to: str) -> JSONResponse:
+        """F138 (Brian, 2026-11-26: "marking as done is kind of slow"): a quick action (Done, Delete, Dismiss...) sent by
+        the page in the background gets this small answer instead of a redirect to a whole new page: the page already
+        shows the change, so it only needs the Undo bar's label and id (and a short note, e.g. the demo's)."""
+        from urllib.parse import parse_qs, urlsplit
+
+        from scribe_bot.web.routes import NOTES
+        u, out = None, {"ok": True, "to": to, "undo": None, "note": None}
+        if made:
+            try:
+                conn = db.connect(cfg.db_path, any_thread=True)
+                try:
+                    q = ",".join("?" * len(made))
+                    u = conn.execute(f"SELECT id, label FROM undo_action WHERE id IN ({q}) AND undone_at IS NULL "
+                                     "ORDER BY id DESC LIMIT 1", made).fetchone()
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                u = None
+        if u:
+            out["undo"] = {"id": u["id"], "label": u["label"]}
+        out["note"] = NOTES.get((parse_qs(urlsplit(to).query).get("note") or [""])[0])
+        return JSONResponse(out)
+
     @app.middleware("http")
     async def guard_and_area(request: Request, call_next):
         if request.method not in ("GET", "HEAD", "OPTIONS") and not own_post(request):
@@ -461,6 +485,8 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
         response = await call_next(request)
         if made:   # F75: a tap that changed nothing leaves no Undo of its own (see undo.drop_noops)
             await run_in_threadpool(_drop_noop_undos, made)
+        if request.headers.get("x-quick") == "1" and response.status_code in (302, 303):   # F138
+            response = await run_in_threadpool(_quick_reply, made, response.headers.get("location", ""))
         # Speed log (Brian, 2026-11-22: "still not loading quickly"): the phone reads this to split M14 time from network
         response.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
         if request.url.path.startswith("/static/") and "v=" in request.url.query and response.status_code == 200:

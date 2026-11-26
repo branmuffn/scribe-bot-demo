@@ -2308,20 +2308,18 @@ html.in-pane .plain-card .inbox-preview { -webkit-line-clamp: 12 !important }
    rows with a longer full title underneath. */
 .task-row, .task-row:has(.item-full) { align-items: center }
 .task-row > .tick-f, .task-row > .pk-cb, .task-row:has(.item-full) .tick-f { align-self: center; margin-top: 0 }
-/* Select vs done, computer (⭐ A): the pick box is a small, quiet square in its own gutter that shows on hover, on the
-   focused row, or for every row once something is picked; the round done circle stays the main control. */
+/* Select vs done, computer (⭐ A): the pick box is a quiet square in its own gutter that shows on hover, on the
+   focused row, or for every row once something is picked; the round done circle stays the main control.
+   F137 (Brian, 2026-11-26): the box is the same 18 px checkbox as on Talks, Inbox and People (it was a smaller 16 px). */
 @media (hover: hover) and (pointer: fine) and (min-width: 960px) {
-  #task-list[data-picker] .task-row > .pk-cb { width: 16px; height: 16px; margin: 0 10px 0 0; border-width: 1.5px; border-radius: 4px;
-    opacity: 0; transition: opacity .12s }
+  #task-list[data-picker] .task-row > .pk-cb { opacity: 0; transition: opacity .12s, background-color .12s, border-color .12s }
   #task-list[data-picker] .task-row:hover > .pk-cb, #task-list[data-picker] .task-row:focus-within > .pk-cb,
   #task-list[data-picker]:has(.picked) .task-row > .pk-cb, #task-list[data-picker] .task-row.picked > .pk-cb { opacity: 1 }
   #task-list[data-picker] .task-row > .tick-f { margin-right: 12px }
 }
-/* Select vs done, phone (⭐ A): picking shows a round blue selection circle in the done circle's place (like Photos and
-   Mail), so the shape doesn't jump between a circle and a square; blue = picked, green ✓ = done. */
-@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
-  #task-list.picking .pk-cb { border-radius: 50% !important }
-}
+/* Select vs done, phone: picking shows the select box in the done circle's place, so nothing moves. F137 (Brian,
+   2026-11-26: "the circle for task is the same for selecting as for marking done"): it's the square box every list
+   uses for picking now, not a second circle (see F137 at the end). */
 
 /* N5 (Brian, 2026-11-25), computers. Right: the top of the page stays full width; the pane starts level with the first
    row of the list (--dp-top, set by ui.js) because a task or recording is short. Below: a panel in the bottom-right
@@ -2632,3 +2630,63 @@ html.pop-lock .fab { visibility: hidden }
 .ts-in > .menu-label, .chip-pop > .menu-label { display: none }
 /* F54 (screen pass): Tasks › Unsure titles were link blue while every other row title is ink */
 a.item-title.plain { color: var(--ink) } a.item-title.plain:hover { text-decoration: underline }
+
+/* ---------- F135–F138 (Brian, 2026-11-26: rows, icons, done and select) ---------- */
+/* F136 (Brian, 2026-11-26: "each page has its own shape"): one shape for the icon at the start of a row, on every list (Talks, Inbox, People, Today, Review, the People
+   asks): a circle, the same size everywhere (40 px; 32 in Compact, 44 in Comfortable), its drawing in the exact middle.
+   Why circles: initials for people are round by long habit (contacts, mail), Talks were already round, and a task's
+   done control is a circle too. Inbox's square ▶ was the odd one out. So on a row a circle is the thing itself (or
+   "mark done"), and the only square is the select box (F137). */
+:root { --lead: 40px }
+html[data-density="compact"] { --lead: 32px }
+html[data-density="comfortable"] { --lead: 44px }
+:is(.item, .in-sum, .sp-sum, .overnight-card) > .lead { flex: 0 0 var(--lead); width: var(--lead); height: var(--lead); min-width: 0; min-height: 0;
+  border-radius: 50%; display: grid; place-items: center; align-self: center; padding: 0; box-sizing: border-box; line-height: 1;
+  font-size: calc(var(--lead) * .34); letter-spacing: 0 }
+/* F135: what's inside is drawn and sized from the circle, and shown as a block (an inline icon sits on the text line, a
+   few px high), so it's centred both ways. The ▶ is the drawn triangle (icons.html), optically centred. */
+:is(.item, .in-sum, .sp-sum, .overnight-card) > .lead > .icon { display: block; margin: 0; width: calc(var(--lead) / 2); height: calc(var(--lead) / 2) }
+:is(.item, .in-sum, .sp-sum) > .lead > .ic-play { width: calc(var(--lead) * .42); height: calc(var(--lead) * .42) }
+/* F135 sweep: the ▶ and other icons on the Inbox sheet's action rows are round too, like the row's own icon */
+.acts .act > .ib { border-radius: 50% }
+.acts .act > .ib > .icon { display: block; margin: 0 }
+.pk2 .pk-bot button > i.ib .icon { margin-left: 0 }   /* the triangle itself is centred now; no extra nudge */
+
+/* F137 (Brian, 2026-11-26: "the circle for task is the same for selecting as for marking done"). Two shapes for two
+   jobs, everywhere: a CIRCLE that turns green means "mark done" (like Apple Reminders and Todoist): an empty ring, a
+   faint green ✓ when you point at it, a green disc with a ✓ once done. A SQUARE that turns blue means "select" (like
+   Gmail), the same box on every list. The ✓ is drawn, not typed, so it sits in the middle. */
+.tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line-strong); background: transparent; position: relative;
+  transition: border-color .15s, background-color .15s, transform .12s }
+.tick::after { content: none !important }
+.tick::before { content: "" !important; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; background: var(--ok); opacity: 0;
+  transform: scale(.6); transition: opacity .12s, transform .15s;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat }
+@media (hover: hover) { .tick:not(.on):hover { border-color: var(--ok) } .tick:not(.on):hover::before { opacity: .6; transform: none } }
+.tick:active { transform: scale(.9) }
+.tick.on, .qa-done .tick, .qa-flip .tick:not(.on) { background: var(--ok); border-color: var(--ok) }
+.tick.on::before, .qa-done .tick::before, .qa-flip .tick:not(.on)::before { background: var(--surface); opacity: 1; transform: none }
+.qa-flip .tick.on { background: transparent; border-color: var(--line-strong) } .qa-flip .tick.on::before { opacity: 0 }
+.qa-done .tick, .qa-flip .tick:not(.on) { animation: tick-pop .28s cubic-bezier(.2, .9, .25, 1) }
+@keyframes tick-pop { 45% { transform: scale(1.2) } }
+.qa-done .item-title, .qa-flip .item-title:not(.done-text) { text-decoration: line-through; color: var(--muted) }
+/* Picking on a phone: the row's round icon (or a task's done circle) gives its place to the square box while you pick,
+   so nothing moves; blue with a ✓ once picked (Tasks and Trash already show the same 24 px box, N4). Computers keep the 18 px checkbox in its own gutter (.row-cb, .pk-cb). */
+@media not all and (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  :is(#conv-list.picking .conv-row, #inbox-list.picking .in-row .in-sum, [data-picker].picking [data-pick-id]) > .lead {
+    position: relative; visibility: visible !important; background: none !important; border: 0 !important; box-shadow: none !important; color: transparent !important }
+  :is(#conv-list.picking .conv-row, #inbox-list.picking .in-row .in-sum, [data-picker].picking [data-pick-id]) > .lead > * { visibility: hidden !important }
+  :is(#conv-list.picking .conv-row, #inbox-list.picking .in-row .in-sum, [data-picker].picking [data-pick-id]) > .lead::before {
+    content: ""; position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; box-sizing: border-box; border-radius: 7px !important;
+    border: 2px solid var(--line-strong); background: var(--surface) no-repeat center / 15px 15px; transition: background-color .12s, border-color .12s }
+  :is(#conv-list.picking .conv-row.picked, #inbox-list.picking .in-row.picked .in-sum, [data-picker].picking [data-pick-id].picked) > .lead::before { background-color: var(--acc); border-color: var(--acc);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
+}
+
+/* F138 (Brian, 2026-11-26: "marking as done is kind of slow"): a quick action shows at once (app.js). A row that
+   leaves folds shut smoothly, like Gmail; one waiting for its fresh copy dims a little. */
+.qa-fold { opacity: 0; min-height: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; margin-top: 0 !important; margin-bottom: 0 !important;
+  border-top-color: transparent !important; transition: height .24s cubic-bezier(.2, .9, .25, 1), opacity .18s, padding .24s, margin .24s }
+.qa-wait { opacity: .6; transition: opacity .15s }
+@media (prefers-reduced-motion: reduce) { .qa-fold, .tick, .tick::before { transition: none !important; animation: none !important } .qa-done .tick { animation: none } }

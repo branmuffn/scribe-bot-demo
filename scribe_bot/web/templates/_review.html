@@ -4,7 +4,7 @@
 {% import "macros.html" as m with context %}
 {% if m14 %}<section class="section"><div class="card"><div class="item tap-row"><div class="item-main"><a class="item-link" href="/status"><span class="status-dot bad"></span>The M14 needs attention</a>
   <div class="item-sub">{{ m14|join(' · ')|capitalize }}</div></div>
-  <div class="item-actions">{{ m.snooze_menu("/needs/m14/later") }}</div></div></div></section>{% endif %}
+  <div class="item-actions">{{ m.snooze_menu("/needs/m14/later", quick="fold") }}</div></div></div></section>{% endif %}
 {% if not (speakers or inbox or approvals or glossary or m14 or stale or reminders) %}{% if not on_today and tab == 'open' %}
 <div class="card">{{ m.empty("check-circle", "All caught up", "New recordings, speakers to name, unsure tasks and glossary suggestions appear here.") }}</div>{% endif %}
 {% else %}
@@ -25,7 +25,7 @@
   <div class="card" data-cap="3" data-all="/review">
     {% for x in speakers %}{# compact (Brian, 2026-11-21): one row; tap for the voice clip and the name in a sheet #}
     <details class="fx-sheet item sp-row" id="sp-{{ x.s.id }}">
-      <summary class="sp-sum"><span class="ib">?</span><span class="grow"><b>{{ x.r.conv_title or 'Conversation' }}</b>
+      <summary class="sp-sum"><span class="ib lead" aria-hidden="true">{{ m.icon("q") }}</span><span class="grow"><b>{{ x.r.conv_title or 'Conversation' }}</b>
         <small>{{ (x.s.talk_seconds / 60)|round(1) }} min of talking{% if x.payload.guess %} · sounds like {{ x.payload.guess }}{% endif %}{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %} · snoozed{% endif %}</small></span><span class="chev-r" aria-hidden="true">›</span></summary>
       <div class="fx-back" data-fx-close aria-hidden="true"></div>
       <div class="fx-body" role="dialog" aria-label="Who is this?"><div class="fx-grab" aria-hidden="true"></div>
@@ -36,7 +36,7 @@
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits>
           {% if x.payload.guess_id %}<button class="btn btn-primary">Yes, that's right</button>{% endif %}
         </form>
-        <div class="chips-row"><form method="post" action="/speakers/{{ x.s.id }}/unknown"><button class="chip" title="Stop asking about this voice; you can still name them later">Don't know</button></form>{{ m.later_menu(x.r) }}</div>
+        <div class="chips-row"><form method="post" action="/speakers/{{ x.s.id }}/unknown" data-quick="fold"><button class="chip" title="Stop asking about this voice; you can still name them later">Don't know</button></form>{{ m.later_menu(x.r) }}</div>
       </div>
     </details>
     {% else %}{{ m.none_found() }}{% endfor %}
@@ -49,14 +49,14 @@
   {{ m.section("Unsure tasks", inbox|length) }}
   <div class="card" data-cap="3" data-all="/tasks?tab=inbox">
     {% for x in inbox %}
-    <div class="item rv-unsure{{ ' tap-row' if x.r.conversation_id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is number %}?tx=1#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
+    <div class="item rv-unsure{{ ' tap-row' if x.r.conversation_id }}" id="rv-{{ x.r.id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}{% if x.r.conversation_id %}<a class="item-link" href="/conversations/{{ x.r.conversation_id }}{% if x.t and x.t.line is number %}?tx=1#L{{ x.t.line }}{% endif %}">{{ x.t.title if x.t else x.payload.title or 'Item' }}</a>
         {% else %}<div class="item-title">{{ x.t.title if x.t else x.payload.title or 'Item' }}</div>{% endif %}
         <div class="item-sub"><span>{{ x.payload.reason or "The AI wasn't sure" }}</span>{% if x.r.conv_title %}<span>{{ x.r.conv_title }}</span>{% endif %}</div></div>
       <div class="item-actions">
-        {% if x.t %}<form method="post" action="/tasks/{{ x.t.id }}/file" class="keep-f"><select name="area" class="tag-pick" aria-label="Area">{% for a, l in [("work", "Work"), ("personal", "Home"), ("school", "School"), ("other", "Other")] %}<option value="{{ a }}" {{ 'selected' if (x.t.area or 'work') == a }}>{{ l }}</option>{% endfor %}</select>
+        {% if x.t %}<form method="post" action="/tasks/{{ x.t.id }}/file" class="keep-f" data-quick="fold"><select name="area" class="tag-pick" aria-label="Area">{% for a, l in [("work", "Work"), ("personal", "Home"), ("school", "School"), ("other", "Other")] %}<option value="{{ a }}" {{ 'selected' if (x.t.area or 'work') == a }}>{{ l }}</option>{% endfor %}</select>
           <button class="ib ib-ok" aria-label="Keep" title="Keep">{{ m.icon("check") }}</button></form>
-        <form method="post" action="/tasks/{{ x.t.id }}/delete"><button class="ib ib-no" aria-label="Wrong, remove" title="Wrong, remove">{{ m.icon("x") }}</button></form>
-        {% else %}<form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-sm">Dismiss</button></form>{% endif %}
+        <form method="post" action="/tasks/{{ x.t.id }}/delete" data-quick="fold"><button class="ib ib-no" aria-label="Wrong, remove" title="Wrong, remove">{{ m.icon("x") }}</button></form>
+        {% else %}<form method="post" action="/review/{{ x.r.id }}/dismiss" data-quick="fold"><button class="btn btn-sm">Dismiss</button></form>{% endif %}
       {{ m.later_menu(x.r) }}</div></div>
     {% else %}{{ m.none_found() }}{% endfor %}
   </div>
@@ -68,7 +68,7 @@
   {{ m.section("Cloud approvals", approvals|length) }}
   <div class="card" data-cap="3" data-all="/review">
     {% for x in approvals %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
+    <div class="item" id="rv-{{ x.r.id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<div class="item-title">{{ x.payload.task or 'AI run' }}{% if x.r.conv_title %} · {{ x.r.conv_title }}{% endif %}</div>
         <div class="item-sub">
           {% if x.payload.model %}<span class="badge badge-cloud">{{ m.icon("cloud") }}{{ x.payload.model }}</span>{% endif %}
           {% if x.payload.account %}<span>{{ x.payload.account }}</span>{% endif %}
@@ -77,7 +77,7 @@
         {% if x.payload.sent %}<div class="item-sub">Sends: {{ x.payload.sent }}</div>{% endif %}</div>
       <div class="item-actions">
         {{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Approve", "rc-" ~ x.r.id) }}
-        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost">Decline</button></form>{{ m.later_menu(x.r) }}</div>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss" data-quick="fold"><button class="btn btn-ghost">Decline</button></form>{{ m.later_menu(x.r) }}</div>
       {{ m.confirm_slot("rc-" ~ x.r.id) }}</div>
     {% else %}{{ m.none_found() }}{% endfor %}
   </div>
@@ -89,11 +89,11 @@
   {{ m.section("Glossary suggestions", glossary|length) }}
   <div class="card" data-cap="3" data-all="/review">
     {% for x in glossary %}
-    <div class="item"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
+    <div class="item" id="rv-{{ x.r.id }}"><div class="item-main">{% if x is defined and x.r.snoozed_until and x.r.snoozed_until > now_iso %}<span class="badge badge-outline snz">Snoozed · back {{ x.r.snoozed_until|when_back }}</span>{% endif %}<b>{{ x.g.term if x.g else x.payload.term }}</b>
         {% if x.g %}<div class="item-sub">heard as {{ x.variants|join(', ') }}</div>{% endif %}</div>
       <div class="item-actions">
-        <form method="post" action="/review/{{ x.r.id }}/approve"><button class="btn btn-ok">{{ m.icon("check") }} Add</button></form>
-        <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-no">{{ m.icon("x") }} Dismiss</button></form>{{ m.later_menu(x.r) }}</div></div>
+        <form method="post" action="/review/{{ x.r.id }}/approve" data-quick="fold"><button class="btn btn-ok">{{ m.icon("check") }} Add</button></form>
+        <form method="post" action="/review/{{ x.r.id }}/dismiss" data-quick="fold"><button class="btn btn-no">{{ m.icon("x") }} Dismiss</button></form>{{ m.later_menu(x.r) }}</div></div>
     {% else %}{{ m.none_found() }}{% endfor %}
   </div>
 </section>

@@ -22,9 +22,9 @@
     <div class="item-sub">{% if tab == 'current' and n.created_at > seen %}<span class="badge badge-warn">New</span>{% endif %}
       <span>{{ '#scribe-alerts' if n.channel == 'alerts' else '#scribe-bot' if n.sent_at else 'In the app' }}</span><span>{{ n.created_at|local_datetime }}</span>
       {% if n.status != 'sent' %}<span class="badge badge-outline" title="Waiting for quiet hours to end or for Discord to answer">not sent yet</span>{% endif %}</div></div>
-    <div class="item-actions">{% if tab == 'current' %}<form method="post" action="/notifications/{{ n.id }}/dismiss">
+    <div class="item-actions">{% if tab == 'current' %}<form method="post" action="/notifications/{{ n.id }}/dismiss" data-quick="fold">
       <button class="btn btn-ghost btn-icon" title="Dismiss (kept under Dismissed)" aria-label="Dismiss “{{ n.title }}”">{{ m.icon("x") }}</button></form>
-      {% else %}<form method="post" action="/notifications/{{ n.id }}/restore"><button class="btn btn-ghost">Restore</button></form>{% endif %}</div></div>
+      {% else %}<form method="post" action="/notifications/{{ n.id }}/restore" data-quick="fold"><button class="btn btn-ghost">Restore</button></form>{% endif %}</div></div>
   {% else %}
     {% if tab == 'dismissed' %}{{ m.empty("bell", "Nothing dismissed", "Notifications you dismiss with ✕ wait here.") }}
     {% elif n_dismissed %}{{ m.empty("check-circle", "All caught up", "Dismissed ones are under Dismissed.") }}

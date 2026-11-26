@@ -22,12 +22,12 @@
   <div class="item tr-row" data-pick-id="r{{ c.id }}"><span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span><div class="item-main"><div class="item-title">{{ c.title|recorder_title }}</div>
     <div class="item-sub"><span>From Inbox</span><span>{{ c.received_at|local_date }}</span>{% if c.duration_s %}<span>{{ (c.duration_s / 60)|round|int }} min</span>{% endif %}
       <span title="Removed for good on this day">kept until {{ c.gone_on|local_date }}</span></div></div>
-    <div class="item-actions tr-act"><form method="post" action="/recordings/{{ c.id }}/unskip"><button class="btn btn-sm">Restore</button></form></div></div>
+    <div class="item-actions tr-act"><form method="post" action="/recordings/{{ c.id }}/unskip" data-quick="fold"><button class="btn btn-sm">Restore</button></form></div></div>
   {% else %}
   <div class="item tr-row" data-pick-id="c{{ c.id }}"><span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick"></span><div class="item-main"><div class="item-title">{{ c.title }}</div>
     <div class="item-sub"><span>{{ (c.started_at or c.created_at)|local_date }}</span><span>trashed {{ c.deleted_at|local_date }}</span>
       <span title="Removed for good on this day">kept until {{ c.gone_on|local_date }}</span></div></div>
-    <div class="item-actions tr-act"><form method="post" action="/conversations/{{ c.id }}/restore"><button class="btn btn-sm">Restore</button></form></div></div>
+    <div class="item-actions tr-act"><form method="post" action="/conversations/{{ c.id }}/restore" data-quick="fold"><button class="btn btn-sm">Restore</button></form></div></div>
   {% endif %}{% else %}{{ m.empty("trash", "Trash is empty") }}{% endfor %}
 </div>
 {% elif unsorted %}

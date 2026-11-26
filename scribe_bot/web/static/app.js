@@ -2690,3 +2690,127 @@ document.addEventListener("click", function (e) {
   document.addEventListener("htmx:beforeSwap", stop);
   document.addEventListener("toggle", function (e) { if (btn && e.target.tagName === "DETAILS" && !e.target.open && e.target.contains(btn)) stop(); }, true);
 })();
+
+/* F138 (Brian, 2026-11-26: "i tried the marking as done and it's kind of slow, fix that"). A quick action waited for
+   the M14 twice: the post, then a redirect to the whole page built again, and only then did the row change. Now a
+   form marked data-quick shows its result at once and is sent in the background with X-Quick: 1, which app.py answers
+   with a small note (the Undo bar's label and id), never a page:
+     fold  the row folds away now (it leaves this list: Done, Delete, Dismiss, Restore...)
+     stay  the row stays; once saved, that row alone is fetched fresh (a reminder's badge), or leaves if it's gone
+     mark  a talk's own task list, where done tasks stay: the circle fills at once and the request goes on as before
+   Undo puts the rows back where they were at once; a failure puts them back too, with a short note. */
+(function () {
+  var back = {}, busy = 0, empty = [];
+  function rowOf(f) { return f.closest("[data-quick-row]") || f.closest(".item, .in-row"); }
+  function note(t) { if (window.sbNote) window.sbNote(t); }
+  function fail(err) { return err instanceof TypeError ? window.sbFail(0) : (err && err.message) || window.sbFail(500); }
+  function shut(row) {   // the row's own sheet or menu closes first (on a computer the sheet is the reading pane)
+    [].forEach.call(row.querySelectorAll("details[open]"), function (d) { d.open = false; });
+    if (row.matches("details[open]")) row.open = false;
+  }
+  function clean(row) {  // a swipe moved the row aside and folded it: undo that too
+    [row, row.querySelector(":scope > summary")].forEach(function (el) {
+      if (!el) return;
+      [].slice.call(el.classList).forEach(function (c) { if (/^(sw-|qa-)/.test(c)) el.classList.remove(c); });
+      ["transform", "transition-duration", "box-shadow", "height", "overflow"].forEach(function (p) { el.style.removeProperty(p); });
+    });
+  }
+  function uncap(card) {  // Today's short lists ("See 2 more"): the next hidden row takes the folded one's place
+    if (!card || !card.matches || !card.matches("[data-cap]")) return;
+    var n = parseInt(card.dataset.cap, 10) || 3, h = card.querySelector(":scope > .item.cap-hidden");
+    if (h && card.querySelectorAll(":scope > .item:not(.cap-hidden)").length < n) h.classList.remove("cap-hidden");
+    var left = card.querySelectorAll(":scope > .item.cap-hidden").length, b = card.querySelector(":scope > .cap-more [data-cap-more]");
+    if (b) { if (left) b.textContent = "See " + left + " more"; else b.remove(); }
+  }
+  function fold(row, done) {
+    shut(row);
+    var s = { row: row, parent: row.parentNode, next: row.nextSibling, t: [] }, wait = done ? 170 : 0;
+    row.classList.add("qa-gone");
+    if (done) row.classList.add("qa-done");   // the circle fills green with its ✓ first, then the row folds
+    s.t.push(setTimeout(function () {
+      row.style.height = row.offsetHeight + "px"; row.style.overflow = "hidden"; void row.offsetHeight;
+      row.classList.add("qa-fold"); row.style.height = "0px";
+    }, wait));
+    s.t.push(setTimeout(function () {
+      if (!row.parentNode) return;
+      s.parent = row.parentNode; s.next = row.nextSibling;
+      [].slice.call(s.parent.children).forEach(function (c) { if (c._row === row) c.remove(); });   // a swipe's colour layer
+      row.remove(); uncap(s.parent);
+    }, wait + 260));
+    return s;
+  }
+  function putBack(s) {
+    s.t.forEach(clearTimeout); clean(s.row);
+    if (s.row.parentNode) return true;
+    if (!s.parent.isConnected) return false;
+    s.parent.insertBefore(s.row, s.next && s.next.parentNode === s.parent ? s.next : null);
+    return true;
+  }
+  function fresh(id) {   // the server's own version of one row or list; gone from the page = gone here too
+    if (!id || !window.htmx || !document.getElementById(id)) return;
+    htmx.ajax("GET", location.pathname + location.search, { target: "#" + id, select: "#" + id, swap: "outerHTML" });
+  }
+  function post(f, by) {
+    var fd; try { fd = new FormData(f, by || undefined); } catch (_) { fd = new FormData(f); if (by && by.name) fd.append(by.name, by.value); }
+    busy++;
+    return fetch(f.getAttribute("action"), { method: "POST", body: fd, credentials: "same-origin", headers: { "X-Quick": "1" } }).then(function (r) {
+      var js = (r.headers.get("content-type") || "").indexOf("json") >= 0;
+      if (!r.ok) return (js ? r.json() : Promise.resolve({})).catch(function () { return {}; }).then(function (j) {
+        throw new Error(typeof j.detail === "string" ? j.detail : window.sbFail(r.status)); });
+      if (!js) { location.reload(); return new Promise(function () {}); }   // an answer that is a page: show it
+      return r.json();
+    }).then(function (j) {
+      if (j.to && new URL(j.to, location.href).pathname !== location.pathname) { location.href = j.to; return new Promise(function () {}); }
+      return j;
+    }).finally(function () {
+      if (--busy) return;
+      var e = empty; empty = []; e.forEach(fresh);   // a list left empty shows its own "nothing here" once all is saved
+    });
+  }
+  function bar(j, spots) {
+    var u = document.getElementById("undo-bar"); if (!u || (!j.undo && !j.note)) return;
+    var x = '<button type="button" class="icon-btn" data-dismiss-undo aria-label="Dismiss" title="Hide this bar"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>';
+    u.innerHTML = '<span class="undo-label"></span>' + (j.undo ? '<form method="post" action="/undo/' + (+j.undo.id) + '" data-quick-undo="' + (+j.undo.id) +
+      '"><button class="btn btn-ghost undo-btn">Undo</button></form>' : "") + x;
+    u.querySelector(".undo-label").textContent = j.undo ? j.undo.label : j.note;
+    if (j.undo) back[j.undo.id] = spots;
+    u.classList.remove("net-note"); u.hidden = false;
+  }
+  document.addEventListener("submit", function (e) {
+    var f = e.target;
+    if (e.defaultPrevented || !f.matches) return;
+    var uid = f.getAttribute("data-quick-undo");
+    if (uid && back[uid]) {   // Undo: the rows come back now; the server catches up in the background
+      e.preventDefault(); e.stopImmediatePropagation();
+      var spots = back[uid], ok = true; delete back[uid];
+      document.getElementById("undo-bar").hidden = true;
+      spots.forEach(function (s) { if (s.row && !putBack(s)) ok = false; });
+      post(f).then(function () { if (!ok) location.reload(); spots.forEach(function (s) { if (s.id) fresh(s.id); }); })
+        .catch(function (err) { note(fail(err)); setTimeout(function () { location.reload(); }, 1600); });
+      return;
+    }
+    var mode = f.getAttribute("data-quick"), row = mode && rowOf(f);
+    if (!row || !row.isConnected) return;
+    if (mode === "mark") { row.classList.toggle("qa-flip"); return; }   // htmx sends it and swaps in the saved rows
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (row.classList.contains("qa-gone")) return;   // a second tap while it folds: sent once
+    var menu = f.closest(".row-menu[open], .chip-menu[open]"); if (menu) menu.open = false;
+    if (mode === "stay") {
+      shut(row); row.classList.add("qa-wait");
+      post(f, e.submitter).then(function (j) { row.classList.remove("qa-wait"); bar(j, [{ id: row.id }]); fresh(row.id); })
+        .catch(function (err) { row.classList.remove("qa-wait"); note(fail(err)); });
+      return;
+    }
+    var done = /\/done$/.test(f.getAttribute("action")), s = fold(row, done);
+    post(f, e.submitter).then(function (j) {
+      bar(j, [s]);
+      var box = s.parent && s.parent.closest && s.parent.closest("[id]");
+      if (box && !box.querySelector(".item, .in-row") && empty.indexOf(box.id) < 0) empty.push(box.id);
+    }).catch(function (err) { if (!putBack(s)) location.reload(); note(fail(err)); });
+  }, true);
+  // mark: a request htmx couldn't finish leaves the circle as it was (htmx shows the note)
+  document.addEventListener("htmx:afterRequest", function (e) {
+    var f = e.detail && e.detail.elt; if (e.detail.successful || !f || !f.matches || !f.matches('form[data-quick="mark"]')) return;
+    var r = rowOf(f); if (r) r.classList.remove("qa-flip");
+  });
+})();

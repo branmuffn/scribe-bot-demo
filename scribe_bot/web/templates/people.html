@@ -6,7 +6,7 @@
 {{ m.talks_head("people") }}
 {% if mentioned %}{# Brian, 2026-11-21: one row that opens a sheet (it took the top of the page) #}
 <details class="fx-sheet mention-sheet" id="mentioned">
-  <summary class="item tap-row mention-row"><span class="ib">＋</span><div class="item-main"><div class="item-title">{{ mentioned|length }} name{{ 's' if mentioned|length != 1 }} mentioned, not added</div>
+  <summary class="item tap-row mention-row"><span class="ib lead" aria-hidden="true">{{ m.icon("plus") }}</span><div class="item-main"><div class="item-title">{{ mentioned|length }} name{{ 's' if mentioned|length != 1 }} mentioned, not added</div>
     <div class="item-sub"><span>{{ mentioned[:3]|map(attribute='name')|join(', ') }}{{ '…' if mentioned|length > 3 }}</span></div></div><span class="chev-r" aria-hidden="true">›</span></summary>
   <div class="fx-back" data-fx-close aria-hidden="true"></div>
   <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div>
@@ -18,12 +18,12 @@
       <div class="item-sub"><span>{{ g.facts }} note{{ 's' if g.facts != 1 }}</span><span>{{ g.convs }} talk{{ 's' if g.convs != 1 }}</span><span>last {{ g.last|local_date }}</span></div>
       {% if g.samples %}<p class="inbox-preview">“{{ g.samples|join('”, “') }}”</p>{% endif %}</div>
       <div class="item-actions">
-        <form method="post" action="/people/mentioned"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="add"><button class="btn btn-primary btn-sm">{{ m.icon("plus") }} Add</button></form>
+        <form method="post" action="/people/mentioned" data-quick="fold"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="add"><button class="btn btn-primary btn-sm">{{ m.icon("plus") }} Add</button></form>
         <details class="row-menu same-as"><summary class="btn btn-sm">Same as…</summary>
-          <form method="post" action="/people/mentioned" class="menu-panel picker-form"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="same">
+          <form method="post" action="/people/mentioned" class="menu-panel picker-form" data-quick="fold"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="same">
             <select name="person_id" aria-label="Who {{ g.name }} is">{% for p in everyone if p.id != 1 %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
             <button class="btn">Link</button></form></details>
-        <form method="post" action="/people/mentioned"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="hide"><button class="btn btn-ghost btn-icon" aria-label="Hide {{ g.name }}" title="Don't list this name again">{{ m.icon("x") }}</button></form>
+        <form method="post" action="/people/mentioned" data-quick="fold"><input type="hidden" name="name" value="{{ g.name }}"><input type="hidden" name="action" value="hide"><button class="btn btn-ghost btn-icon" aria-label="Hide {{ g.name }}" title="Don't list this name again">{{ m.icon("x") }}</button></form>
       </div></div>
     {% endfor %}
   </div></div>
@@ -31,7 +31,7 @@
 {% endif %}
 {% if unnamed %}{# Brian, 2026-11-21: voices heard but not named yet wait here, like Mentioned; naming one updates it everywhere #}
 <details class="fx-sheet mention-sheet" id="unnamed">
-  <summary class="item tap-row mention-row"><span class="ib">?</span><div class="item-main"><div class="item-title">{{ unnamed|length }} voice{{ 's' if unnamed|length != 1 }} not named yet</div>
+  <summary class="item tap-row mention-row"><span class="ib lead" aria-hidden="true">{{ m.icon("q") }}</span><div class="item-main"><div class="item-title">{{ unnamed|length }} voice{{ 's' if unnamed|length != 1 }} not named yet</div>
     <div class="item-sub"><span>Tap to name them</span></div></div><span class="chev-r" aria-hidden="true">›</span></summary>
   <div class="fx-back" data-fx-close aria-hidden="true"></div>
   <div class="fx-body"><div class="fx-grab" aria-hidden="true"></div>
@@ -57,8 +57,8 @@
       </div>{# "See what would move…" line dropped (low-value space, 2026-11-23): Review merge shows it first anyway #}
       {# Brian, 2026-11-25: Merge / Don't merge / ✕ on each suggestion (Merge opens the review first; both others can be undone) #}
       <div class="item-actions dup-acts"><a class="btn btn-sm btn-primary" href="/people/{{ d.from_id }}/merge?into={{ d.into_id }}">Merge</a>
-        <form method="post" action="/people/{{ d.from_id }}/not-same"><input type="hidden" name="into" value="{{ d.into_id }}"><button class="btn btn-sm">Don't merge</button></form>
-        <form method="post" action="/people/{{ d.from_id }}/not-same"><input type="hidden" name="into" value="{{ d.into_id }}"><input type="hidden" name="later" value="1"><button class="icon-btn" aria-label="Hide this suggestion for 30 days" title="Hide for 30 days">{{ m.icon("x") }}</button></form></div></div>
+        <form method="post" action="/people/{{ d.from_id }}/not-same" data-quick="fold"><input type="hidden" name="into" value="{{ d.into_id }}"><button class="btn btn-sm">Don't merge</button></form>
+        <form method="post" action="/people/{{ d.from_id }}/not-same" data-quick="fold"><input type="hidden" name="into" value="{{ d.into_id }}"><input type="hidden" name="later" value="1"><button class="icon-btn" aria-label="Hide this suggestion for 30 days" title="Hide for 30 days">{{ m.icon("x") }}</button></form></div></div>
     {% endfor %}
   </div>
   {% if more_duplicates > 0 %}<p class="meta" style="margin-top:var(--s2)">…and {{ more_duplicates }} more. Merge these first; the list updates.</p>{% endif %}

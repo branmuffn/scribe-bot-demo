@@ -23,7 +23,7 @@
   <div class="item{{ ' tap-row' if x.href }}"><div class="item-main">
     {% if x.href %}<a class="item-link" href="{{ x.href }}">{{ x.title }}</a>{% else %}<div class="item-title">{{ x.title }}</div>{% endif %}
     <div class="item-sub"><span>{{ x.what }}</span><span><b>{{ x.did }}</b> {{ x.at|local_datetime }}</span></div></div>
-    {% if x.status == 'dismissed' %}<div class="item-actions"><form method="post" action="/review/{{ x.id }}/restore">
+    {% if x.status == 'dismissed' %}<div class="item-actions"><form method="post" action="/review/{{ x.id }}/restore" data-quick="fold">
       <button class="btn" title="Put it back in Open">Restore</button></form></div>{% endif %}</div>
   {% else %}{{ m.empty("archive", "Nothing here yet", "Items move here as you deal with them in Open.") }}{% endfor %}
   {{ m.more("review-log", log|length, total) }}

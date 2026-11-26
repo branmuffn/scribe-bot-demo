@@ -239,12 +239,12 @@ Decisions:
 {% if not learning %}<div id="sec-owe">
 <section class="section" id="sec-mine">
   {{ m.section("You owe", mine|length, help="Things you agreed to do. Tap Done when finished, or Change person if it's someone else's.") }}
-  <div class="card" data-limit="5">{% for t in mine %}{{ m.task_row(t, people, tgt="sec-owe", oob="check-strip") }}{% else %}{{ m.none_found() }}{% endfor %}</div>
+  <div class="card" data-limit="5">{% for t in mine %}{{ m.task_row(t, people, tgt="sec-owe", oob="check-strip", keep_done=True) }}{% else %}{{ m.none_found() }}{% endfor %}</div>
 </section>
 
 <section class="section" id="sec-theirs">
   {{ m.section("They owe you", theirs|length, help="Things other people agreed to do for you.") }}
-  <div class="card" data-limit="5">{% for t in theirs %}{{ m.task_row(t, people, show_owner=True, tgt="sec-owe", oob="check-strip") }}{% else %}{{ m.none_found() }}{% endfor %}</div>
+  <div class="card" data-limit="5">{% for t in theirs %}{{ m.task_row(t, people, show_owner=True, tgt="sec-owe", oob="check-strip", keep_done=True) }}{% else %}{{ m.none_found() }}{% endfor %}</div>
 </section>
 </div>
 

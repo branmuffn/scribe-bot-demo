@@ -19,19 +19,19 @@
 
 {% macro avatar(name, cls="") -%}{% set n = (name or "?")|trim %}{% set ns = namespace(w=[]) %}{% for p in n.split() if p[:1].isalpha() %}{% set ns.w = ns.w + [p] %}{% endfor %}{% set parts = ns.w or [n] %}{# F6: "Lena Fischer (demo)" is LF, not L( #}
 {% set pal = ["#2563eb", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#dc2626", "#4d7c0f"] %}
-<span class="av {{ cls }}" style="--av:{{ pal[(n|sum_chars) % 8] }};background:var(--av)" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>
+<span class="av lead {{ cls }}" style="--av:{{ pal[(n|sum_chars) % 8] }};background:var(--av)" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>
 {%- endmacro %}
 
 {# Needs you "Remind me" menu (clock button): pick when the item comes back. Until then it waits under Snoozed on Today
    and in Review, so nothing vanishes. `later` = the snooze action; `now` = "Bring back now" while it's snoozed. #}
-{% macro snooze_menu(later, now=None) -%}
+{% macro snooze_menu(later, now=None, quick="stay") -%}
 <details class="row-menu"><summary class="icon-btn" aria-label="Remind me later" title="Remind me later">{{ icon("clock") }}</summary>
-  <div class="menu-panel">{{ snooze_forms(later, now) }}</div></details>
+  <div class="menu-panel">{{ snooze_forms(later, now, quick=quick) }}</div></details>
 {%- endmacro %}
-{% macro snooze_forms(later, now=None) -%}
-    {% if now %}<form method="post" action="{{ now }}"><button class="menu-item">{{ icon("sun") }} Bring back now</button></form>{% endif %}
+{% macro snooze_forms(later, now=None, quick=None) -%}
+    {% if now %}<form method="post" action="{{ now }}"{% if quick %} data-quick="stay"{% endif %}><button class="menu-item">{{ icon("sun") }} Bring back now</button></form>{% endif %}
     <div class="menu-label">Remind me</div>
-    {% for value, text in snooze_options() %}<form method="post" action="{{ later }}"><input type="hidden" name="until" value="{{ value }}">
+    {% for value, text in snooze_options() %}<form method="post" action="{{ later }}"{% if quick %} data-quick="{{ quick }}"{% endif %}><input type="hidden" name="until" value="{{ value }}">
       <button class="menu-item">{{ text }}</button></form>{% endfor %}
     {# Brian, 2026-11-21: one tap opens the date-and-time picker; picking saves (no extra Remind me button). #}
     <form method="post" action="{{ later }}" class="menu-item qp-row" data-quick-pick><input type="hidden" name="until" value="pick">
@@ -190,7 +190,11 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {% if t.short_title and t.title and t.short_title|trim != t.title|trim %}<div class="item-full">{{ t.title }}</div>{% endif %}
 {%- endmacro %}
 
-{% macro task_row(t, people, show_owner=False, show_conv=False, tgt=None, oob=None, keep=False, reminder=False) %}
+{% macro task_row(t, people, show_owner=False, show_conv=False, tgt=None, oob=None, keep=False, reminder=False, keep_done=False) %}
+{# F138 (Brian, 2026-11-26: "marking as done is kind of slow"): Done, Not needed, Delete and Reopen show at once and are
+   sent in the background (data-quick, app.js); a list that hides done tasks folds the row away, a talk's own list
+   (keep_done) fills the circle and keeps the row. Undo puts it back. #}
+{% set qf = 'mark' if keep_done else 'fold' %}
 {# Redesign (Brian, 2026-11-21): one line. Tap the circle = Done; everything else (not needed, remind me, person, edit,
    remove) is under ⋯, or swipe: right = remind me later, left = remove. Tap the task for its sheet (whole title + actions). #}
 {# Swipe (Brian, 2026-11-22): right-to-left = Delete or Not needed; left-to-right = Done or Remind. First = long swipe. #}
@@ -198,8 +202,10 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {% set swr = [{"t": "Done", "i": "check", "c": "green", "f": "form.tick-f"}, {"t": "Tomorrow", "i": "clock", "c": "amber", "f": 'form:has(input[value="tomorrow"])'}] %}
 <div class="item task-row{{ ' not-needed' if t.closed_as and t.status == 'done' }}" id="task-{{ t.id }}" data-pick-id="{{ t.id }}"{% if t.status != 'done' %} data-sw='{{ {"l": swl, "r": swr}|tojson }}'{% endif %}>
   <span class="row-cb pk-cb" data-pk-cb role="checkbox" aria-checked="false" aria-label="Pick: {{ t.title }}"></span>
-  {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="tick-f"><button class="tick on" aria-label="Reopen: {{ t.title }}" title="Done. Tap to reopen"></button></form>
-  {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="tick-f"><button class="tick" aria-label="Done: {{ t.title }}" title="Done"></button></form>{% endif %}
+  {# F137 (Brian, 2026-11-26): the done circle is its own control (a ring that fills green with a ✓), never the select
+     box: picking uses the square .pk-cb above, like every other list. #}
+  {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="tick-f" data-quick="{{ qf }}"><button class="tick on" aria-label="Reopen: {{ t.title }}" title="Done. Tap to reopen"></button></form>
+  {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="tick-f" data-quick="{{ qf }}"><button class="tick" aria-label="Mark done: {{ t.title }}" title="Mark done"></button></form>{% endif %}
   {# Brian, 2026-11-21: no ⋯ (it took a column); tap or long-press the task opens its sheet #}
   <div class="item-main" data-open-sheet="ts-{{ t.id }}">
     <div class="item-title{{ ' done-text' if t.status == 'done' and not t.closed_as }}">{{ t.short_title or t.title }}</div>
@@ -208,7 +214,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
       {% if t.closed_as and t.status == 'done' %}<span class="badge badge-outline" title="Closed without being done">Not needed{{ ': ' ~ t.closed_note if t.closed_note }}</span>{% endif %}
       {% if show_owner and t.owner_person_id != 1 %}<b>{{ t.owner_name|who }}</b>{% endif %}
       {{ due(t) }}
-      {% if t.confidence is not none and t.confidence < 0.6 %}<form class="inline-form" {{ hx("/tasks/" ~ t.id ~ "/sure", tgt, oob) }}>
+      {% if t.confidence is not none and t.confidence < 0.6 %}<form class="inline-form" {{ hx("/tasks/" ~ t.id ~ "/sure", tgt, oob) }} data-quick="stay">
         <button class="badge badge-warn" title="The AI wasn't sure about this task. Tap if it looks right; ⋯ to fix or remove it.">Unsure {{ icon("check") }}</button></form>{% endif %}
       {% if t.remind_at and t.status == 'open' %}<span class="badge badge-outline" title="Reminder">{{ icon("clock") }}{{ 'now' if t.remind_at <= now_iso else t.remind_at|when_back }}</span>{% endif %}
       {% if show_conv and t.conv_title %}<a href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}">{{ t.conv_title }}</a>
@@ -216,8 +222,8 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
     </div>
   </div>
   <div class="item-actions">
-    {% if keep and t.status != 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/keep", tgt, oob) }}><button class="btn btn-sm" aria-label="Still need it: {{ t.title }}">Keep</button></form>{% endif %}
-    {% if reminder and t.status != 'done' %}<form method="post" action="/tasks/{{ t.id }}/remind/clear"><button class="btn btn-sm btn-ghost" title="Drop the reminder; the task stays open">Stop reminding</button></form>{% endif %}
+    {% if keep and t.status != 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/keep", tgt, oob) }} data-quick="fold"><button class="btn btn-sm" aria-label="Still need it: {{ t.title }}">Keep</button></form>{% endif %}
+    {% if reminder and t.status != 'done' %}<form method="post" action="/tasks/{{ t.id }}/remind/clear" data-quick="fold"><button class="btn btn-sm btn-ghost" title="Drop the reminder; the task stays open">Stop reminding</button></form>{% endif %}
     {# Brian, 2026-11-21: tap a task (or ⋯) = a sheet with the whole title and every action; swipe down or tap outside closes #}
     <details class="fx-sheet task-sheet" id="ts-{{ t.id }}"><summary class="sr-only">Actions: {{ t.title }}</summary>
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
@@ -236,16 +242,16 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
           <select name="person_id" data-people data-selected="{{ t.owner_person_id or '' }}" aria-label="Who" class="qp-native qp-select" data-autosave><option value="">Who?</option></select>
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits></form>{% endif %}
         {% if t.status == 'open' %}<details class="ts-row"><summary><span class="ts-ic" aria-hidden="true">{{ icon("clock") }}</span><span class="grow">Remind me</span><span class="ts-v">{{ ('now' if t.remind_at <= now_iso else t.remind_at|when_back) if t.remind_at else 'Off' }} ›</span></summary>
-          <div class="ts-in">{{ snooze_forms("/tasks/" ~ t.id ~ "/remind", "/tasks/" ~ t.id ~ "/remind/now" if t.remind_at and t.remind_at > now_iso else None) }}
-            {% if t.remind_at %}<form method="post" action="/tasks/{{ t.id }}/remind/clear"><button class="menu-item">Stop reminding</button></form>{% endif %}</div></details>{% endif %}
+          <div class="ts-in">{{ snooze_forms("/tasks/" ~ t.id ~ "/remind", "/tasks/" ~ t.id ~ "/remind/now" if t.remind_at and t.remind_at > now_iso else None, quick="stay") }}
+            {% if t.remind_at %}<form method="post" action="/tasks/{{ t.id }}/remind/clear" data-quick="stay"><button class="menu-item">Stop reminding</button></form>{% endif %}</div></details>{% endif %}
         {% if t.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow cut">{{ t.conv_title or 'Open the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
       </div>
       <div class="ts-btns">
-        {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="grow"><button class="btn btn-block">↺ Reopen</button></form>
-        {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="grow"><button class="btn btn-primary btn-block">✓ Done</button></form>{% endif %}
+        {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="grow" data-quick="{{ qf }}"><button class="btn btn-block">↺ Reopen</button></form>
+        {% else %}<form {{ hx("/tasks/" ~ t.id ~ "/done", tgt, oob) }} class="grow" data-quick="{{ qf }}"><button class="btn btn-primary btn-block">✓ Done</button></form>{% endif %}
         {# Brian picked A (2026-11-21): no ⋯; Not needed and Remove are one tap each #}
-        {% if t.status == 'open' %}<form {{ hx("/tasks/" ~ t.id ~ "/not-needed", tgt, oob) }} class="grow"><button class="btn btn-block" aria-label="Not needed: {{ t.title }}">Not needed</button></form>{% endif %}
-        <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt, oob) }} class="ts-del"><button class="btn ts-del-btn" aria-label="Remove: {{ t.title }}" title="Remove"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button></form>
+        {% if t.status == 'open' %}<form {{ hx("/tasks/" ~ t.id ~ "/not-needed", tgt, oob) }} class="grow" data-quick="{{ 'stay' if keep_done else 'fold' }}"><button class="btn btn-block" aria-label="Not needed: {{ t.title }}">Not needed</button></form>{% endif %}
+        <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt, oob) }} class="ts-del" data-quick="fold"><button class="btn ts-del-btn" aria-label="Remove: {{ t.title }}" title="Remove"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button></form>
       </div>
     </div></details>
   </div>
@@ -259,10 +265,10 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   <div class="item-main">{% if t.conversation_id %}<a class="item-title plain" href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ task_full(t) }}
     <div class="item-sub">{% if t.owner_person_id and t.owner_person_id != 1 %}<b>{{ t.owner_name }}</b>{% endif %}{% if t.conv_title %}<span>{{ t.conv_title }}</span>{% endif %}</div></div>
   <div class="item-actions">
-    <form {{ hx("/tasks/" ~ t.id ~ "/file", tgt) }} class="keep-f">
+    <form {{ hx("/tasks/" ~ t.id ~ "/file", tgt) }} class="keep-f" data-quick="fold">
       <select name="area" class="tag-pick" aria-label="Area for this task">{% for a, l in [("work", "Work"), ("personal", "Home"), ("school", "School"), ("other", "Other")] %}<option value="{{ a }}" {{ 'selected' if (t.area or 'work') == a }}>{{ l }}</option>{% endfor %}</select>
       <button class="ib ib-ok" aria-label="Keep: {{ t.title }}" title="Keep">{{ icon("check") }}</button></form>
-    <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt) }}><button class="ib ib-no" aria-label="Remove: {{ t.title }}" title="Wrong, remove">{{ icon("x") }}</button></form>
+    <form {{ hx("/tasks/" ~ t.id ~ "/delete", tgt) }} data-quick="fold"><button class="ib ib-no" aria-label="Remove: {{ t.title }}" title="Wrong, remove">{{ icon("x") }}</button></form>
   </div>
 </div>
 {% endmacro %}
@@ -340,7 +346,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   {% if not ai %}<form method="get" action="/talks-bulk/ai" class="sw-sum" data-sw-keep hidden><input type="hidden" name="ids" value="{{ c.id }}"></form>{% endif %}
   {# B1: a checkbox on computers; B3: tap the round icon to pick (phones and computers) #}
   <span class="row-cb" data-row-cb role="checkbox" aria-checked="false" aria-label="Select"></span>
-  <span class="cr-ic {{ 'cr-ai' if ai else 'cr-tx' }}" data-pick-ic title="{{ 'AI notes' if ai else 'Transcript only' }}: tap to select">{{ icon("sparkle" if ai else "lines") }}</span>
+  <span class="cr-ic lead {{ 'cr-ai' if ai else 'cr-tx' }}" data-pick-ic title="{{ 'AI notes' if ai else 'Transcript only' }}: tap to select">{{ icon("sparkle" if ai else "lines") }}</span>
   <div class="item-main">
     <a class="item-link" href="/conversations/{{ c.id }}" title="{{ c.title }}">{{ c.short_title or c.title }}</a>
     <div class="item-sub">

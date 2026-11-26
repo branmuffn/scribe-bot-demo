@@ -849,3 +849,27 @@ def test_f140_the_peeking_side_bar_floats_over_the_top_bar():
     side = [int(z) for z in re.findall(r"  \.sidebar \{[^}]*z-index:\s*(\d+)", css)]
     assert side and min(side) > top, (side, top)
     assert max(_z(css, ".dtop:has(details[open])")) > min(_z(css, "html.side-rail .sidebar.peek"))   # its menus still win
+
+
+def _lstar(h: str) -> float:
+    """CIE lightness (0-100) of a #rrggbb colour, which tracks how different two greys look."""
+    c = [int(h.lstrip("#")[k:k + 2], 16) / 255 for k in (0, 2, 4)]
+    c = [x / 12.92 if x <= .04045 else ((x + .055) / 1.055) ** 2.4 for x in c]
+    y = .2126 * c[0] + .7152 * c[1] + .0722 * c[2]
+    return 116 * (y ** (1 / 3) if y > .008856 else 7.787 * y + 16 / 116) - 16
+
+
+def test_f142_a_hover_fill_can_be_seen_on_the_page_and_on_cards_in_both_themes():
+    """F142 (live, Light at 1440): the bell, the status ring, transcript lines and other hovers on the page
+    background used --surface-2, which in light is 1.7 lightness points from the page, so hovering showed
+    nothing. Every hover that fills a background uses --hover, which stands clearly off the page, the cards and
+    a resting grey (--surface-2) in light and in dark."""
+    rules = _css_rules(_static("app.css"))
+    hovers = [(sel, body) for _, sel, body in rules if ":hover" in sel and re.search(r"background:\s*var\(--", body)]
+    assert len(hovers) >= 20, len(hovers)
+    faint = [sel for sel, body in hovers if re.search(r"background:\s*var\(--(surface-2|surface|bg)\)", body)]
+    assert not faint, faint
+    for theme, tok in _theme_tokens().items():
+        h = _lstar(tok["hover"])
+        for under in ("bg", "surface", "surface-2"):
+            assert abs(h - _lstar(tok[under])) >= 4, (theme, under, round(h, 1), round(_lstar(tok[under]), 1))

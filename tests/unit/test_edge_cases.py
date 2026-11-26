@@ -322,3 +322,23 @@ def test_the_confirm_step_for_one_already_approved_says_so(app):
     assert app.post("/review/7/approve", data={"ai": "1", "confirm": "1"}).status_code == 200
     r = app.get("/review/7/confirm", headers=HTML)
     assert r.status_code == 409 and "Already approved" in r.text
+
+
+@pytest.mark.parametrize("url, data", ACTIONS, ids=[f"{u} {d}" for u, d in ACTIONS])
+def test_a_double_tap_across_a_clock_tick_still_undoes_in_one(app, url, data, monkeypatch):
+    """F118 (CI flake, 2026-11-26): a double tap that lands either side of a second re-stamped the time (Trash moved
+    "deleted at" on), so the second tap counted as a change and its Undo put back the first tap, not the start. The
+    clock now ticks a second on every read, so every action is checked at that worst moment."""
+    from datetime import datetime, timedelta, timezone
+    t = [datetime.now(timezone.utc).replace(microsecond=0)]
+
+    def tick() -> str:
+        t[0] += timedelta(seconds=1)
+        return t[0].isoformat(timespec="seconds")
+    import sys
+    real = db.now
+    for m in [m for k, m in list(sys.modules.items()) if k.startswith("scribe_bot")]:   # also "from db import now"
+        for name in ("now", "utc_now"):
+            if getattr(m, name, None) is real:
+                monkeypatch.setattr(m, name, tick)
+    test_one_undo_puts_back_what_the_taps_changed(app, url, data, 2)

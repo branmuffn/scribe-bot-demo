@@ -198,7 +198,6 @@ input[type=file] { padding: var(--s2); min-height: auto }
 .badge .icon { width: 12px; height: 12px; stroke-width: 2.4 }
 .badge-work { background: var(--work-soft); color: var(--work) }
 .badge-personal { background: var(--personal-soft); color: var(--personal) }
-.badge-private { background: var(--warn-soft); color: var(--warn) }
 .badge-local { background: var(--local-soft); color: var(--local) }
 .badge-cloud { background: var(--cloud-soft); color: var(--cloud) }
 .badge-ok { background: var(--ok-soft); color: var(--ok) }
@@ -388,11 +387,6 @@ details.edit > summary { min-height: var(--tap) }   /* 44px touch target */
 .side-top .icon-btn { width: 36px; height: 36px }   /* brand + 🔔 + ⋯ + ⚙ fit the sidebar (the ⚙ touched its edge) */
 @media (max-width: 539px) { .topbar .brand-text { display: none } .topbar-in { gap: 0 } }
 
-/* Settings: a heading over a group of sections */
-.group-title { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: var(--s8) 0 var(--s2);
-  display: flex; align-items: baseline; gap: var(--s2) }
-.group-title .aside { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600 }
-
 /* "⋯" row menus: secondary actions float in a small panel under the button */
 .item { position: relative }
 .row-menu > summary { list-style: none; color: var(--muted) }
@@ -580,13 +574,9 @@ details.filters form { margin-top: var(--s2) }
 @media (pointer: coarse) { .menu-item { min-height: 48px } .btn, .icon-btn, select, input[type=date] { min-height: 44px }
   .icon-btn { min-width: 44px } .badge button, button.badge { min-height: 32px; padding-inline: 10px } }
 
-/* Conversation and person pages: jump bar to each section (pinned under the 56px top bar for the whole page) */
-.jump-bar { position: sticky; top: 56px; z-index: 5; display: flex; gap: var(--s2); overflow-x: auto; padding: var(--s2) 0;
-  background: var(--bg); scrollbar-width: none }
-.jump-bar a { flex: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: .85rem;
-  color: var(--text); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center }
+/* Conversation and person pages: section links land below the 56px top bar */
 [id^="sec-"], [id^="person-"], #my-speaking, #transcript, #processing { scroll-margin-top: 110px }
-@media (min-width: 960px) { .jump-bar { top: 0 } [id^="sec-"], [id^="person-"], #my-speaking, #transcript, #processing { scroll-margin-top: 60px } }
+@media (min-width: 960px) { [id^="sec-"], [id^="person-"], #my-speaking, #transcript, #processing { scroll-margin-top: 60px } }
 
 button.show-all { width: 100%; text-align: center; border: 0; background: none; color: var(--acc); cursor: pointer; font: inherit }
 
@@ -616,7 +606,7 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
 
 /* Print / Save as PDF: just the content, black on white, no app chrome or edit controls */
 @media print {
-  .sidebar, .topbar, .tabbar, .jump-bar, .back-link, .undo-bar, .tour, .player, .menu, .row-menu, .line-edit, .item-actions,
+  .sidebar, .topbar, .tabbar, .back-link, .undo-bar, .tour, .player, .menu, .row-menu, .line-edit, .item-actions,
   form, button, .pencil, .section-help { display: none !important }
   body, .main { background: #fff !important; color: #000 !important } .main { margin: 0 !important; max-width: none !important; padding: 0 !important }
   .conv-grid { display: block !important } .conv-side { position: static !important; max-height: none !important; overflow: visible !important }
@@ -962,7 +952,7 @@ h1 { font-size: 1.5rem }
 .tick { min-height: 0 !important; min-width: 0; height: 24px; width: 24px; flex: none; box-sizing: border-box }
 .tick::before { content: none }
 #your-week .stat .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .66rem }
-#your-week .light, #your-week .stat-head .light { display: none }
+#your-week .light { display: none }
 #your-week .stat .value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 #your-week .tile { padding: 8px 10px; min-width: 0 }
 #your-week .tile-name { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block }
@@ -1466,11 +1456,10 @@ html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (
 .conv-row .item-link { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
 .conv-row .cr-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .cr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; font-size: .82rem; color: var(--muted) }
-.cr-k-ai { color: #2563eb; font-weight: 600 }
 .cr-name { color: #b45309; font-weight: 600 }
 #conv-list.picking .conv-row .cr-ic { display: none }
-:root[data-theme="dark"] .cr-k-ai, :root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cr-k-ai, :root:not([data-theme="light"]) .conv-row .cr-ai { color: #93b4ff } :root:not([data-theme="light"]) .cr-name { color: #fbbf24 } }
+:root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .conv-row .cr-ai { color: #93b4ff } :root:not([data-theme="light"]) .cr-name { color: #fbbf24 } }
 :root[data-theme="dark"] .cr-name { color: #fbbf24 }
 /* Needs you: grouped rows (B, 2026-11-22) */
 .row-group > summary { list-style: none; cursor: pointer }
@@ -1805,12 +1794,6 @@ html[data-density="comfortable"] :is(.item, .task-row) { padding-top: 18px; padd
 }
 @media (max-width: 379px) { .topbar .icon-btn { width: 38px } .topbar-in { padding-left: 12px } }
 
-/* Swipe right / left on empty space = Back / Forward: a round arrow follows the finger (like Chrome) */
-.nav-swipe { position: fixed; z-index: 95; top: 50%; width: 44px; height: 44px; margin-top: -22px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--surface); color: var(--acc); box-shadow: 0 4px 16px rgb(0 0 0 / .22); pointer-events: none; opacity: 0; transition: background .12s, color .12s }
-.nav-swipe.go { background: var(--acc); color: var(--acc-ink) }
-.nav-swipe .icon { width: 22px; height: 22px; stroke-width: 2.4 }
-
 /* A1: reading pane (desktop): the list on the left, the talk or person on the right (or below); drag the line */
 @media (min-width: 960px) {
   body.pane-on .rpane:not([hidden]) { display: flex; flex-direction: column; position: fixed; z-index: 35; top: 0; right: 0; bottom: 0; width: var(--pane-w, 46vw);
@@ -1850,7 +1833,6 @@ html.in-pane .undo-bar, html.in-pane .tour { left: 50% !important }
    hidden behind it until you scrolled (found 2026-11-23). It now covers only its own band, out to the screen sides. */
 .sum-head:has(.notes-tabs) { clip-path: inset(0 -100vmax 0 -100vmax) }
 html.in-pane .sum-head:has(.notes-tabs) { top: 0 }
-html.in-pane .jump-bar { top: 0 }
 
 /* E2: top of a talk (Brian, 2026-11-23): back on the left, Summarize and ⋯ on the right; one line of pills that folds */
 .cv-bar { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -4px 0 6px }

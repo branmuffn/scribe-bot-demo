@@ -328,7 +328,7 @@ def test_r5_26_fold_labels_say_hide_never_less():
     import re
     for src in (APP, UI):
         assert not re.search(r"""textContent = [^;]*["'](See |Show )?[Ll]ess["']""", src)
-    assert APP.count('? "Hide" :') >= 3
+    assert APP.count('? "Hide" :') >= 2   # the talk's speakers fold is gone: every speaker now shows (no "+N more")
 
 
 def test_r5_27_drawn_icons_not_emoji_in_icon_slots(env):

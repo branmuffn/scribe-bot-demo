@@ -200,19 +200,8 @@
   document.addEventListener("htmx:beforeSwap", function () { var d = drawer(); if (d) { d.hidden = true; setDp(0); html.classList.remove("pop-lock"); } });
 
   /* ---------- Touch gestures: edge swipe = drawer (swipe-to-go-back removed, Brian 2026-11-23) ---------- */
-  var EDGE = 28, g = null, bubble = null;
+  var EDGE = 28, g = null;
   function busy() { return document.querySelector("details.fx-sheet[open], details.row-menu[open], details.chip-menu[open], dialog[open], .pp-sheet:not([hidden]), .picking, .pk2:not([hidden]), .ctx-menu, .sp-sheet:not([hidden])"); }
-  function scrollsX(el) {
-    for (; el && el !== document.body; el = el.parentElement) {
-      if (el.scrollWidth > el.clientWidth + 2) { var o = getComputedStyle(el).overflowX; if (o === "auto" || o === "scroll") return true; }
-    }
-    return false;
-  }
-  function excluded(t) {
-    return closest(t, "[data-sw], .sw-host, .sw-layer, input, textarea, select, audio, video, .lines, .rail, .rail-out, .player, .talk, .sp-bar, .drawer, .up-card, .undo-bar, .tabs, [contenteditable], .no-swipe") || scrollsX(t);
-  }
-  function canForward() { return !(window.navigation && navigation.canGoForward === false); }
-  function canBack() { return !(window.navigation && navigation.canGoBack === false) && history.length > 1; }
   document.addEventListener("touchstart", function (e) {
     if (wide.matches || inPane || e.touches.length !== 1) { g = null; return; }
     var t = e.touches[0], d = drawer();
@@ -226,16 +215,14 @@
     var t = e.touches[0], dx = t.clientX - g.x0, dy = t.clientY - g.y0;
     if (!g.dir) {
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dy) > Math.abs(dx) * (g.kind === "nav" ? 0.8 : 1.5)) { if (g.kind === "edge") closeDrawer(); g = null; hideBubble(); return; }   // a scroll
+      if (Math.abs(dy) > Math.abs(dx) * 1.5) { if (g.kind === "edge") closeDrawer(); g = null; return; }   // a scroll
       g.dir = dx > 0 ? 1 : -1;
       if (g.kind === "edge" && g.dir < 0) { g = null; return; }
       if (g.kind === "edge") { var d = drawer(); d.hidden = false; setDp(0); html.classList.add("pop-lock"); }
-      if (g.kind === "nav" && (g.dir > 0 ? !canBack() : !canForward())) { g = null; return; }
     }
     var db = document.querySelector(".drawer-body"), w = (db && db.offsetWidth) || Math.min(272, innerWidth * 0.76);
     if (g.kind === "edge") { g.v = Math.max(0, Math.min(1, dx / w)); setDp(g.v); }
-    else if (g.kind === "close") { g.v = Math.max(0, Math.min(1, 1 + dx / w)); setDp(g.v); }
-    else { showBubble(g.dir, Math.abs(dx)); g.go = Math.abs(dx) > Math.min(110, innerWidth * 0.28) && g.dir === (dx > 0 ? 1 : -1); }
+    else { g.v = Math.max(0, Math.min(1, 1 + dx / w)); setDp(g.v); }   // "close"
     // speed over the last ~100 ms (not since the start), so a quick flick at the end counts (Brian: it snapped shut)
     (g.pts = g.pts || []).push([e.timeStamp, t.clientX]); while (g.pts.length > 2 && e.timeStamp - g.pts[0][0] > 100) g.pts.shift();
   }, { passive: true });
@@ -245,30 +232,14 @@
     // open past a quarter, or on any rightward flick; a leftward flick always closes
     if (g.kind === "edge") { if (speed < -0.15 || ((g.v || 0) < 0.25 && speed < 0.2)) closeDrawer(); else setDp(1, true); }
     else if (g.kind === "close" && g.dir) { if (speed < -0.2 || ((g.v || 1) < 0.75 && speed < 0.15)) closeDrawer(); else setDp(1, true); }
-    else if (g.kind === "nav" && g.dir) { var go = g.go; hideBubble(go); if (go) { if (g.dir > 0) history.back(); else history.forward(); } }
     g = null;
   });
-  document.addEventListener("touchcancel", function () { if (g && g.kind === "edge") closeDrawer(); hideBubble(); g = null; });
-  function showBubble(dir, dist) {
-    if (!bubble) { bubble = document.createElement("div"); bubble.className = "nav-swipe"; bubble.setAttribute("aria-hidden", "true");
-      bubble.innerHTML = '<svg class="icon"><use href="#i-chev"/></svg>'; document.body.appendChild(bubble); }
-    var p = Math.min(1, dist / Math.min(110, innerWidth * 0.28));
-    bubble.style.transition = "none";
-    bubble.style.left = dir > 0 ? (-44 + p * 64) + "px" : "auto";
-    bubble.style.right = dir < 0 ? (-44 + p * 64) + "px" : "auto";
-    bubble.style.opacity = String(Math.min(1, p * 1.4));
-    bubble.firstChild.style.transform = dir > 0 ? "rotate(180deg)" : "none";
-    bubble.classList.toggle("go", p >= 1);
-  }
-  function hideBubble(went) {
-    if (!bubble) return; bubble.style.transition = "opacity .2s, left .2s, right .2s";
-    bubble.style.opacity = "0"; if (!went) { bubble.style.left = bubble.style.left !== "auto" ? "-44px" : "auto"; bubble.style.right = bubble.style.right !== "auto" ? "-44px" : "auto"; }
-  }
+  document.addEventListener("touchcancel", function () { if (g && g.kind === "edge") closeDrawer(); g = null; });
 
   function ready() { paneMode(); paintQs(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready); else ready();
   document.addEventListener("htmx:afterSettle", ready);
-  addEventListener("pageshow", function () { closeDrawer(); hideBubble(); });
+  addEventListener("pageshow", closeDrawer);
 })();
 
 /* Talk page (Brian's picks D, E2, F2, 2026-11-23) */

@@ -449,8 +449,6 @@
     var t = e.target;
     if (e.key === "Enter" && !e.shiftKey && t.matches && t.matches("textarea[data-enter-submits]")) { e.preventDefault(); t.form.requestSubmit(); }
   });
-  // Pickers that apply at once (Conversations › Sort): choosing an option submits its form.
-  document.addEventListener("change", function (e) { if (e.target.matches && e.target.matches("[data-submit-on-change]")) e.target.form.requestSubmit(); });
 
   // Edit in place: ✎ or double-tap turns the text into an edit box right where it is. Enter (single-line) or Save posts it
   // like the other in-place actions; Esc or Cancel puts the text back.
@@ -664,7 +662,7 @@
   // Jump bar: open the section (and any folded parent) before scrolling to it, so its header and content show. A
   // section in the wide-screen right column (.conv-side) scrolls inside that column only; the left one stays put.
   document.addEventListener("click", function (e) {
-    var a = e.target.closest(".jump-bar a, .rail-src a, .rail-out a");
+    var a = e.target.closest(".rail-src a, .rail-out a");
     if (!a) return;
     e.preventDefault();
     var side = document.querySelector(".conv-side"), wide = side && getComputedStyle(side).overflowY === "auto";
@@ -1383,7 +1381,7 @@ window.ScribeUpload = (function () {
     // Headed sections, Today's group titles and list date headings (2026-11-20: Today, Inbox, Talks, People and Tasks
     // all get a rail once they're taller than about a screen and a half).
     var hs = [].filter.call(document.querySelectorAll("#content .section-head h2, #content details.section > summary h2, #content section > h2, " +
-      "#content h2.group-title, #content .list-head"), function (h) { return h.offsetParent !== null && h.textContent.trim(); });
+      "#content .list-head"), function (h) { return h.offsetParent !== null && h.textContent.trim(); });
     if (hs.length < 2 || document.documentElement.scrollHeight < innerHeight * 1.4) return [];
     return [{ id: "content", label: "Top", top: true }].concat(hs.map(function (h, i) {
       var box = h.classList.contains("list-head") ? h : h.closest("section, details.section, .section-head") || h;
@@ -1847,13 +1845,6 @@ document.addEventListener("click", function (e) {
   var t = e.target.closest && e.target.closest("[data-open-sheet]"); if (!t || e.target.closest("a, button, form")) return;
   if (window.ScribePick && window.ScribePick.active() && !matchMedia("(hover: hover) and (pointer: fine) and (min-width: 960px)").matches) return;   // phones: a tap picks
   var d = document.getElementById(t.dataset.openSheet); if (d) { e.preventDefault(); d.open = true; }
-});
-
-/* "+N more" / "Hide" speakers on a talk (2026-11-21). */
-document.addEventListener("click", function (e) {
-  var b = e.target.closest && e.target.closest("[data-sp-more]"); if (!b) return;
-  var on = b.closest(".legend").classList.toggle("show-all");
-  b.textContent = on ? "Hide" : "+" + b.dataset.n + " more";
 });
 
 /* Tasks (Brian, 2026-11-21): long-press a task also opens its sheet (the ⋯ is gone). */

@@ -594,3 +594,14 @@ def test_every_more_menu_lists_the_same_places(demo):  # noqa: F811
     drawer = places(demo.get("/costs").text, 'aria-label="All places"', "</nav>")
     assert [h for h, _ in more] == ["/conversations?trash=1", "/speaking", "/costs", "/status", "/processing", "/help", "/settings"]
     assert more == drawer[-len(more):], (more, drawer)
+
+
+def test_slash_focuses_a_visible_search_box_without_scrolling():
+    """F129 (D-SP-7): "/" on a talk focused the sticky top bar's search box and the browser scrolled the talk back to
+    its top; under 960 px it picked the hidden top-bar box, so nothing happened. It now takes the first box you can see
+    and keeps your place."""
+    js = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.js").read_text()
+    branch = js[js.index('} else if (e.key === "/") {'):]
+    branch = branch[:branch.index("} else if", 10)]
+    assert "offsetParent !== null" in branch and "focus({ preventScroll: true })" in branch
+    assert "document.querySelector('input[name=\"q\"]')" not in branch

@@ -29,9 +29,7 @@ from scribe_bot.core.secrets import KeychainStore
 WEB = Path(__file__).parent
 WORKER_STALE_SECONDS = 180  # the worker beats every ~30 s
 AREAS = ("all", "work", "personal", "school", "other")   # Brian, 2026-11-20: + School, Other
-from scribe_bot.web.export import AREAS as AREA_LABELS  # noqa: E402  (one list of area names for pages and exports)
 templates = Jinja2Templates(directory=WEB / "templates")
-templates.env.globals["area_labels"] = AREA_LABELS
 from scribe_bot.ai.prompts import MEETING_TYPES  # noqa: E402  (review cards and the confirm step list them)
 templates.env.globals["meeting_types"] = MEETING_TYPES
 
@@ -50,7 +48,6 @@ templates.env.globals["public_demo"] = public_demo()
 # Every static file counts (2026-11-25: only the CSS/JS did, so a new logo alone would have kept the old cached one).
 templates.env.globals["asset_v"] = hashlib.sha256(b"".join(
     f.name.encode() + f.read_bytes() for f in sorted((WEB / "static").iterdir()) if f.is_file())).hexdigest()[:10]
-templates.env.filters["local_time"] = progress.local_time
 templates.env.filters["duration"] = progress.duration_label
 
 

@@ -1050,7 +1050,7 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
                   compare_ready=extract.compared(conn, cid) is not None, compare_model=model_label(extract.other_model(conn, cid)[1]),
                   compare_queued=request.query_params.get("compare") == "queued",
                   rerun_queued=request.query_params.get("rerun") == "queued", processing=processing, ai_calls=ai_calls,
-                  meeting_types=prompts.MEETING_TYPES, speaking=(sp := talk.speaking(conn, cid)), speaking_tips=talk.tips(sp) if sp else [],
+                  speaking=(sp := talk.speaking(conn, cid)), speaking_tips=talk.tips(sp) if sp else [],
                   others_pace=[(s["name"], w) for s in speakers if s["person_id"] != ME
                                and (w := pace.get(s["id"]))])
 
@@ -1115,7 +1115,7 @@ def confirm_page(request: Request, conn: sqlite3.Connection, nav: str, *, headin
     return render(request, "confirm.html", nav, conn, layout="_bare.html" if frag else "base.html", fragment=frag,
                   heading=heading, cost=cost or 0.0, model=model_label(model), tokens=f"{round(tokens):,}" if tokens else None,
                   detail=detail, action=action, cancel=cancel, fields=fields or {}, blocked=blocked,
-                  type_pick=type_pick, meeting_types=prompts.MEETING_TYPES)
+                  type_pick=type_pick)
 
 
 def confirmed(confirm: str) -> bool:
@@ -2738,7 +2738,7 @@ def inbox_page(request: Request, sort: str = "newest", show: str = "all", has: s
                   rng=rng, longest=longest, n_on=len(chosen) + (lo is not None or hi is not None) + bool(start or end),
                   chosen=chosen, fx=inbox_svc.FX, chips=chips, clear_url=url(**{k: "" for k in [*chosen, *rng]}),
                   sorts=inbox_svc.SORTS, hours=sum(x["duration_s"] or 0 for x in items) / 3600,
-                  m14_wait=data["m14_wait"], meeting_types=prompts.MEETING_TYPES,
+                  m14_wait=data["m14_wait"],
                   recordings_total=data["recordings_total"], n_ready=len(data["recordings"]))
 
 

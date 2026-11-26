@@ -315,7 +315,7 @@ def test_inbox_total_says_which_recordings(demo):
     html = demo.get("/inbox").text
     assert 'in-total">All ' not in html
     import re
-    assert re.search(r'class="meta in-total">To do all \d+ new ones: ~[^<]+ with AI notes \(~\$[\d.]+\), or ~[^<]+ for transcripts only</p>', html)
+    assert re.search(r'class="meta in-total">To do all \d+ new ones: Summarize ~[^<]+ \(~\$[\d.]+\), or Transcribe ~[^<]+ \(free\)</p>', html)   # F57 renamed
 
 
 def test_last_backup_is_todays(demo):

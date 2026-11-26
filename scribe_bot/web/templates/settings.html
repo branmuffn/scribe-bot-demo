@@ -58,7 +58,8 @@
         {% for k, label in (("bullets", "Bullets"), ("paragraph", "Paragraph"), ("lines", "Lines")) %}<button type="button" data-pnotes-set="{{ k }}" class="{{ 'on' if pnotes == k }}"
           aria-pressed="{{ 'true' if pnotes == k else 'false' }}">{{ label }}</button>{% endfor %}</span></div></div>
     <div class="item set-row desk-only"><div class="item-main"><div class="item-title">Reading pane</div>
-      <div class="item-sub">Computers: where a talk, person, recording or task opens beside its list.</div></div>
+      {# F69 (screen pass): "None" here is "Full page" or "Pop up" in Quick settings and on the pane's own switch; say what it does #}
+      <div class="item-sub">Computers: where a talk, person, recording or task opens beside its list. None: talks and people open as a full page, recordings and tasks in a pop-up.</div></div>
       <div class="item-actions"><span class="seg" role="group" aria-label="Reading pane">
         {% for k in ("none", "right", "below") %}<button type="button" data-pane-set="{{ k }}" class="{{ 'on' if rpane == k }}"
           aria-pressed="{{ 'true' if rpane == k else 'false' }}">{{ k|capitalize }}</button>{% endfor %}</span></div></div>

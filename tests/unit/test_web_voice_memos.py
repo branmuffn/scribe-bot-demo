@@ -20,7 +20,7 @@ def test_add_and_replace_transcript_on_a_waiting_recording(env, tmp_path):
     (folder / "Venue chat - Oct 14 at 11-30.txt").write_text("The venue budget venue budget.\n", encoding="utf-8")
     waiting(conn, folder)
     page = client.get("/inbox").text
-    assert 'action="/inbox/20/transcript"' in page and "＋ Transcript" in page and "“Venue, budget”" in page
+    assert 'action="/inbox/20/transcript"' in page and "</svg> Transcript</button>" in page and "“Venue, budget”" in page
     r = client.post("/inbox/20/transcript", data={"text": "Garden plans garden plans and the garden shed."}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/inbox#rec-20"
     page = client.get("/inbox").text

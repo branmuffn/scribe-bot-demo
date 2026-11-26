@@ -411,7 +411,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {% if head %}{{ section("Your speaking", help="Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.") }}
 {% else %}<p class="section-help">Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.</p>{% endif %}
 {% for d in (7, 30) %}{% set s = speaking[d] %}{% if s %}
-  <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} conversation{{ 's' if s.conversations != 1 }} · {{ s.seconds|hours }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
+  <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} conversation{{ 's' if s.conversations != 1 }} · {{ s.seconds|mins }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
   {{ speak_tiles(s) }}{% endif %}{% else %}{% endfor %}
 {% if not (speaking[7] or speaking[30]) %}<div class="card">{{ empty("mic", "No speaking numbers yet", "They appear after your first conversations with you named as a speaker.") }}</div>{% endif %}
 {% endmacro %}
@@ -419,7 +419,8 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {# Brian's speaking numbers as tiles; Good / Watch use the same thresholds as the tips (core/talk.py). #}
 {% macro speak_tiles(s, others=[]) %}{% set lv = speaking_levels(s) %}
 {% set pace_sub %}{% if others %}You {{ s.wpm|round|int }}{% for n, w in others %} · {{ n }} {{ w|round|int }}{% endfor %}{% else %}normal: 140–180{% endif %}{% endset %}
-{% set filler_sub %}at least {{ s.fillers }}{% if s.top_fillers %} · {% for f, n in s.top_fillers %}“{{ f }}” {{ n }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}{% endset %}
+{# F63 (screen pass): with none counted it said "at least 0"; it says none heard. F62: the group label says "min". #}
+{% set filler_sub %}{% if s.fillers %}at least {{ s.fillers }}{% else %}none heard{% endif %}{% if s.top_fillers %} · {% for f, n in s.top_fillers %}“{{ f }}” {{ n }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}{% endset %}
 <div class="tiles">
   {{ stat_tile("Pace", (s.wpm|round|int) ~ " words/min", lv.pace, "Normal in conversation: 140–180 words a minute. Above 190, slowing down helps people follow.", sub=pace_sub) }}
   {{ stat_tile("Longest stretch", s.longest|duration, lv.longest, "Your longest time talking without a break. Past 2 minutes, try point → reason → example, then hand it back with a question.") }}
@@ -442,7 +443,8 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
   {% if not j.done %}<div class="prog-ctl">
     {% if not j.paused %}<form method="post" action="/processing/pause"><button class="chip" title="Stops at the next safe point; nothing is lost">❚❚ Pause</button></form>
     {% else %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="now"><button class="chip chip-on">▶ Resume now</button></form>
-      {% if not j.resume_label %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="tonight"><button class="chip">☾ Resume at 1 am</button></form>{% endif %}
+      {# F58 (screen pass): fixed times say AM like every other time (F48); this one said "1 am" #}
+      {% if not j.resume_label %}<form method="post" action="/processing/resume"><input type="hidden" name="when" value="tonight"><button class="chip">☾ Resume at 1 AM</button></form>{% endif %}
       {% if j.can_cancel %}<form method="post" action="/processing/{{ j.job_id }}/cancel"><button class="chip chip-bad" title="Back to the Inbox; half-done files are deleted">✕ Cancel</button></form>{% endif %}{% endif %}
   </div>{% endif %}
   <details class="steps" data-job="{{ j.job_id }}"><summary>Each step</summary>

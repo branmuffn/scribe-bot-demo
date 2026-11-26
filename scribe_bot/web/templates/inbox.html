@@ -44,8 +44,8 @@
   <div class="pk-top"><button type="button" class="icon-btn" data-inpick="done" aria-label="Stop selecting">✕</button>
     <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-inpick="all"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
   <div class="pk-bot">
-    <button type="button" data-inpick="ai" class="pk-pri" title="AI notes for each (the total cost shows first)"><i class="ib ib-go" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Summarize</span></button>
-    <button type="button" data-inpick="local" title="Transcript only, no AI, free"><i class="ib ib-plain" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Transcribe</span></button>
+    <button type="button" data-inpick="ai" class="pk-pri" title="Summarize each (the total cost shows first)"><i class="ib ib-go" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Summarize</span></button>
+    <button type="button" data-inpick="local" title="Transcribe only, no AI, free"><i class="ib ib-plain" aria-hidden="true"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></i><span class="pk-l">Transcribe</span></button>
     <button type="button" data-inpick="merge" title="Join into one recording, in recorded order"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-merge"/></svg></i><span class="pk-l">Merge</span></button>
     <button type="button" data-inpick="skip" title="Move to Trash (Restore there within 30 days)"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete</span></button>
   </div></div>
@@ -71,7 +71,7 @@
         <small>{{ it.when|short_when }} · {{ it.duration_s|mins }}
           {%- if it.merged %} · {{ it.merged.n }} parts{% endif %}{% if it.transcript %} · {{ m.icon("note") }}{% endif %}
           {%- if (it.duration_s or 0) < 15 %} · <span class="warn-text">empty?</span>{% endif %}
-          {%- if it.older %} · <span>older</span>{% endif %}{% if x and x.payload.process_at %} · <span class="sched">⏱ {{ x.payload.process_at|when_back }}{{ ' · AI' if x.payload.process_ai else '' }}</span>{% elif x and x.r.snoozed_until and x.r.snoozed_until > now_iso %} · reminder set{% endif %}
+          {%- if it.older %} · <span>older</span>{% endif %}{% if x and x.payload.process_at %} · <span class="sched">{{ m.icon("calendar") }} {{ x.payload.process_at|when_back }}{{ ' · AI' if x.payload.process_ai else '' }}</span>{% elif x and x.r.snoozed_until and x.r.snoozed_until > now_iso %} · reminder set{% endif %}
           {%- if x and x.payload.private %} · {{ m.icon("lock") }}{% endif %}</small></span>
       <span class="chev-r" aria-hidden="true">›</span>
     </summary>
@@ -81,7 +81,8 @@
     <div class="fx-back" data-fx-close aria-hidden="true"></div>
     <div class="fx-body in-sheet" role="dialog" aria-label="{{ name }}"><div class="fx-grab" aria-hidden="true"></div>
       <div class="sh-head"><b>{{ name }}</b><button type="button" class="icon-btn" data-fx-close aria-label="Close">{{ m.icon("x") }}</button></div>
-      <div class="meta">{{ it.title|recorder_title }} · {{ it.duration_s|mins }}{% if it.source %} · {{ it.source }}{% endif %}{% if it.merged %} · joined from {{ it.merged.n }}{% endif %}</div>
+      {# F55 (screen pass): the line under the name repeated it when there is no quick title; the file name shows only when the name is a quick title #}
+      <div class="meta">{% if it.quick_title %}{{ it.title|recorder_title }} · {% endif %}{{ it.duration_s|mins }}{% if it.source %} · {{ it.source }}{% endif %}{% if it.merged %} · joined from {{ it.merged.n }}{% endif %}</div>
       {% if it.preview %}{# Brian, 2026-11-21: See more / Hide (the first 2 minutes, or more of a whole transcript) #}
       {% if it.preview_full and it.preview_full|length > it.preview|length + 10 %}
       <div class="sh-prev-wrap"><p class="sh-preview" data-less>“{{ it.preview }}”</p><p class="sh-preview sh-full" data-more hidden>“{{ it.preview_full }}”</p>
@@ -98,9 +99,10 @@
       </div>
       <div class="chips-row">
         {% if it.transcript %}<a class="chip" href="/inbox/{{ it.rec_id }}/transcript">{{ m.icon("note") }} Read</a>{% endif %}
-        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">＋ Transcript</button>
+        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">{{ m.icon("plus") }} Transcript</button>
         {# Brian, 2026-11-21: two different "laters": Remind me (nothing is processed) and Process at… (sent at that time) #}
-        <button type="button" class="chip" data-panel="pat-{{ it.rec_id }}">⏱ Process at…</button>
+        {# F56 (screen pass): chips all use the drawn icons (＋ and ⏱ were text glyphs, a different size and weight) #}
+        <button type="button" class="chip" data-panel="pat-{{ it.rec_id }}">{{ m.icon("calendar") }} Process at…</button>
         <details class="chip-menu"><summary class="chip">{{ m.icon("clock") }} Remind me</summary><div class="chip-pop">{{ m.snooze_forms("/review/" ~ x.r.id ~ "/later", "/review/" ~ x.r.id ~ "/now" if x.r.snoozed_until and x.r.snoozed_until > now_iso else None) }}</div></details>
         {% if it.merged %}<form method="post" action="/inbox/{{ it.rec_id }}/unmerge"><button class="chip">↶ Unmerge</button></form>{% endif %}
         <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
@@ -114,16 +116,16 @@
           <button class="act"><span class="ib ib-plain"><svg class="icon ic-play" aria-hidden="true"><use href="#i-play-solid"/></svg></span><span class="grow">Transcribe</span><small>free</small><span class="chev-r" aria-hidden="true">›</span></button></form>
       </div>
       <div class="chips-row">{% if it.transcript %}<a class="chip" href="/inbox/{{ it.rec_id }}/transcript">{{ m.icon("note") }} Read</a>{% endif %}
-        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">＋ Transcript</button>
+        <button type="button" class="chip" data-panel="atx-{{ it.rec_id }}">{{ m.icon("plus") }} Transcript</button>
         <form method="post" action="/inbox/bulk"><input type="hidden" name="ids" value="{{ it.rec_id }}"><input type="hidden" name="what" value="skip"><button class="chip danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form></div>
       {% endif %}
       {% if x %}
-      {% if x.payload.process_at %}<div class="sched-box"><span>⏱ Set to process {{ x.payload.process_at|when_back }} with {{ 'AI notes' if x.payload.process_ai else 'Transcript only' }}.</span>
+      {% if x.payload.process_at %}<div class="sched-box"><span>{{ m.icon("calendar") }} Set to {{ 'summarize' if x.payload.process_ai else 'transcribe' }} {{ x.payload.process_at|when_back }}.</span>
         <form method="post" action="/review/{{ x.r.id }}/process-at/cancel"><button class="linkish">Cancel that</button></form></div>{% endif %}
-      {# Brian picked A (2026-11-21): an AI notes | Transcript only switch, then two rows like the sheet's own rows #}
+      {# Brian picked A (2026-11-21): an AI notes | Transcript only switch (F57: named Summarize | Transcribe like the buttons), then two rows like the sheet's own rows #}
       <div id="pat-{{ it.rec_id }}" class="pat-panel" hidden>
         <div class="seg-switch" role="radiogroup" aria-label="Process at a set time: how">
-          {% if not x.payload.private %}<label class="seg-opt"><input type="radio" name="ai" value="1" form="pat-f-{{ it.rec_id }}" class="sr-only">▶ AI notes · ${{ '%.2f'|format(x.est.cost) }}</label>{% endif %}
+          {% if not x.payload.private %}<label class="seg-opt"><input type="radio" name="ai" value="1" form="pat-f-{{ it.rec_id }}" class="sr-only">Summarize · ${{ '%.2f'|format(x.est.cost) }}</label>{% endif %}
           <label class="seg-opt"><input type="radio" name="ai" value="0" form="pat-f-{{ it.rec_id }}" checked class="sr-only">Transcribe</label></div>
         <form id="pat-f-{{ it.rec_id }}" method="post" action="/review/{{ x.r.id }}/process-at" class="acts">
           <input type="hidden" name="meeting_type" data-type-copy="mt-{{ x.r.id }}" value="{{ x.type_guess or '' }}">
@@ -143,7 +145,7 @@
   {% else %}{{ m.empty("check-circle", "Inbox is empty", "New recordings from the phone or this page show up here, waiting for your OK.") }}{% endif %}
 {% endfor %}
 </div>
-{% if recordings_total and not chosen %}{# F32: "All 7: with AI ~80 min" sat under "9 waiting" and read as a miscount; say which ones and what the times are #}<p class="meta in-total">To do {{ 'the new one' if n_ready == 1 else 'all ' ~ n_ready ~ ' new ones' }}: ~{{ recordings_total.ai_s|duration }} with AI notes (~${{ '%.2f'|format(recordings_total.cost) }}), or ~{{ recordings_total.local_s|duration }} for transcripts only</p>{% endif %}
+{% if recordings_total and not chosen %}{# F32: "All 7: with AI ~80 min" sat under "9 waiting" and read as a miscount; say which ones and what the times are #}<p class="meta in-total">{# F57: named like the buttons #}To do {{ 'the new one' if n_ready == 1 else 'all ' ~ n_ready ~ ' new ones' }}: Summarize ~{{ recordings_total.ai_s|duration }} (~${{ '%.2f'|format(recordings_total.cost) }}), or Transcribe ~{{ recordings_total.local_s|duration }} (free)</p>{% endif %}
 {# Long-press a row (or Select) to pick several: Transcript only or Delete for all of them at once. Merge comes next. #}
 {# Q2-A (Brian, 2026-11-21; like Google Photos / Files): the count and Select all on top, the actions with a word under
    each at the bottom (in place of the tab bar). ✕, Esc or a tap outside stops selecting. #}

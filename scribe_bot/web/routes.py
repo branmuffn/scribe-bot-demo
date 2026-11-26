@@ -1106,7 +1106,6 @@ def recorder_title(name: str | None) -> str:
 templates.env.filters["model_label"] = model_label
 templates.env.filters["ai_label"] = ai_label
 templates.env.filters["recorder_title"] = recorder_title
-templates.env.filters["hours"] = talk.hours_label
 templates.env.globals["speaking_levels"] = talk.levels
 templates.env.filters["area_label"] = lambda a: {"work": "Work", "personal": "Home", "school": "School", "other": "Other"}.get(a, a or "")   # Q2: "Home" everywhere
 templates.env.globals["chart_keys"] = {c[0] for c in machine.CHARTS}   # M14 tiles that open their history chart

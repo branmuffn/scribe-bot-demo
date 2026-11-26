@@ -41,12 +41,6 @@ def with_person(conn: sqlite3.Connection, person_id: int) -> dict | None:
             "their_share": row["theirs"] / row["total"], "my_share": row["mine"] / row["total"]}
 
 
-def hours_label(seconds: float) -> str:
-    """'45 m', '2 h 10 m'."""
-    m = int(round(seconds / 60))
-    return f"{m // 60} h {m % 60} m" if m >= 60 else f"{max(m, 1)} m"
-
-
 # ---------- Speaking stats for Brian (free, local; no AI) ----------
 
 FILLERS = ("um", "uh", "er", "you know", "i mean", "kind of", "sort of", "basically")

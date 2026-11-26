@@ -14,16 +14,17 @@
     <dl>
       <dt>▶ Summarize</dt><dd>Transcribe it on the M14, then the AI writes the summary, tasks and decisions. Shows the time and cost first.</dd>
       <dt>Transcribe</dt><dd>Transcript only: made on the M14, free. Tap Summarize on the talk later if you want AI notes.</dd>
-      <dt>⏱ Process at…</dt><dd>Pick a time (or <b>Tonight at 1 am</b>) and AI notes or Transcript only: it waits, then starts by itself. The row shows ⏱ and the time; <i>Cancel that</i> in its sheet undoes it.</dd>
+      {# F57 (screen pass): help names the actions the way the buttons do (Summarize, Transcribe), and the times say AM like the app #}
+      <dt>{{ m.icon("calendar") }} Process at…</dt><dd>Pick a time (or <b>Tonight, 1 AM</b>) and Summarize or Transcribe: it waits, then starts by itself. The row shows {{ m.icon("calendar") }} and the time; <i>Cancel that</i> in its sheet undoes it.</dd>
       <dt>Remind me</dt><dd>A reminder only: it hides the recording from Needs you until the time you pick. Nothing is processed; you still decide.</dd>
       <dt>Delete</dt><dd>Moves it to Trash (bottom of Talks). Restore it there within 30 days; after that it and its audio are deleted for good.</dd>
       <dt>Read / + Transcript</dt><dd>Read a phone transcript that synced with it, or paste one in.</dd>
-      <dt>Select</dt><dd>Long-press a row (or Select). The top shows how many and <b>Select all</b>; the bottom bar has <b>Summarize</b>, <b>Transcript</b>, <b>Merge</b> (one recording, in recorded order; Unmerge works until it's processed) and <b>Delete</b>. ✕ or a tap anywhere else stops selecting.</dd>
+      <dt>Select</dt><dd>Long-press a row (or Select). The top shows how many and <b>Select all</b>; the bottom bar has <b>Summarize</b>, <b>Transcribe</b>, <b>Merge</b> (one recording, in recorded order; Unmerge works until it's processed) and <b>Delete</b>. ✕ or a tap anywhere else stops selecting.</dd>
     </dl>
     <h3>While something is processing</h3>
     <dl>
       <dt>❚❚ Pause</dt><dd>Stops at the next safe point (within about 30 s) so the computer is free. Nothing done so far is lost.</dd>
-      <dt>▶ Resume now · ☾ Resume at 1 am</dt><dd>Carries on from where it stopped, now or tonight.</dd>
+      <dt>▶ Resume now · ☾ Resume at 1 AM</dt><dd>Carries on from where it stopped, now or tonight.</dd>
       <dt>✕ Cancel</dt><dd>Only while paused: back to the Inbox as it was; the half-done files are deleted.</dd>
       <dt>Processing history</dt><dd>⋯ at the top › Processing history: Pause / Resume at the top, then everything you sent, when, how long it took, AI or not.</dd>
       <dt>Speed (Processing history)</dt><dd>How fast Scribe Bot itself works: <b>full speed</b> = all 4 cores, <b>half speed</b> = 2 cores (about twice as long, cooler). <b>Auto</b> (normal): full speed unless other apps keep the Mac busy: more than 2 of its 8 cores or under 20% memory free means half speed (back to full after 3 calm minutes); more than 6 cores means pause (resumes once they drop under 4). <b>Heat</b>: at 90 °C it drops to half the cores until the Mac cools under 80 °C; at 95 °C it pauses. <b>Every night 1 to 7 AM</b>: the Inbox is worked through oldest first as Transcript only (no AI, no cost), one after another; recordings with a Process at time wait for it. Summarize any of them later. <b>Full</b>: always all 4 cores. <b>Gentle</b>: always half, about twice as long, cooler. <b>Night only</b>: new recordings wait until 1 AM; nothing new starts after 7 AM.</dd>
@@ -95,11 +96,11 @@
         <form method="post" action="/demo/remove"><button class="btn btn-ghost">Remove demo data</button></form>
       {% else %}<form method="post" action="/demo/load"><button class="btn btn-primary">Load demo data</button></form>{% endif %}
     </div>
-    <p class="meta">To try a real one: Inbox › an <i>older</i> recording › Transcript only.</p>
+    <p class="meta">To try a real one: Inbox › an <i>older</i> recording › Transcribe.</p>
     <h3 id="test-recordings">Test recordings for the Inbox</h3>
     <p>Three made-up recordings titled <b>TEST 1–3</b>: one waiting with a phone transcript, one waiting without (its quick
       title appears on its own within a few minutes), and one older. Search them for “pineapple”, “volcano” or “tomato”.
-      Transcript only is free and runs on the M14; Transcribe + AI costs about a cent. Add 30 more gives the Inbox enough rows to scroll (short tones, no words). Remove takes them all away. Your real recordings are never touched.</p>
+      Transcribe is free and runs on the M14; Summarize costs about a cent. Add 30 more gives the Inbox enough rows to scroll (short tones, no words). Remove takes them all away. Your real recordings are never touched.</p>
     <div class="row">
       {% if test_recs %}<a class="btn btn-primary" href="/inbox">Open the Inbox</a>
         {% if test_recs < 33 %}<form method="post" action="/test-inbox/add"><input type="hidden" name="more" value="1"><button class="btn btn-ghost" title="30 short made-up recordings (a tone, no words), so the Inbox has enough to scroll">Add 30 more for scrolling</button></form>{% endif %}

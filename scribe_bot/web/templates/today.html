@@ -58,7 +58,7 @@
       <form method="post" action="/help/dismiss"><button class="btn btn-ghost">Got it, hide this</button></form></div></div>
   <ol>
     <li><b>Record</b> in Google Recorder as usual. It syncs to the M14 in seconds.</li>
-    <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>Summarize</i> for a summary and tasks, or <i>Transcript only</i> (free, stays on the M14).</li>
+    <li><b>Approve</b> it in the <a href="/inbox">Inbox</a> (the tab next to Today): <i>Summarize</i> for a summary and tasks, or <i>Transcribe</i> (free, stays on the M14).</li>
     <li><b>Read</b> it in <a href="/conversations">Talks</a> when the "Ready" ping arrives. The strip at the top says what to check.</li>
     <li><b>Fix</b> anything wrong right there: tap <i>Done</i>, or <i>⋯</i> for <i>Change person</i>, <i>Edit</i> and <i>Remove</i>. Tap a speaker's name to rename them. Every change can be undone.</li>
     <li><b>Find</b> it later in <a href="/conversations">Talks</a>, <a href="/people">People</a>, <a href="/tasks">Tasks</a> (tasks and decisions) and Search.</li>
@@ -94,7 +94,8 @@
 <div id="sec-due">{% if due %}
 <section class="section">
   <div class="section-head"><h2>Due</h2><a class="aside" href="/tasks">All tasks</a></div>
-  <div class="card">{% for t in due %}{{ m.task_row(t, [], show_conv=True, tgt="sec-due") }}{% endfor %}</div>
+{# F66 (screen pass): a Due task's sheet on Today had no Due or Who rows and no title editing (it got an empty people list) #}
+  <div class="card">{% for t in due %}{{ m.task_row(t, people or [], show_conv=True, tgt="sec-due") }}{% endfor %}</div>
 </section>
 {% endif %}</div>
 

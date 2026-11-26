@@ -433,8 +433,11 @@
     if (sw) [].concat(sw.r || [], sw.l || []).forEach(function (a) { if (!seen[a.t] && !(task && a.t === "Done") && row.querySelector(a.f)) { seen[a.t] = 1; acts.push(a); } });
     if (task) { var tt = row.querySelector(".item-title"); if (tt) acts.unshift({ t: "Copy task", i: "copy", x: function () { copy(tt.textContent.trim(), "Task"); } }); }
     acts.sort(function (x, y) { return (x.c === "red") - (y.c === "red"); });   // Delete always last, after a line
-    if (talk) acts.splice(acts.length - (seen.Delete ? 1 : 0), 0, { t: "Export (.md)", i: "download", x: function () {
-      var l = document.createElement("a"); l.href = "/conversations/" + row.dataset.id + "/export.md"; l.download = ""; l.setAttribute("hx-boost", "false"); document.body.appendChild(l); l.click(); l.remove(); } });
+    // D-SP-6 (Brian, 2026-11-26: 6A): both exports, named the same as in the talk's own ⋯ menu
+    function dl(ext) { return function () { var l = document.createElement("a"); l.href = "/conversations/" + row.dataset.id + "/export." + ext;
+      l.download = ""; l.setAttribute("hx-boost", "false"); document.body.appendChild(l); l.click(); l.remove(); }; }
+    if (talk) acts.splice(acts.length - (seen.Delete ? 1 : 0), 0, { t: "Export as text file (.md)", i: "download", x: dl("md") },
+                          { t: "Export as PDF", i: "download", x: dl("pdf") });
     if (acts.length && menu.children.length) menu.appendChild(sep());
     acts.forEach(function (a) {
       if (a.t === "Delete" && menu.lastChild && menu.lastChild.tagName !== "HR" && acts.length > 1) menu.appendChild(sep());

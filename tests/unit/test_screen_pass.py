@@ -739,3 +739,18 @@ def test_talk_time_says_what_it_covers_and_who_the_rest_is(demo):  # noqa: F811
         shares = [int(x) for x in re.findall(r"(\d+)%", m.group(1))]
         assert ", you " in m.group(1) and sum(shares) == 100 or (len(shares) == 2 and sum(shares) == 100), m.group(1)
     assert seen
+
+
+def test_right_click_on_a_talk_offers_both_exports_named_like_its_menu(demo):  # noqa: F811
+    """D-SP-6 (Brian, 2026-11-26: 6A): right-clicking a talk in Talks offered only "Export (.md)" while the talk's own ⋯
+    offered .md and PDF. The right-click now offers both, with the same names, and both downloads work."""
+    root = Path(__file__).resolve().parents[2] / "scribe_bot" / "web"
+    js = (root / "static" / "ui.js").read_text()
+    tpl = (root / "templates" / "conversation.html").read_text()
+    for label in ("Export as text file (.md)", "Export as PDF"):
+        assert f'"{label}"' in js and label in tpl, label
+    assert 'dl("md")' in js and 'dl("pdf")' in js
+    cid = demo.db().execute("SELECT id FROM conversation WHERE deleted_at IS NULL AND summary IS NOT NULL LIMIT 1").fetchone()[0]
+    for ext, kind in (("md", "text/"), ("pdf", "application/pdf")):
+        r = demo.get(f"/conversations/{cid}/export.{ext}")
+        assert r.status_code == 200 and r.headers["content-type"].startswith(kind), (ext, r.status_code)

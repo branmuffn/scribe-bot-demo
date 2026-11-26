@@ -51,6 +51,8 @@
   <select name="person" aria-label="Person" class="fx-sort"><option value="">Anyone</option>
     {% for p in people if p.id != 1 %}<option value="{{ p.id }}" {{ 'selected' if person == p.id }}>{{ p.name }}</option>{% endfor %}</select>
   {% if show != 'open' %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
+  {# D-SP-1 (Brian, 2026-11-26: 1A): a Select button, the same as Inbox and People #}
+  {% if tab != 'inbox' and rows|length > 1 %}<button type="button" class="btn btn-ghost" data-pk-start="task-list">Select</button>{% endif %}
   <noscript><button class="btn">Filter</button></noscript>
 </form>
 {% if show in ('done', 'closed', 'not_needed') %}<nav class="seg seg-sub" aria-label="Which closed tasks">

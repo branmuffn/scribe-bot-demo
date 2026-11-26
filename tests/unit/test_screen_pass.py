@@ -657,3 +657,35 @@ def test_compare_on_a_demo_talk_offers_the_other_model(demo):  # noqa: F811
     html = demo.get(f"/conversations/{cid}").text
     assert "Compare with Claude %s" % ("Sonnet" if "sonnet" in made_by else "Haiku") not in html
     assert "Compare with Claude" in html
+
+
+def _crawl(demo):  # noqa: F811
+    """Every kind of page the app links to, once each: yields (path, html)."""
+    from urllib.parse import urlsplit
+
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    seen, todo = set(), list(START)
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        yield u, r.text
+
+
+def test_every_list_you_can_pick_from_has_a_select_button(demo):  # noqa: F811
+    """D-SP-1 (Brian, 2026-11-26: 1A): Inbox and People had a Select button but Tasks didn't, so on a phone picking was a
+    hidden long-press. Sweep: Trash had the same gap. Every list you can pick from, with 2+ rows, has a Select button."""
+    pages, bad = 0, []
+    for u, html in _crawl(demo):
+        for lid in re.findall(r'id="([\w-]+)"[^>]*\bdata-picker\b', html):
+            pages += 1
+            if html.count("data-pick-id=") > 1 and f'data-pk-start="{lid}"' not in html:
+                bad.append((u, lid))
+    assert pages >= 3 and not bad, bad

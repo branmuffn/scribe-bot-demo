@@ -344,3 +344,26 @@ def test_the_empty_pane_shows_the_layout_switch_not_a_dead_close():
     css = _static("app.css")
     assert ".rpane.empty .rpane-bar > :not(.grow):not(.dp-layout) { display: none }" in css
     assert ":not(.grow):not([data-rpane-close]) { display: none }" not in css
+
+
+def test_j_and_k_load_the_transcript_and_carry_on_from_the_marked_line():
+    """F110 (1024 pass): the transcript loads when its section opens, so before that j/k did nothing. F111: after a
+    "line 6" link, k jumped back to line 1, and e couldn't fix the line the link marked."""
+    js = _static("app.js")
+    assert '(e.key === "j" || e.key === "k") && (lines().length || txLater())' in js
+    assert "if (!ls.length) { pend = k; return; }" in js
+    assert 'addEventListener("htmx:afterSettle", function () { if (pend && lines().length)' in js
+    assert 'var mk = document.querySelector(".line.cursor");' in js
+    assert 'e.key === "e" && document.querySelector(".line.cursor")' in js
+    assert "cursor >= 0 && lines()[cursor]" not in js
+
+
+def test_copy_says_it_copied_and_keeps_the_buttons_icon():
+    """F112 (1024 pass): "c" copies the summary through a button inside the shut ⋯ menu, so "Copied ✓" showed nowhere.
+    F113: putting the label back as text dropped the button's icon, and a second tap kept "Copied ✓" for good."""
+    js = _static("app.js")
+    assert "var t = copy.textContent;" not in js
+    assert "copy.innerHTML = copy.dataset.was" in js and "if (!copy.dataset.was) copy.dataset.was = copy.innerHTML;" in js
+    assert '!copy.getClientRects().length) ScribeToast(' in js
+    assert "writeText(text.trim()).then(done, function () {" in js
+    assert "window.ScribeToast = note;" in _static("ui.js")

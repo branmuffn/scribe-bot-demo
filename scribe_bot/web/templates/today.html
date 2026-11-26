@@ -31,7 +31,7 @@
    is one line per item. Acting on things happens on their own page (Inbox, Tasks, the talk), not in big cards here. #}
 {% set n_speakers = speakers|length if speakers else 0 %}{% set n_unsure = inbox|length if inbox else 0 %}
 <nav class="dash" aria-label="At a glance">
-  <a class="dash-tile{{ ' hot' if n_inbox }}" href="/inbox"><b>{{ n_inbox }}</b><small>to process</small></a>
+  <a class="dash-tile{{ ' hot' if inbox_count }}" href="/inbox"><b>{{ inbox_count }}</b><small>to process</small></a>
   <a class="dash-tile{{ ' hot' if due and due[0].due and due[0].due <= now_iso[:10] }}" href="#sec-due"><b>{{ due|length }}</b><small>due</small></a>
   <a class="dash-tile" href="/tasks?tab=waiting"><b>{{ n_waiting }}</b><small>waiting</small></a>
   <a class="dash-tile{{ ' hot' if n_unsure }}" href="/tasks?tab=inbox"><b>{{ n_unsure }}</b><small>unsure</small></a>
@@ -71,12 +71,12 @@
 
 {# Only what needs Brian: the Review items themselves (named, approved and skipped right here). Same rows as Review › Open. #}
 {% set convs = {} %}{% for x in speakers or [] %}{% set _ = convs.update({x.r.conversation_id: {"n": (convs[x.r.conversation_id].n if x.r.conversation_id in convs else 0) + 1, "t": x.r.conv_title}}) %}{% endfor %}
-{% if m14 or convs or n_inbox or n_unsure or approvals or glossary or stale or reminders or snoozed %}
+{% if m14 or convs or inbox_count or n_unsure or approvals or glossary or stale or reminders or snoozed %}
 <section class="section" id="needs-you">
   <div class="section-head"><h2>Needs you</h2>{% if needs_count %}<span class="count">{{ needs_count }}</span>{% endif %}<a class="aside" href="/review?tab=done" title="Everything you've handled, with Restore">History</a></div>
   <div class="card">
     {% if m14 %}<a class="row1" href="/status"><span class="rdot bad"></span><span class="r1-t">The M14 needs attention<small>{{ m14|join(' · ')|capitalize }}</small></span><span class="go">›</span></a>{% endif %}
-    {% if n_inbox %}<a class="row1" href="/inbox"><span class="rdot warn"></span><span class="r1-t">Process {{ n_inbox }} recording{{ 's' if n_inbox != 1 }}<small>{{ '%.1f'|format(inbox_hours) }} h of audio waiting</small></span><span class="go">›</span></a>{% endif %}
+    {% if inbox_count %}<a class="row1" href="/inbox"><span class="rdot warn"></span><span class="r1-t">Process {{ inbox_count }} recording{{ 's' if inbox_count != 1 }}<small>{{ '%.1f'|format(inbox_hours) }} h of audio waiting</small></span><span class="go">›</span></a>{% endif %}
     {# Brian picked B (2026-11-22): many "Name N speakers" rows fold into one group row that opens to show them #}
     {% if convs|length > 2 %}<details class="row-group"><summary class="row1"><span class="rdot warn"></span><span class="r1-t">Name {{ n_speakers }} speaker{{ 's' if n_speakers != 1 }}<small>in {{ convs|length }} talks · tap to see them</small></span><span class="go rg-chev" aria-hidden="true">⌄</span></summary>
       <div class="rg-list">{% for cid, g in convs.items() %}<a class="row1" href="/conversations/{{ cid }}#speakers"><span class="rdot warn"></span><span class="r1-t">Name {{ g.n }} speaker{{ 's' if g.n != 1 }}<small>{{ g.t or 'Conversation' }}</small></span><span class="go">›</span></a>{% endfor %}</div></details>
@@ -133,7 +133,7 @@
   </div>
 </section>
 
-{% if not (needs_count or due or overdue_theirs or n_inbox or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
+{% if not (needs_count or due or overdue_theirs or inbox_count or jobs or paused or spend_alert or (not worker.alive and not demo_mode)) %}
 <section class="section">
   <div class="card">{{ m.empty("check-circle", "All clear", "Nothing needs you right now. New recordings, due tasks and late promises show up here.") }}</div>
   <p class="meta" style="margin-top:var(--s3)"><a href="/conversations">Talks</a> · <a href="/tasks">Tasks</a> · <a href="/tasks?tab=waiting">Waiting on</a>

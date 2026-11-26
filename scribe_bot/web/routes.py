@@ -155,11 +155,13 @@ def needs_total(conn: sqlite3.Connection, area: str, m14: list[str]) -> int:
 IS_RECORDING = "(r.kind = 'approval' AND json_extract(r.payload, '$.recording_id') IS NOT NULL)"
 
 
-def inbox_count(conn: sqlite3.Connection) -> int:
-    """The Inbox tab's number: recordings waiting for an OK (not snoozed) plus older ones never processed."""
+def inbox_count(conn: sqlite3.Connection, n_older: int | None = None) -> int:
+    """The Inbox tab's number: recordings waiting for an OK (not snoozed) plus older ones never processed (n_older, when
+    the caller already counted them)."""
+    if n_older is None:
+        n_older = conn.execute("SELECT count(*) FROM recording WHERE status = 'backlog'").fetchone()[0]
     return conn.execute(f"SELECT count(*) FROM review_item r WHERE r.status = 'open' AND {AWAKE} AND {IS_RECORDING}",
-                        (db.now(),)).fetchone()[0] + conn.execute("SELECT count(*) FROM recording WHERE status = 'backlog'"
-                                                                  ).fetchone()[0]
+                        (db.now(),)).fetchone()[0] + n_older
 
 
 REMIND_DUE = "t.status = 'open' AND t.remind_at <= ?"   # a task reminder whose time has come (Needs you)
@@ -167,25 +169,23 @@ REMIND_DUE = "t.status = 'open' AND t.remind_at <= ?"   # a task reminder whose 
 
 def render(request: Request, name: str, nav: str, conn: sqlite3.Connection | None = None, **ctx) -> HTMLResponse:
     area = area_of(request)
-    m14 = machine.needs_attention(conn) if conn else []
-    if conn:
+    page = {"nav": nav, "area": area, "today": date.today().isoformat(), "now_iso": db.now(),
+            "toast": NOTES.get(request.query_params.get("note", "")), "today_label": date.today().strftime("%A, %B %-d")}
+    if conn:   # the header, tab bar and sidebar counts every page shows
+        m14 = machine.needs_attention(conn)
         notify.tidy(conn)   # done things leave the bell before its count is read
         trash_purge_due(conn)
-    return templates.TemplateResponse(request, name, {"nav": nav, "area": area, "today": date.today().isoformat(),
-                                                      "undo": undo.latest(conn) if conn else None,
-                                                      "toast": NOTES.get(request.query_params.get("note", "")),
-                                                      "today_label": date.today().strftime("%A, %B %-d"),
-                                                      "needs_count": needs_total(conn, area, m14) if conn else 0,
-                                                      "head_alert": bool(m14), "now_iso": db.now(),
-                                                      "ring": status_ring(conn, bool(m14)) if conn else None,
-                                                      "n_trash": conn.execute("SELECT count(*) FROM conversation WHERE deleted_at "
-                                                                              "IS NOT NULL AND purge_at IS NULL").fetchone()[0] if conn else 0,
-                                                      "n_older": conn.execute("SELECT count(*) FROM recording WHERE status = "
-                                                                              "'backlog'").fetchone()[0] if conn else 0,
-                                                      "bell_new": bell_new(conn) if conn else 0,
-                                                      "demo_tour": tour_conversation(conn) if conn and public_demo() else None,
-                                                      "inbox_count": inbox_count(conn) if conn else 0,
-                                                      "gone_mark": gone_mark(conn) if conn else 0, **ctx})
+        n_older = conn.execute("SELECT count(*) FROM recording WHERE status = 'backlog'").fetchone()[0]
+        page.update(undo=undo.latest(conn), needs_count=needs_total(conn, area, m14), head_alert=bool(m14),
+                    ring=status_ring(conn, bool(m14)), n_older=n_older, bell_new=bell_new(conn),
+                    n_trash=conn.execute("SELECT count(*) FROM conversation WHERE deleted_at IS NOT NULL AND purge_at IS NULL"
+                                         ).fetchone()[0],
+                    demo_tour=tour_conversation(conn) if public_demo() else None,
+                    inbox_count=inbox_count(conn, n_older), gone_mark=gone_mark(conn))
+    else:
+        page.update(undo=None, needs_count=0, head_alert=False, ring=None, n_trash=0, n_older=0, bell_new=0,
+                    demo_tour=None, inbox_count=0, gone_mark=0)
+    return templates.TemplateResponse(request, name, {**page, **ctx})
 
 
 def gone_mark(conn: sqlite3.Connection) -> int:
@@ -594,7 +594,6 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
     cap = float(setting(conn, "global_cap_usd", str(DEFAULT_CAP_USD)))
     month = spend(conn, month_start())
     needs = needs_you(conn, area)
-    n_inbox = inbox_count(conn)
     inbox_hours = (conn.execute("SELECT coalesce(sum(duration_s), 0) FROM recording WHERE status IN "
                                 "('awaiting_approval', 'backlog')").fetchone()[0] or 0) / 3600
     ca, cargs = area_clause(area, "c.area")
@@ -607,7 +606,7 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
                              f"AND {LIVE_TASK}", args).fetchone()[0]
     return render(request, "today.html", "today", conn, overnight=overnight_card(conn), due=due, overdue_theirs=overdue_theirs, **needs, week=week(request, conn),
                   recent=recent, n_waiting=n_waiting,
-                  n_inbox=n_inbox, inbox_hours=inbox_hours, people=people(conn), cleanup=cleanup_devices.counts(conn),
+                  inbox_hours=inbox_hours, people=people(conn), cleanup=cleanup_devices.counts(conn),
                   cleanup_ask=conn.execute("SELECT device, title FROM device_cleanup WHERE status = 'ask' ORDER BY recorded_at").fetchall(),
                   jobs=progress.active_jobs(conn), month_spend=month, cap=cap,
                   spend_alert=cap and month / cap >= 0.8, worker=worker_status(request.app.state.cfg),

@@ -358,13 +358,35 @@ def test_j_and_k_load_the_transcript_and_carry_on_from_the_marked_line():
     assert "cursor >= 0 && lines()[cursor]" not in js
 
 
+def test_a_line_link_moves_the_one_k_mark():
+    """F117 (live check): press k (line 1 marked), then a task's "line 6" link: line 6 lit up but line 1 kept its mark,
+    so the next k went to line 2. Every place that marks a line now clears the old mark first, and the address
+    changing (back/forward) marks its line too."""
+    js = _static("app.js")
+    assert 'document.querySelectorAll(".line.cursor").forEach(function (l) { if (l !== ln) l.classList.remove("cursor"); });' in js
+    assert js.count('if (l !== ln) l.classList.remove("cursor")') == 2          # markLine and the lines-arrived handler
+    assert 'window.addEventListener("hashchange", function () {' in js
+    assert 'markLine(document.getElementById(lnk.getAttribute("href").slice(1)))' in js   # same link twice: no hashchange
+    assert "if (line) { openTranscript(); markLine(line); }" in js
+    # nothing else adds the mark without clearing the old one
+    assert js.count('classList.add("cursor")') == 3                            # markLine, the lines-arrived handler, j/k
+    assert 'ls.forEach(function (l) { l.classList.remove("cursor"); });' in js
+
+
 def test_copy_says_it_copied_and_keeps_the_buttons_icon():
     """F112 (1024 pass): "c" copies the summary through a button inside the shut ⋯ menu, so "Copied ✓" showed nowhere.
     F113: putting the label back as text dropped the button's icon, and a second tap kept "Copied ✓" for good."""
     js = _static("app.js")
     assert "var t = copy.textContent;" not in js
     assert "copy.innerHTML = copy.dataset.was" in js and "if (!copy.dataset.was) copy.dataset.was = copy.innerHTML;" in js
-    assert '!copy.getClientRects().length) ScribeToast(' in js
+    # F116 (live check): Chrome keeps boxes for a button inside a shut <details>, so getClientRects() alone never fired the note
+    assert 'var unseen = !copy.getClientRects().length || !!copy.closest("details:not([open])")' in js
+    assert "if (window.ScribeToast && unseen) ScribeToast(" in js
+    assert "!copy.getClientRects().length) ScribeToast(" not in js
+    macros = _tpl("macros.html")
+    menu = macros[macros.index("{% macro menu("):]
+    assert menu.index("<details") < menu.index("{{ caller() }}")   # the Copy summary button lives in a <details> menu
+    assert 'data-copy="#recap"' in _tpl("conversation.html").split('{% call m.menu("this talk") %}')[1].split("{% endcall %}")[0]
     assert "writeText(text.trim()).then(done, function () {" in js
     assert "window.ScribeToast = note;" in _static("ui.js")
 

@@ -1334,7 +1334,9 @@ def trash_conversation(cid: int, conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
     with db.transaction(conn):
         undo.save(conn, "Moved to Trash", [("conversation", cid)])   # Brian, 2026-11-22: the title made it "Moved…"
-        conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ?", (db.now(), db.now(), cid))
+        # F118: a second tap (double tap, or the other device) leaves the first time alone, so it changes nothing
+        conn.execute("UPDATE conversation SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+                     (db.now(), db.now(), cid))
     return RedirectResponse("/conversations", status_code=303)
 
 

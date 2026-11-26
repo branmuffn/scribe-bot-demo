@@ -17,6 +17,16 @@
   function player() { return document.getElementById("player"); }
   function lines() { return Array.prototype.slice.call(document.querySelectorAll(".line[data-start]")); }
   function openTranscript() { var d = document.getElementById("transcript"); if (d) d.open = true; }
+  /* F117 (live check): a "line 6" link marked line 6 but left the old k mark on line 1, so k went on from line 1.
+     One mark at a time now, wherever it is set (a link, the address, the lines arriving, back/forward). */
+  function markLine(ln) {
+    if (!ln) return;
+    document.querySelectorAll(".line.cursor").forEach(function (l) { if (l !== ln) l.classList.remove("cursor"); });
+    ln.classList.add("cursor"); ln.scrollIntoView({ block: "center" });
+  }
+  window.addEventListener("hashchange", function () {
+    if (/^#L\d+$/.test(location.hash)) { openTranscript(); markLine(document.getElementById(location.hash.slice(1))); }
+  });
 
   // Theme: Light, Dark or System (Settings › Appearance).
   // Cookie (server renders it, no flash) + localStorage (survives cookie clears).
@@ -73,7 +83,8 @@
       if (a) { a.currentTime = Math.max(0, at - 0.3); var pr = a.play(); if (pr && pr.catch) pr.catch(function () {}); }
       return;
     }
-    if (e.target.closest('a[href^="#L"]')) openTranscript();
+    var lnk = e.target.closest('a[href^="#L"]');   // same link twice gives no hashchange, so mark it here too (F117)
+    if (lnk) { openTranscript(); markLine(document.getElementById(lnk.getAttribute("href").slice(1))); }
     var cancel = e.target.closest("[data-cancel]");
     if (cancel && cancel.closest(".confirm-slot")) { e.preventDefault(); cancel.closest(".confirm-slot").innerHTML = ""; return; }
     var menu = e.target.closest(".row-menu, .chip-menu");   // one menu open at a time; a tap outside closes it
@@ -108,7 +119,10 @@
         if (!copy.dataset.was) copy.dataset.was = copy.innerHTML;
         copy.textContent = "Copied ✓"; clearTimeout(copy._t);
         copy._t = setTimeout(function () { copy.innerHTML = copy.dataset.was; delete copy.dataset.was; }, 1600);
-        if (window.ScribeToast && !copy.getClientRects().length) ScribeToast(copy.dataset.copy === "#recap" ? "Summary copied" : "Copied");
+        /* F116 (live check): Chrome still lays out a button inside a shut <details> (it hides it with content-visibility),
+           so getClientRects() alone said "on screen" and the note never showed. A shut menu now counts as unseen too. */
+        var unseen = !copy.getClientRects().length || !!copy.closest("details:not([open])") || (copy.checkVisibility && !copy.checkVisibility());
+        if (window.ScribeToast && unseen) ScribeToast(copy.dataset.copy === "#recap" ? "Summary copied" : "Copied");
       };
       if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text.trim()).then(done, function () { if (window.ScribeToast) ScribeToast("Couldn't copy"); });
       else { src.hidden = false; src.select(); document.execCommand("copy"); src.hidden = true; done(); }
@@ -643,7 +657,7 @@
     if (window.matchMedia("(min-width: 1100px)").matches && document.querySelector(".conv-side")) openTranscript();
     // Arriving at "#L12" (a search result, a task's "line N" from another page): open the transcript and show that line.
     var line = /^#L\d+$/.test(location.hash) && document.getElementById(location.hash.slice(1));
-    if (line) { openTranscript(); line.classList.add("cursor"); line.scrollIntoView({ block: "center" }); }
+    if (line) { openTranscript(); markLine(line); }
   }
   // Jump bar: open the section (and any folded parent) before scrolling to it, so its header and content show. A
   // section in the wide-screen right column (.conv-side) scrolls inside that column only; the left one stays put.
@@ -2249,7 +2263,9 @@ document.addEventListener("click", function (e) {
   document.addEventListener("htmx:afterSettle", function (e) {
     if (!e.target || !e.target.querySelector || !/^#L\d+$/.test(location.hash)) return;
     var ln = e.target.querySelector(location.hash) || (e.target.id === location.hash.slice(1) ? e.target : null);
-    if (ln) { ln.classList.add("cursor"); ln.scrollIntoView({ block: "center" }); }
+    if (!ln) return;
+    document.querySelectorAll(".line.cursor").forEach(function (l) { if (l !== ln) l.classList.remove("cursor"); });   // F117: one mark
+    ln.classList.add("cursor"); ln.scrollIntoView({ block: "center" });
   });
 })();
 

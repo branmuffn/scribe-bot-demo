@@ -1503,12 +1503,9 @@ html.typing .tabbar, html.typing .fab, html.typing .pick-bar { display: none !im
   color: var(--ink); background: var(--surface-2); cursor: pointer; list-style: none }
 .tb-ib::-webkit-details-marker { display: none }
 .tb-ib svg { width: 20px; height: 20px }
-a.tb-trash { color: #bd4256; background: color-mix(in srgb, #bd4256 12%, var(--surface)) }
-a.tb-trash:hover { text-decoration: none }
+a.tb-trash:hover { text-decoration: none }   /* D-SP-2 (Brian, 2026-11-26: 2A): grey like Export; it only opens Trash */
 .tb-a .tb-select { padding: 0 8px !important }
 @media (pointer: coarse) { .tb-a .tb-select:not([aria-pressed="true"]) { display: none } }   /* phones: long-press a talk to select */
-:root[data-theme="dark"] a.tb-trash { color: #f28ba0 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) a.tb-trash { color: #f28ba0 } }
 /* "Don't know" speakers (2026-11-22): plain chip with a small ?, not dotted (dotted = still to name) */
 .sp-idk-q { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; font-size: 11px; font-weight: 700;
   background: var(--surface-2); color: var(--muted) }

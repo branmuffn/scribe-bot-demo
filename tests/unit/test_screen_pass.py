@@ -689,3 +689,13 @@ def test_every_list_you_can_pick_from_has_a_select_button(demo):  # noqa: F811
             if html.count("data-pick-id=") > 1 and f'data-pk-start="{lid}"' not in html:
                 bad.append((u, lid))
     assert pages >= 3 and not bad, bad
+
+
+def test_a_link_that_only_opens_a_page_is_never_red():
+    """D-SP-2 (Brian, 2026-11-26: 2A): the Talks toolbar's Trash link was red, so it read as Delete though it only opens
+    Trash. Red is for buttons that delete; no link (an <a>, which only opens a page) is styled red."""
+    css = re.sub(r"/\*.*?\*/", "", (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text(), flags=re.S)
+    bad = [sel.strip() for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+           if re.search(r"(^|[\s,>])a([.\[:]|\s*$|\s*,)", sel.strip())
+           and re.search(r"(?<![-\w])color:[^;]*(--bad|#bd4256|#f28ba0|#c0392b|\bred\b)", body)]
+    assert not bad, bad

@@ -196,10 +196,7 @@ def test_needs_attention_empty_or_stale(conn, tmp_path):
     assert machine.needs_attention(conn, T0 + timedelta(hours=1)) == []   # stale sample ignored
 
 
-def test_sparkline():
-    assert machine.sparkline([None, 5]) == ""
-    d = machine.sparkline([0, 50, None, 100], width=30, height=10, lo=0, hi=100)
-    assert d.startswith("M0.0,8.0 L10.0,5.0 M30.0,2.0")
+def test_uptime_label():
     assert machine.uptime_label(90061) == "1 d 1 h" and machine.uptime_label(None) == "unknown"
 
 

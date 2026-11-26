@@ -432,24 +432,6 @@ def uptime_label(seconds: int | None) -> str:
     return f"{d} d {h} h" if d else f"{h} h {m} min"
 
 
-def sparkline(values: list[float | None], width: int = 240, height: int = 36,
-              lo: float | None = None, hi: float | None = None) -> str:
-    """SVG path 'd' for a small line chart; gaps (None) break the line. Empty string if fewer than 2 points."""
-    pts = [(i, v) for i, v in enumerate(values) if v is not None]
-    if len(pts) < 2:
-        return ""
-    vs = [v for _, v in pts]
-    lo = min(vs) if lo is None else min(lo, min(vs))
-    hi = max(vs) if hi is None else max(hi, max(vs))
-    span, n = (hi - lo) or 1, max(len(values) - 1, 1)
-    d, prev = [], None
-    for i, v in pts:
-        x, y = width * i / n, height - 2 - (height - 4) * (v - lo) / span
-        d.append(f"{'L' if prev is not None and i == prev + 1 else 'M'}{x:.1f},{y:.1f}")
-        prev = i
-    return " ".join(d)
-
-
 # ---------- Status page: tiles and history charts ----------
 
 def tiles(d: dict) -> list[dict]:

@@ -38,25 +38,6 @@ def spend(conn: sqlite3.Connection, month: str | None = None, account_id: int | 
     return round(conn.execute(q, args).fetchone()[0], 6)
 
 
-def breakdown(conn: sqlite3.Connection, month: str | None = None) -> dict:
-    """For the Costs page: today, month, by provider, account, and task, plus a month-end forecast."""
-    m = month or month_key()
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    def by(col: str) -> dict:
-        return {r[0]: round(r[1], 6) for r in conn.execute(
-            f"SELECT {col}, sum(cost_usd) FROM ledger_entry WHERE substr(time, 1, 7) = ? GROUP BY {col}", (m,))}
-
-    total = spend(conn, m)
-    return {
-        "today": round(conn.execute("SELECT coalesce(sum(cost_usd), 0) FROM ledger_entry WHERE substr(time, 1, 10) = ?",
-                                    (today,)).fetchone()[0], 6),
-        "month": total,
-        "by_provider": by("provider"), "by_account": by("account_id"), "by_task": by("task"),
-        "forecast": forecast(total, datetime.now(timezone.utc)) if m == month_key() else total,
-    }
-
-
 def forecast(month_spend: float, at: datetime) -> float:
     """Straight-line month-end estimate from spend so far."""
     days = calendar.monthrange(at.year, at.month)[1]

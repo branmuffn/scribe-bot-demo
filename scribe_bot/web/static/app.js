@@ -2184,6 +2184,7 @@ document.addEventListener("click", function (e) {
     var sum = t.closest("summary");
     if (sum && sum.parentElement && sum.parentElement.matches(KINDS + ", details.fx-sheet")) return;   // opens the other one
     if (t.closest(".tabbar a, .sidebar a, .fx-sheet[open] .fx-body")) return;
+    if (t.closest(".lines .who, .who-pin-btn, [data-open-sheet]")) return;   // F99 (500 pass): a speaker's name or a task title opens its own pop-up (took two taps)
     e.preventDefault(); e.stopPropagation();
   }, true);
   document.addEventListener("keydown", function (e) {

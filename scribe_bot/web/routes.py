@@ -2334,7 +2334,9 @@ def merge_many_page(request: Request, ids: str = "", conn: sqlite3.Connection = 
     if len(picked) < 2:
         return RedirectResponse("/people", status_code=303)
     keep = next((p["id"] for p in picked if p["id"] == ME), picked[0]["id"])
-    previews = {p["id"]: people_svc.preview(conn, p["id"], keep) for p in picked if p["id"] != keep}
+    # F98 (500 pass): what each one brings, for every row (it was only on the rows not ticked at first, so ticking
+    # another name left the counts on the wrong row and the first name had none)
+    previews = {p["id"]: people_svc.preview(conn, p["id"], p["id"]) for p in picked}
     return render(request, "merge_many.html", "people", conn, picked=picked, keep=keep, previews=previews,
                   ids=",".join(str(p["id"]) for p in picked))
 

@@ -24,6 +24,9 @@
   function applyTheme(t) {
     if (t === "system") document.documentElement.removeAttribute("data-theme");
     else document.documentElement.setAttribute("data-theme", t);
+    // F68 (screen pass): the reading pane (a same-site frame) kept the old theme until it reloaded; it follows at once
+    document.querySelectorAll("iframe").forEach(function (f) { try { var d = f.contentDocument && f.contentDocument.documentElement;
+      if (d) { if (t === "system") d.removeAttribute("data-theme"); else d.setAttribute("data-theme", t); } } catch (_) {} });
     document.cookie = "theme=" + t + "; path=/; max-age=31536000; samesite=lax";
     try { localStorage.setItem("theme", t); } catch (_) {}
     // Phone status bar: one fixed color for Light/Dark, the light+dark pair for System.
@@ -1473,11 +1476,11 @@ window.ScribeUpload = (function () {
     if (l) [].forEach.call(l.querySelectorAll(".item"), function (it) { var p = !!picked[idOf(it)]; it.classList.toggle("picked", p);
       var c = it.querySelector("[data-row-cb]"); if (c) c.setAttribute("aria-checked", p ? "true" : "false"); });
     var mc = document.querySelector("[data-pick-all]"); if (mc && l) { var tot = l.querySelectorAll(".item [data-row-cb]").length; mc.setAttribute("aria-checked", n() && n() >= tot ? "true" : n() ? "mixed" : "false"); }
-    if (bar) { bar.hidden = !on; bar.querySelector(".pick-n").textContent = n() + " picked";
+    if (bar) { bar.hidden = !on; bar.querySelector(".pick-n").textContent = n() + " selected"; /* F59: same word as the other select bars */
       [].forEach.call(bar.querySelectorAll("[data-pick-export], [data-pick-act]"), function (x) { x.disabled = !n(); }); }
     var b = document.querySelector("[data-pick-mode]:not(.pk-x)"); if (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Done" : "Select"; }
     var head = document.querySelector("[data-export-head]");
-    if (head) head.innerHTML = on && n() ? "<b>Export " + n() + " picked talk" + (n() > 1 ? "s" : "") + "</b>" : '<b>Export the talks shown</b> <span class="muted">(up to 100)</span>';
+    if (head) head.innerHTML = on && n() ? "<b>Export " + n() + " selected talk" + (n() > 1 ? "s" : "") + "</b>" : '<b>Export the talks shown</b> <span class="muted">(up to 100)</span>';
     [].forEach.call(document.querySelectorAll(".fx-more .dl-list a[href]"), function (a) {
       if (!a.dataset.base) a.dataset.base = a.getAttribute("href");
       var base = a.dataset.base;
@@ -1581,6 +1584,8 @@ window.ScribeUpload = (function () {
     rows.forEach(function (r) { var on = !!picked[r.dataset.pickId]; r.classList.toggle("picked", on); var cb = r.querySelector("[data-in-cb]"); if (cb) cb.setAttribute("aria-checked", on); });
     var all = b.querySelector(".pk-all-in"); if (all) all.setAttribute("aria-checked", n && n === rows.length ? "true" : n ? "mixed" : "false");
     var sb = document.querySelector('[data-inpick="start"]'); if (sb) sb.textContent = picking ? "Done" : "Select";
+    // F60 (screen pass): with nothing selected the actions looked ready but did nothing; dimmed like Talks' bar
+    b.querySelectorAll(".pk-bot button").forEach(function (x) { x.disabled = !n; });
   }
   function start() { picking = true; picked = {}; paint(); }
   document.addEventListener("click", function (e) {
@@ -1726,6 +1731,8 @@ document.addEventListener("change", function (e) {
     document.querySelectorAll("[data-pk-bar]").forEach(function (b) {
       b.hidden = b.dataset.pkBar !== on;
       var n = b.querySelector(".pick-n"); if (n) n.textContent = Object.keys(picked).length + " selected";
+      // F60 (screen pass): People, Tasks and Trash dim their actions at 0 selected too, like Talks and Inbox
+      var k = Object.keys(picked).length; b.querySelectorAll(".pk-bot button").forEach(function (x) { x.disabled = !k; });
     });
     document.querySelectorAll("[data-pk-start]").forEach(function (b) { b.textContent = b.dataset.pkStart === on ? "Done" : "Select"; });
   }

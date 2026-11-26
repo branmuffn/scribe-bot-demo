@@ -13,7 +13,7 @@
     <span class="pick-n" aria-live="polite">0 selected</span><button type="button" class="linkish pk-all-in" data-pk-all aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button></div>
   <div class="pk-bot">
     <button type="button" data-pk-post="/trash-bulk/restore"><i aria-hidden="true">↺</i><span class="pk-l">Restore</span></button>
-    <button type="button" data-pk-post="/trash-bulk/forever" data-pk-confirm="Delete the picked talks forever? (Recordings skipped in the Inbox leave by themselves after {{ trash_days }} days.)" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete forever</span></button>
+    <button type="button" data-pk-post="/trash-bulk/forever" data-pk-confirm="Delete the selected talks forever? (Recordings skipped in the Inbox leave by themselves after {{ trash_days }} days.)" class="pk-danger"><i class="pk-ic" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></i><span class="pk-l">Delete forever</span></button>
   </div></div>
 <div class="card" id="trash-list" data-picker>
   {% for c in items %}{% if c.from_inbox %}
@@ -90,12 +90,12 @@
      N3 (Brian, 2026-11-25): on a phone it looks like Inbox and People: the count and Select all on top, labelled
      buttons at the bottom in the tab bar's place. On computers it stays the toolbar above the list. #}
   <div class="pk-top"><button type="button" class="icon-btn pk-x" data-pick-mode aria-label="Stop selecting">✕</button>
-  <button type="button" class="btn btn-ghost btn-sm pk-all" data-pick-all role="checkbox" aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button><span class="pick-n" aria-live="polite">0 picked</span><span class="pk-break" aria-hidden="true"></span></div>
+  <button type="button" class="btn btn-ghost btn-sm pk-all" data-pick-all role="checkbox" aria-checked="false"><span class="row-cb" aria-hidden="true"></span><span class="pk-all-t">Select all</span></button><span class="pick-n" aria-live="polite">0 selected</span>{# F59 (screen pass): "selected", like Inbox, People, Tasks and Trash (it said "0 picked") #}<span class="pk-break" aria-hidden="true"></span></div>
   <div class="pk-bot">
-  <button type="button" class="btn btn-sm" data-pick-act="ai" disabled title="AI notes for the picked talks (you see the cost first)">{{ m.icon("sparkle") }}<span>Summarize</span></button>
+  <button type="button" class="btn btn-sm" data-pick-act="ai" disabled title="Summarize the selected talks (you see the cost first)">{{ m.icon("sparkle") }}<span>Summarize</span></button>
   <button type="button" class="btn btn-sm" data-pick-act="merge" disabled title="Join 2 or more into one talk, in recorded order; the originals go to Trash">{{ m.icon("merge") }}<span>Merge</span></button>
   <button type="button" class="btn btn-sm danger" data-pick-act="trash" disabled title="Move to Trash (Undo, or Restore within 30 days)">{{ m.icon("trash") }}<span>Delete</span></button>
-  <button type="button" class="btn btn-sm" data-pick-export disabled title="Export the picked talks">{{ m.icon("download") }}<span>Export</span></button></div></div>
+  <button type="button" class="btn btn-sm" data-pick-export disabled title="Export the selected talks">{{ m.icon("download") }}<span>Export</span></button></div></div>
 <div class="card" id="conv-list">
   {% set gs = namespace(g="") %}
   {% for c in rows %}{% if f.order in ('newest', 'oldest') %}{{ m.list_head((c.started_at or c.created_at)|date_group, gs) }}{% elif f.order == 'tag' %}{{ m.list_head("# " ~ c.first_tag if c.first_tag else "No tag", gs) }}{% endif %}{{ m.conv_row(c) }}

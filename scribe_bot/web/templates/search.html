@@ -86,7 +86,7 @@
       <div class="item-actions badges">{{ m.area_badge(g.area, g.status in ('done', 'transcribed')) }}<span class="badge badge-outline">{{ g.hits }} hit{{ 's' if g.hits != 1 }}</span></div></div>
     {% for h in g.rows %}{{ hit(h) }}{% endfor %}
     {% if g.hits > g.rows|length %}<a class="item show-more" href="{{ request.url.remove_query_params(['n']).include_query_params(conv=g.id) }}">
-      All {{ g.hits }} in this conversation →</a>{% endif %}
+      All {{ g.hits }} in this conversation ›</a>{# F65 (screen pass): links that go on use ›, like the rest of the app (was →) #}{% endif %}
   </div>
   {% else %}{% if not other %}<div class="card">{{ m.empty("search", "Nothing found for “" ~ q ~ "”", "Try fewer or different words, or clear a filter.") }}</div>{% endif %}
   {% endfor %}

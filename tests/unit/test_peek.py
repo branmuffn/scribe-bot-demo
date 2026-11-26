@@ -89,4 +89,4 @@ def test_add_transcript_lives_in_card_menu(env, tmp_path):
     client, conn, _ = env
     waiting(conn, tmp_path, 76, "Nov 16 at 09_00")
     page = client.get("/inbox").text
-    assert 'id="atx-76"' in page and "＋ Transcript" in page   # in the row's sheet (redesign 2026-11-21)
+    assert 'id="atx-76"' in page and "</svg> Transcript</button>" in page   # in the row's sheet (redesign 2026-11-21)

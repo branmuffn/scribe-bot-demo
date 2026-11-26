@@ -341,4 +341,4 @@ def test_b23_forward_link_bottom_right(env):
     """B23: Your speaking's onward link sits on its own line at the bottom right, named Talks like everywhere else."""
     client, _, _ = env
     page = client.get("/speaking").text
-    assert '<p class="fwd-link"><a href="/conversations">Talks →</a></p>' in page and "Conversations →" not in page
+    assert '<p class="fwd-link"><a href="/conversations">Talks ›</a></p>' in page and "Conversations →" not in page

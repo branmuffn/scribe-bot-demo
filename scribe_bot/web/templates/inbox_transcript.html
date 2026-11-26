@@ -27,8 +27,9 @@
 
 {% if it.x is defined %}{% set x = it.x %}
 <div class="tx-actions">
-  {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Transcribe + AI", "rc-" ~ x.r.id) }}{% endif %}
-  <form method="post" action="/review/{{ x.r.id }}/approve"><input type="hidden" name="ai" value="0"><button class="btn">{{ m.icon("lock") }} Transcript Only (No AI)</button></form>
+  {# F57 (screen pass): same names as the Inbox sheet's buttons (was "Transcribe + AI" and "Transcript Only (No AI)") #}
+  {% if not x.payload.private %}{{ m.spend_button("/review/" ~ x.r.id ~ "/confirm", "Summarize", "rc-" ~ x.r.id) }}{% endif %}
+  <form method="post" action="/review/{{ x.r.id }}/approve"><input type="hidden" name="ai" value="0"><button class="btn">{{ m.icon("lock") }} Transcribe (no AI)</button></form>
   <form method="post" action="/review/{{ x.r.id }}/dismiss"><button class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button></form>
 </div>{{ m.confirm_slot("rc-" ~ x.r.id) }}
 {% endif %}

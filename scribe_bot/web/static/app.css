@@ -2702,3 +2702,15 @@ html.in-pane :is(.copy-note, .tour) { left: 50% !important }
 .card + p.meta { margin-top: var(--s2) }
 /* F47: the "Snoozed · back …" badge ran straight into the item's name ("…12:57 AMKubernetes"); it sits on its own line */
 .item-main > .snz { display: flex; width: fit-content; margin-bottom: 4px }
+/* F51 (screen pass): the red ＋ button stayed on top of open sheets (Talks › Export hid ".pdf" and the dates under it).
+   While any sheet or menu is open the page is locked, so the ＋ steps aside until it closes. */
+html.pop-lock .fab { visibility: hidden }
+/* F52 (screen pass): Inbox sheet › Remind me opened upward inside the sheet's scroll box and was cut off (its first
+   lines hidden, "Next Monday…" wrapping). Inside a sheet it opens in place under the chips, like the task sheet's. */
+.fx-body .chip-menu[open] { flex-basis: 100% }
+.fx-body .chip-menu[open] .chip-pop { position: static; min-width: 0; max-width: none; box-shadow: none; margin-top: 6px; animation: none }
+/* F53 (screen pass): the Remind me list said "REMIND ME" again right under the "Remind me" row or chip that opened it.
+   The clock button's menu keeps the label (that button has no words). */
+.ts-in > .menu-label, .chip-pop > .menu-label { display: none }
+/* F54 (screen pass): Tasks › Unsure titles were link blue while every other row title is ink */
+a.item-title.plain { color: var(--ink) } a.item-title.plain:hover { text-decoration: underline }

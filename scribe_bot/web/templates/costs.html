@@ -64,7 +64,7 @@
       <div class="item-sub"><span>{{ r.last|local_datetime }}</span><span>{{ (r.models or '').split(',')|map('model_label')|join(', ') }}</span>
         <span>{{ r.calls }} call{{ 's' if r.calls != 1 }}</span><span title="Tokens sent / received">{{ '{:,}'.format(r.tin) }} / {{ '{:,}'.format(r.tout) }} tokens</span></div></div>
       <div class="item-actions"><b class="cost">${{ '%.3f'|format(r.usd or 0) }}</b></div></div>
-    {% else %}{{ m.empty("cloud", "No AI calls yet", "Costs appear here after the first Transcribe + AI.") }}{% endfor %}
+    {% else %}{{ m.empty("cloud", "No AI calls yet", "Costs appear here after the first Summarize.") }}{% endfor %}
   </div>
 </section>
 

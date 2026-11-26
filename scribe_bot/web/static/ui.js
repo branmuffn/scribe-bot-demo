@@ -39,9 +39,15 @@
   }
   document.addEventListener("click", function (e) {
     var d = closest(e.target, "[data-density-set]");
-    if (d) { html.dataset.density = d.dataset.densitySet; cookie("density", d.dataset.densitySet); paintQs(); return; }
+    if (d) { html.dataset.density = d.dataset.densitySet; cookie("density", d.dataset.densitySet); paintQs();
+      // F68: the reading pane follows a density change at once too
+      document.querySelectorAll("iframe").forEach(function (f) { try { var fd = f.contentDocument && f.contentDocument.documentElement; if (fd) fd.dataset.density = d.dataset.densitySet; } catch (_) {} });
+      return; }
     var pn = closest(e.target, "[data-pnotes-set]");   // B13: people notes as bullets, a paragraph or lines
-    if (pn) { html.dataset.pnotes = pn.dataset.pnotesSet; cookie("pnotes", pn.dataset.pnotesSet); paintQs(); return; }
+    if (pn) { html.dataset.pnotes = pn.dataset.pnotesSet; cookie("pnotes", pn.dataset.pnotesSet); paintQs();
+      // F68: and so does the people-notes look
+      document.querySelectorAll("iframe").forEach(function (f) { try { var fd = f.contentDocument && f.contentDocument.documentElement; if (fd) fd.dataset.pnotes = pn.dataset.pnotesSet; } catch (_) {} });
+      return; }
     var p = closest(e.target, "[data-pane-set]");
     if (p) { html.dataset.pane = p.dataset.paneSet; cookie("pane", p.dataset.paneSet); paintQs(); paneMode(); return; }
     var clr = closest(e.target, ".adv-form [type=reset]");   // Clear empties every field (reset would refill the current search)

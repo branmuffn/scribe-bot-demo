@@ -21,9 +21,10 @@
   <button type="button" class="btn btn-sm" data-panel="pa-edit" aria-expanded="false">{{ m.icon("pencil") }} Edit</button>
   {% if p.id != 1 %}<button type="button" class="btn btn-sm" data-panel="pa-merge" aria-expanded="false">Merge…</button>{% endif %}
   {% call m.menu(p.name) %}
-    {% if p.id != 1 %}<button type="button" class="menu-item danger" data-panel="pa-delete" aria-expanded="false">{{ m.icon("trash") }} Delete…</button>{% endif %}
     {{ m.download("/people/" ~ p.id ~ "/export.md", "Export as text file (.md)", "Notes, open items and every talk summary, as one text file", "menu-item") }}
     {{ m.download("/people/" ~ p.id ~ "/export.pdf", "Export as PDF", "The same as a tidy PDF file", "menu-item") }}
+    {# F61 (screen pass): Delete… is last, like every other ⋯ menu (it was first, where a quick tap lands) #}
+    {% if p.id != 1 %}<button type="button" class="menu-item danger" data-panel="pa-delete" aria-expanded="false">{{ m.icon("trash") }} Delete…</button>{% endif %}
   {% endcall %}
 </div>
 <div class="action-panel" id="pa-edit" hidden>
@@ -65,7 +66,8 @@
   <a class="row1" href="#person-open"><span class="r1-t">{{ p.name|first_name }} owes you</span><span class="r1-v{{ ' warn-text' if late_theirs }}">{{ they_owe|length }}{% if late_theirs %} · {{ late_theirs }} late{% endif %}</span><span class="go">›</span></a>
   <a class="row1" href="#person-facts"><span class="r1-t">Notes</span><span class="r1-v">{{ facts|length }}</span><span class="go">›</span></a>
   <a class="row1" href="#sec-convs"><span class="r1-t">Talks</span><span class="r1-v">{{ n_convs }}</span><span class="go">›</span></a>
-  {% if talk_time %}<div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name|first_name }} {{ (talk_time.their_share * 100)|round|int }}% · you {{ (talk_time.my_share * 100)|round|int }}%</small></span><span class="r1-v">{{ talk_time.seconds|hours }}</span></div>{% endif %}
+  {# F62 (screen pass): durations say "min" everywhere (Talk time said "7 m") #}
+  {% if talk_time %}<div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name|first_name }} {{ (talk_time.their_share * 100)|round|int }}% · you {{ (talk_time.my_share * 100)|round|int }}%</small></span><span class="r1-v">{{ talk_time.seconds|mins }}</span></div>{% endif %}
 </nav>
 
 <section class="section" id="person-open">

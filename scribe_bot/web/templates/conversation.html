@@ -22,7 +22,8 @@
     {% call m.menu("this conversation") %}
       <div class="menu-label menu-info">{{ (c.started_at or c.created_at)|local_datetime }}{% if recording_title and recording_title != c.title %} · from “{{ recording_title|recorder_title }}”{% endif %}<br>
         {# F28: "Processed only on the M14 · AI cost $0.029" contradicted itself on the demo; a local talk with no AI spend shows no cost #}
-        {%- if c.processed_by == 'demo' %}Made-up talk · <a href="/costs">example AI cost ${{ '%.3f'|format(ai_cost) }}</a>
+        {#- F64 (screen pass): a made-up talk with no AI calls said "example AI cost $0.000"; the cost shows only when there is one #}
+        {%- if c.processed_by == 'demo' %}Made-up talk{% if ai_cost %} · <a href="/costs">example AI cost ${{ '%.3f'|format(ai_cost) }}</a>{% endif %}
         {%- elif not c.processed_by or c.processed_by == 'local' %}Processed only on the M14{% if ai_cost %} · <a href="/costs">AI cost ${{ '%.3f'|format(ai_cost) }}</a>{% endif %}
         {%- else %}Speech on the M14 · AI: {{ c.processed_by|ai_label }} · <a href="/costs">AI cost ${{ '%.3f'|format(ai_cost) }}</a>{% endif %} {{ m.privacy_badge(c) }}</div>
       {% if c.summary and not c.private %}<button type="button" class="menu-item" data-edit-kp>{{ m.icon("pencil") }} Edit key points</button>{% endif %}
@@ -31,7 +32,8 @@
       {{ m.download("/conversations/" ~ c.id ~ "/export.pdf", "Export as PDF", "The notes as a tidy PDF file", "menu-item") }}
       {# one Summarize per page (Brian's bug list: no big button AND a menu item): without notes it's the button on top #}
       {% if preview and not rerun_pending and (c.summary or c.deleted_at) %}
-      {{ m.spend_button("/conversations/" ~ c.id ~ "/rerun/confirm", ("Re-run AI" if c.summary else "Summarize") ~ " · ~$" ~ ('%.3f'|format(preview.cost_usd_est)), "rerun-confirm", "menu-item", "cloud") }}
+      {# F64: the estimate rounds like the Inbox and the confirm page (2 decimals from 1 cent up; it said "~$0.042" next to "$0.04") #}
+      {{ m.spend_button("/conversations/" ~ c.id ~ "/rerun/confirm", ("Re-run AI" if c.summary else "Summarize") ~ " · ~$" ~ (('%.2f' if preview.cost_usd_est >= 0.01 else '%.3f')|format(preview.cost_usd_est)), "rerun-confirm", "menu-item", "cloud") }}
       {% endif %}
       {% if preview and c.summary and not compare_pending and not compare_ready %}
       {{ m.spend_button("/conversations/" ~ c.id ~ "/compare/confirm", "Compare with " ~ compare_model, "rerun-confirm", "menu-item", "cloud") }}

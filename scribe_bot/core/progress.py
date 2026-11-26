@@ -49,8 +49,21 @@ def duration_label(seconds: float | None) -> str:
     return f"{minutes:.0f} min" if minutes >= 10 else f"{minutes:.1f} min".replace(".0 min", " min")
 
 
+_RATES: dict[tuple, dict] = {}
+
+
 def rates(conn: sqlite3.Connection) -> dict[str, tuple[str, float]]:
-    """stage -> ('per_min', seconds per audio minute) or ('flat', seconds)."""
+    """stage -> ('per_min', seconds per audio minute) or ('flat', seconds).
+
+    F88 (500 pass): they only change when a step finishes, so they're kept per database until one does. A page asks for
+    them from its own content and again for the status ring in its header (7 reads each, 14 on Home with a recording
+    processing)."""
+    db_file, n_done, last = conn.execute(
+        "SELECT (SELECT file FROM pragma_database_list WHERE name = 'main'), count(*), max(finished_at) "
+        "FROM stage_run WHERE status = 'done'").fetchone()
+    key = (db_file, n_done, last)
+    if db_file and key in _RATES:
+        return dict(_RATES[key])
     out: dict[str, tuple[str, float]] = {}
     for stage in STAGES:
         rows = conn.execute(
@@ -63,6 +76,10 @@ def rates(conn: sqlite3.Connection) -> dict[str, tuple[str, float]]:
             out[stage] = ("flat", median(t for t, _ in took) if took else DEFAULT_FLAT_S[stage])
         else:
             out[stage] = ("per_min", median(t / m for t, m in took) if took else DEFAULT_RATE[stage] * 60)
+    if db_file:
+        if len(_RATES) > 8:
+            _RATES.clear()
+        _RATES[key] = dict(out)
     return out
 
 
@@ -137,40 +154,37 @@ def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = N
     if not done:
         finished_est += min(spent_current, est[STAGES[current]] * (1 - RUNNING_FLOOR))
     elapsed = ((eta if done else now) - _parse(first)).total_seconds() if first else 0.0
+    peek = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (job["recording_id"],)).fetchone()
+    peek = (peek[0] or "").strip() if peek else ""   # F88: read once for the title and the preview (was twice a card)
     return {
         "job_id": job_id, "status": job["status"], "recording_id": job["recording_id"],
-        "conversation_id": job["conversation_id"], "title": job["conv_title"] or _quick(conn, job["recording_id"]) or job["rec_title"] or "Recording",
+        "conversation_id": job["conversation_id"], "title": job["conv_title"] or _quick(peek) or job["rec_title"] or "Recording",
         "minutes": round((job["duration_s"] or 0) / 60, 1), "stages": stages,
         "step": len(STAGES) if done else current + 1, "steps": len(STAGES),
         "current": None if done else stages[current], "percent": 100 if done else min(int(100 * finished_est / total_est), 99),
         "started_at": first, "started": local_time(first), "elapsed_s": elapsed, "elapsed": duration_label(elapsed),
         "remaining_s": remaining, "eta_at": _iso(eta), "eta": local_time(eta), "done": done,
-        "preview": _preview(conn, job["recording_id"]), **_control(conn, job, runs, done),
+        "preview": _preview(peek), **_control(conn, job, runs, done),
     }
 
 
 def _control(conn: sqlite3.Connection, job, runs: dict, done: bool) -> dict:
     """Pause / Resume / Cancel on the processing card (Brian, 2026-11-21; pipeline/control.py does the work)."""
-    get = lambda k: (conn.execute("SELECT value FROM setting WHERE key = ?", (k,)).fetchone() or [None])[0]  # noqa: E731
-    paused, at = get("pipeline_paused") == "1", get("pipeline_resume_at")
+    got = dict(conn.execute("SELECT key, value FROM setting WHERE key IN ('pipeline_paused', 'pipeline_resume_at')").fetchall())
+    paused, at = got.get("pipeline_paused") == "1", got.get("pipeline_resume_at")
     filed = "file" in runs and runs["file"]["status"] == "done"
     return {"paused": paused and not done, "pausing": paused and job["status"] == "running",
             "resume_label": local_time(at) if at else "",
             "can_cancel": paused and job["status"] in ("pending", "failed") and not filed and job["kind"] == "recording"}
 
 
-def _quick(conn: sqlite3.Connection, rec_id: int | None) -> str:
+def _quick(text: str) -> str:
     from scribe_bot.web import inbox as inbox_svc
-    row = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (rec_id,)).fetchone() if rec_id else None
-    return inbox_svc.quick_title(row[0], min_count=1) if row and row[0] else ""
+    return inbox_svc.quick_title(text, min_count=1) if text else ""
 
 
-def _preview(conn: sqlite3.Connection, rec_id: int | None) -> str:
+def _preview(text: str) -> str:
     """The Inbox's first words, so you remember what's processing (Brian, 2026-11-21)."""
-    if rec_id is None:
-        return ""
-    row = conn.execute("SELECT text FROM recording_peek WHERE recording_id = ?", (rec_id,)).fetchone()
-    text = (row[0] or "").strip() if row else ""
     return text if len(text) <= 160 else text[:160].rsplit(" ", 1)[0] + "…"
 
 

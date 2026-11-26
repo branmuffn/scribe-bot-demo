@@ -86,7 +86,7 @@
       <span><b>{{ card.name }}</b><span class="meta">{{ card.note }} · {{ card.cost }} per meeting{{ ' · key missing' if card.missing }}</span></span></button>
     {% endfor %}
   </form>
-  {% if ai.missing %}<p class="meta">Only models with a connected key are listed. <a href="/settings/keys">Add a {{ ai.missing|join(' or ') }} key</a> to see them here.</p>{% endif %}
+  {% if ai.missing %}<p class="meta">{# F90 (500 pass): it said "Only models with a connected key are listed" above a model marked "key missing" #}Other models show up here once their key is connected. <a href="/settings/keys">Add a {{ ai.missing|or_list }} key</a></p>{% endif %}
   <h3 class="sub-head">If it fails</h3>
   <div class="card">
     {% if ai.connected > 1 and ai.fallback_key %}
@@ -95,10 +95,10 @@
       <div class="item-actions"><form method="post" action="/settings/profile"><input type="hidden" name="profile" value="{{ ai.fallback_key }}">
         <button class="btn {{ 'btn-primary' if ai.fallback_on }}" aria-pressed="{{ 'true' if ai.fallback_on else 'false' }}">{{ 'On' if ai.fallback_on else 'Off' }}</button></form></div></div>
     {% else %}
-    <div class="item"><div class="item-main"><div class="item-sub">Try another model automatically: available once you connect a second AI company{% if ai.missing %} ({{ ai.missing|join(' or ') }}){% endif %}.</div></div></div>
+    <div class="item"><div class="item-main"><div class="item-sub">Try another model automatically: available once you connect a second AI company{% if ai.missing %} ({{ ai.missing|or_list }}){% endif %}.</div></div></div>
     {% endif %}
   </div>
-  <p class="meta">Saves as soon as you tap. Applies to the next AI run; finished notes stay as they are (use Compare on a conversation to try the other model).</p>
+  <p class="meta">Saves as soon as you tap. Applies to the next AI run; finished notes stay as they are (use Compare on a talk to try the other model).</p>
   <div class="card">
     {% if offline %}<div class="item"><div class="item-main"><div class="item-title">Offline switch is on</div>
       <div class="item-sub">No AI runs until it's turned off in <a href="#privacy">Privacy</a></div></div>
@@ -138,7 +138,8 @@
           <span>Owner {{ a.owner }}</span>
           {% if a.monthly_cap_usd %}<span>cap ${{ '%.0f'|format(a.monthly_cap_usd) }}/month</span>{% endif %}
           {% if a.expires_at %}<span>expires {{ a.expires_at[:10] }}</span>{% endif %}
-          <span>{{ a.training_policy }}</span></div></div>
+          {# F91 (500 pass): "May train · demo only" then "· may train" again #}
+          {% if a.training_policy and not (a.may_train and a.training_policy|lower == 'may train') %}<span>{{ a.training_policy }}</span>{% endif %}</div></div>
       <div class="item-actions">
         {% if a.key_present %}<span class="badge badge-ok">{{ m.icon("check") }}Key stored</span>
         {% elif a.key_present is none %}<span class="badge badge-outline">Can't check</span>
@@ -183,10 +184,10 @@
       <thead><tr><th>When</th><th>What was sent</th><th>Where</th><th class="num">Cost</th></tr></thead>
       <tbody>{% for l in ledger %}
       <tr><td data-label="When">{{ l.time|local_datetime }}</td>
-        <td data-label="What was sent">{{ l.task }}: {{ l.sent_summary }}{% if l.status != 'ok' %} <span class="badge badge-bad">{{ l.status }}</span>{% endif %}
-          {% if l.conversation_id %}<div class="meta">{% if l.conv_title %}<a href="/conversations/{{ l.conversation_id }}">{{ l.conv_title }}</a>{% else %}conversation deleted{% endif %}</div>{% endif %}</td>
+        <td data-label="What was sent">{{ l.task|ledger_task }}: {{ l.sent_summary }}{% if l.status != 'ok' %} <span class="badge badge-bad">{{ l.status|ledger_status }}</span>{% endif %}
+          {% if l.conversation_id %}<div class="meta">{% if l.conv_title %}<a href="/conversations/{{ l.conversation_id }}">{{ l.conv_title }}</a>{% else %}talk deleted{% endif %}</div>{% endif %}</td>
         <td data-label="Where"><span title="{{ l.model }}">{{ l.model|model_label }}</span><div class="meta">{{ l.nickname or l.provider }}{% if l.training_policy %} · {{ l.training_policy }}{% endif %}</div></td>
-        <td data-label="Cost" class="num">${{ '%.4f'|format(l.cost_usd) }}</td></tr>
+        <td data-label="Cost" class="num">{{ l.cost_usd|usd(4) }}</td></tr>
       {% endfor %}</tbody></table></div>
     <p class="meta rows-none" hidden>Nothing matches.</p>
     {% else %}{{ m.empty("shield", "Nothing has left the M14 yet") }}{% endif %}
@@ -198,7 +199,7 @@
 <section class="section">
   {{ m.section("", id="glossary") }}
   <form class="quick-add" method="post" action="/settings/glossary">
-    <input name="term" placeholder="Correct term" required aria-label="Term">
+    <input name="term" placeholder="Correct term" required aria-label="Term" class="grow">{# F94: it stopped short of the edge when the row wrapped #}
     <input name="variants" placeholder="Mis-hearings, commas" class="grow" aria-label="Mis-hearings">
     <button class="btn btn-primary">{{ m.icon("plus") }} Add</button>
   </form>
@@ -217,7 +218,7 @@
   {{ m.section("", help="What the AI is told for each meeting type, on top of the standard instructions. Applies to new recordings and re-runs; nothing re-runs by itself. {me} means you.") }}
   <div class="card">{% for t in summary_templates %}
     <details class="item template"><summary class="item-main"><span class="chev">{{ m.icon("chev") }}</span><b>{{ t.label }}</b>{% if t.custom %} <span class="badge">Edited</span>{% endif %}
-      <div class="item-sub">{{ (t.text or 'Standard instructions only (the 1:1 layout you rated 28/28).')|truncate(110) }}</div></summary>
+      <div class="item-sub{{ ' tpl-peek' if t.text }}">{{ (t.text or 'Standard instructions only (the 1:1 layout you rated 28/28).')|truncate(110) }}</div></summary>
       <form method="post" action="/settings/templates/{{ t.kind }}" class="stack" style="margin-top:var(--s2)">
         <textarea name="text" rows="4" aria-label="{{ t.label }} template">{{ t.text }}</textarea>
         <div class="row"><button class="btn btn-primary">Save</button>{% if t.custom %}<button class="btn btn-ghost" name="reset" value="1">Reset to default</button>{% endif %}</div>
@@ -234,7 +235,7 @@
     {% if backups|length > 5 %}<label class="lb-q rows-q">{{ m.icon("search") }}<input type="search" placeholder="Filter backups (e.g. failed)" aria-label="Filter backups" data-rows="#backup-rows .item" autocomplete="off"></label>{% endif %}
     {% for b in backups %}<div class="item"><div class="item-main"><div class="item-title">{{ b.destination }}</div>
       <div class="item-sub"><span>{{ b.kind|replace('_', ' ')|capitalize }}</span> <span>{{ b.started_at|local_datetime }}</span>{% if b.bytes %} <span>{{ (b.bytes / 1e9)|round(2) }} GB</span>{% endif %}</div></div>
-      <span class="badge {{ 'badge-ok' if b.status == 'ok' else 'badge-outline' if b.status == 'running' else 'badge-bad' }}">{{ b.status }}</span></div>
+      <span class="badge {{ 'badge-ok' if b.status == 'ok' else 'badge-outline' if b.status == 'running' else 'badge-bad' }}">{{ 'OK' if b.status == 'ok' else b.status|capitalize }}</span></div>{# F93: "ok" beside the schedules' "OK" #}
     {% else %}{{ m.empty("archive", "No backups yet", "Nightly encrypted backups to your Google Drive accounts.") }}{% endfor %}
     <p class="meta rows-none" hidden>Nothing matches.</p>
   </div></details>

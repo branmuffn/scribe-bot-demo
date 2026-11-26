@@ -3,10 +3,10 @@
 {% block title %}{% if trash %}Trash{% else %}Talks{% endif %} · Scribe Bot{% endblock %}
 {% block back %}{% if trash or unsorted %}<a class="back-link" href="/conversations">‹ Talks</a>{% endif %}{% endblock %}
 {% block body %}
-{{ m.talks_head("conversations") }}
 {% if trash %}
-<div class="section-head"><h2>Trash</h2><span class="count">{{ rows|length + skipped|length }}</span></div>
-<p class="section-help">Removed for good {{ trash_days }} days after it lands here, audio included. Restore brings it back before then.</p>
+{# F97 (500 pass): Trash opened as "‹ Talks", then a "Talks" heading, then a small TRASH label, and the ＋ for a new recording #}
+{% set n = rows|length + skipped|length %}
+<div class="page-head"><div><h1>Trash</h1><div class="meta">{{ n }} item{{ '' if n == 1 else 's' }} · each is removed for good, audio included, {{ trash_days }} days after it lands here</div></div></div>
 {# N4 / A3.3 (Brian, 2026-11-25): pick several, the same way as Inbox and People #}
 <div class="pk2" data-pk-bar="trash-list" hidden role="region" aria-label="Selected items in Trash">
   <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>
@@ -29,13 +29,13 @@
   {% endif %}{% else %}{{ m.empty("trash", "Trash is empty") }}{% endfor %}
 </div>
 {% elif unsorted %}
-<div class="section-head"><h2>Not sorted</h2><span class="count">{{ total }}</span></div>
-<p class="section-help">Not filed yet. Tap one to file it.</p>
+<div class="page-head"><div><h1>Not sorted</h1><div class="meta">{{ total }} talk{{ '' if total == 1 else 's' }} not filed as Work or Home yet. Tap one to file it.</div></div></div>
 <div class="card" id="conv-list"{% if not night %} data-fold-groups{% endif %}>
   {% for c in rows %}{{ m.conv_row(c, sort=True) }}{% else %}{{ m.empty("check-circle", "All sorted") }}{% endfor %}
   {{ m.more("conv-list", rows|length, total) }}
 </div>
 {% else %}
+{{ m.talks_head("conversations") }}
 {% if n_unsorted %}<a class="notice" href="/conversations?unsorted=1" style="margin-bottom:var(--s3)">{{ m.icon("inbox") }}
   <span><b>Not sorted · {{ n_unsorted }}</b><br><span class="meta">Not filed as Work or Home yet. Tap to sort.</span></span></a>{% endif %}
 {% set types = [("1:1", "1:1"), ("multi", "Group"), ("learning", "Learning"), ("personal", "Personal")] %}

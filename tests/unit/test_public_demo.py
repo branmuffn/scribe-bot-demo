@@ -463,3 +463,23 @@ def test_review_names_its_own_open_tab(demo):  # noqa: F811
         html = demo.get(f"/review?tab={tab}").text
         assert "under Needs you" not in html and "Needs you item" not in html, tab
     assert "back in Open" in demo.get("/review?tab=dismissed").text
+
+
+def test_the_talk_being_transcribed_shows_as_processing(demo):
+    """F84 (500 pass): the demo's jobs were kind 'process', which nothing reads, so Status said "Nothing processing"
+    beside "1 running", and no page showed the recording that was being transcribed."""
+    page = demo.get("/status").text
+    assert "Nothing processing" not in page and "1 running" in page
+    assert "Recording Nov 25 at 8:10 AM" in page and "Step 2 of 7</b> · Transcribing" in page
+
+
+def test_a_not_found_page_keeps_the_header_counts(demo):
+    """F85 (500 pass): "Not here" was drawn without the database, so the Today and Inbox counts, the bell's count and the
+    status dot vanished from its header (a More menu stood in for the dot), as if they had been cleared."""
+    import re
+    def header(page):
+        bell = re.search(r'aria-label="(Notifications[^"]*)"', page).group(1)
+        return bell, re.findall(r'aria-label="(\d+ (?:need you|waiting))"', page), 'Status:' in page
+    today, missing = demo.get("/").text, demo.get("/nope", headers={"accept": "text/html"})
+    assert missing.status_code == 404 and "Not here" in missing.text
+    assert header(missing.text) == header(today) and header(today)[2] and len(header(today)[1]) == 2

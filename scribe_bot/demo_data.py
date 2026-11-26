@@ -171,7 +171,7 @@ def _seed_meetings(conn: sqlite3.Connection, folder: Path | None = None) -> None
 
     conn.execute("INSERT INTO ledger_entry (time, account_id, provider, model, task, conversation_id, sent_summary, tokens_in, "
                  "tokens_out, cost_usd, training_policy, status) VALUES (?, ?, 'google', 'gemini-flash', 'extract', NULL, "
-                 "'Blocked: this account may train on data, so it is never used for real conversations', 0, 0, 0, "
+                 "'BLOCKED, not sent: Transcript text of a made-up talk (this account may train on data)', 0, 0, 0, "
                  "'may train', 'blocked')", (ago(4), gem))
     # A recording waiting for approval (ask-first mode), so the Review flow has something to show. No audio file exists.
     conn.execute("INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title) "
@@ -344,8 +344,15 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None, at) -> None:
         rid = conn.execute("INSERT INTO recording (source, original_path, sha256, duration_s, received_at, status, title) "
                            "VALUES ('recorder', ?, ?, 1260, ?, 'processing', ?)",
                            (f"demo/{title}.m4a", f"demo-{title}", ago(0, 2), title)).lastrowid
-        conn.execute("INSERT INTO job (kind, recording_id, status, created_at, updated_at, error) VALUES ('process', ?, ?, ?, ?, ?)",
-                     (rid, status, ago(0, 2), ago(0, 1), err))
+        # F84 (500 pass): the jobs were kind 'process', which nothing reads (the pipeline's kind is 'recording'), so the
+        # one "still being transcribed" showed nowhere: Status said "Nothing processing" beside "1 running"
+        jid = conn.execute("INSERT INTO job (kind, recording_id, status, created_at, updated_at, error) "
+                           "VALUES ('recording', ?, ?, ?, ?, ?)", (rid, status, ago(0, 2), ago(0, 1), err)).lastrowid
+        if status == "running":   # audio ready, transcribing for the last few minutes
+            mins = lambda m: (datetime.now(timezone.utc) - timedelta(minutes=m)).isoformat(timespec="seconds")
+            conn.execute("INSERT INTO stage_run (job_id, stage, status, attempts, started_at, finished_at) VALUES "
+                         "(?, 'audio', 'done', 1, ?, ?), (?, 'transcribe', 'running', 1, ?, NULL)",
+                         (jid, mins(4), mins(3), jid, mins(3)))
     # The Inbox: recordings waiting for an OK (and two older ones), each with a short tone as its "audio"
     audio = (folder / "demo-audio") if folder else None
     if audio:

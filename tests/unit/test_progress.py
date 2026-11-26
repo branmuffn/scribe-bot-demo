@@ -203,3 +203,21 @@ def test_status_folds_the_rest_of_the_queue(tmp_path):
         add_job(conn, add_recording(conn, 600), "pending")
     page = client.get("/status").text
     assert "2 more waiting" in page and "starts ~" in page
+
+
+def test_step_times_are_kept_until_a_step_finishes(conn):
+    """F88 (500 pass): the step times were worked out again for the header's status ring on every page (7 more reads).
+    They're kept now, but a step that finishes must still change them."""
+    job = add_job(conn, add_recording(conn, 600), "done")
+    add_run(conn, job, "transcribe", NOW, NOW + timedelta(seconds=300))
+    log = []
+    conn.set_trace_callback(log.append)
+    first = progress.rates(conn)
+    assert progress.rates(conn) == first
+    assert sum("FROM stage_run s JOIN job j" in s for s in log) == len(progress.STAGES)   # the second read was kept
+    job2 = add_job(conn, add_recording(conn, 600), "done")
+    add_run(conn, job2, "transcribe", NOW + timedelta(seconds=400), NOW + timedelta(seconds=1600))   # 120 s / audio min
+    conn.set_trace_callback(None)
+    assert progress.rates(conn)["transcribe"][1] == (30 + 120) / 2
+    progress.rates(conn)["transcribe"] = ("flat", 0)   # a caller changing its copy doesn't change the kept one
+    assert progress.rates(conn)["transcribe"][1] == (30 + 120) / 2

@@ -103,7 +103,7 @@
 <section class="section">
   <div class="section-head"><h2>Late promises to you</h2><a class="aside" href="/tasks?tab=waiting">All</a></div>
   <div class="card" data-cap="3" data-all="/tasks?tab=waiting">{% for t in overdue_theirs %}
-    <div class="item{{ ' tap-row' if t.conversation_id }}">{{ m.avatar(t.owner_name) }}<div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ m.task_full(t) }}
+    <div class="item{{ ' tap-row' if t.conversation_id }}">{{ m.avatar(t.owner_name) }}<div class="item-main">{% if t.conversation_id %}<a class="item-link" href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ m.task_full(t) }}
       <div class="item-sub"><b>{{ t.owner_name }}</b>{{ m.due(t) }}</div></div>
       <div class="item-actions"><button type="button" class="btn btn-sm" data-copy="#nudge-{{ t.id }}"
         title="Copies a friendly reminder to paste into a text or email. Nothing is sent.">Nudge</button>
@@ -128,7 +128,7 @@
     {{ m.stat_tile("Talks", week.conversations, sub="since " ~ week.since|local_date, href="/conversations?start=" ~ week.since) }}
     {{ m.stat_tile("Tasks you finished", week.done, sub="see Done", href="/tasks?show=done") }}
     {{ m.stat_tile("Your speaking", (sp.wpm|round|int ~ " words/min") if sp else "No numbers yet", lv.pace if sp else None,
-                   sub=(sp.conversations ~ " conversation" ~ ('s' if sp.conversations != 1 else '') ~ " · pace, fillers, questions") if sp else "after your next conversation",
+                   sub=(sp.conversations ~ " talk" ~ ('s' if sp.conversations != 1 else '') ~ " · pace, fillers, questions") if sp else "after your next conversation",
                    href="/speaking") }}
   </div>
 </section>

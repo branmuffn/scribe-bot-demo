@@ -572,7 +572,9 @@ def today_page(request: Request, conn: sqlite3.Connection = Conn):
     a, args = area_clause(area, "t.area")
     today = date.today().isoformat()
     due = conn.execute(
-        "SELECT t.*, coalesce(nullif(c.short_title, ''), c.title) AS conv_title FROM task t LEFT JOIN conversation c ON c.id = t.conversation_id "
+        "SELECT t.*, coalesce(nullif(c.short_title, ''), c.title) AS conv_title, "
+        "(SELECT idx FROM segment g WHERE g.id = t.source_segment_id) AS line "   # F96: its link jumped to "#L" (no line)
+        "FROM task t LEFT JOIN conversation c ON c.id = t.conversation_id "
         f"WHERE t.status = 'open' AND t.inbox = 0 AND t.owner_person_id = 1{a} "
         f"AND {LIVE_TASK} ORDER BY t.due IS NULL, t.due, t.id LIMIT 50", args).fetchall()
     late = [t for t in due if t["due"] and t["due"] <= today]
@@ -629,7 +631,7 @@ def next_up(due: list, needs: dict, n_inbox: int, today: str, inbox_hours: float
         return task(needs["reminders"][0], "Next up · reminder")
     if needs["speakers"]:
         x = needs["speakers"][0]
-        return {"kicker": "Next up · who is this?", "title": f"Name a speaker in “{x['r']['conv_title'] or 'a conversation'}”",
+        return {"kicker": "Next up · who is this?", "title": f"Name a speaker in “{x['r']['conv_title'] or 'a talk'}”",
                 "sub": f"{x['s']['talk_seconds'] / 60:.1f} min of talking" + (f" · sounds like {x['payload']['guess']}"
                                                                            if x["payload"].get("guess") else ""),
                 "href": "#needs-you", "cta": "Name them"}
@@ -762,15 +764,16 @@ def processing_history(request: Request, conn: sqlite3.Connection = Conn):
     rows = []
     active = {p["job_id"]: p for p in progress.active_jobs(conn)}   # B39: queue-aware times
     for j in conn.execute("SELECT j.id, j.status, j.payload, j.created_at, j.updated_at, j.recording_id, r.title AS rec_title, "
-                          "r.duration_s, c.id AS cid, c.title, c.private, c.deleted_at, c.summary FROM job j "
+                          "r.duration_s, c.id AS cid, c.title, c.private, c.deleted_at, c.summary, pk.text AS peek FROM job j "
                           "LEFT JOIN recording r ON r.id = j.recording_id LEFT JOIN conversation c ON c.recording_id = j.recording_id "
+                          "LEFT JOIN recording_peek pk ON pk.recording_id = j.recording_id "   # F88: was 2 reads a row
                           "WHERE j.kind = 'recording' ORDER BY j.id DESC LIMIT 60"):
         pay = json.loads(j["payload"] or "{}")
         first = conn.execute("SELECT min(started_at) FROM stage_run WHERE job_id = ?", (j["id"],)).fetchone()[0]
         p = active.get(j["id"]) if j["status"] in ("running", "pending") else None
         rows.append({"id": j["id"], "status": j["status"], "cid": j["cid"] if not j["deleted_at"] else None,
-                     "title": j["title"] or progress._quick(conn, j["recording_id"]) or j["rec_title"] or "Recording",
-                     "preview": progress._preview(conn, j["recording_id"]), "minutes": round((j["duration_s"] or 0) / 60),
+                     "title": j["title"] or progress._quick((j["peek"] or "").strip()) or j["rec_title"] or "Recording",
+                     "preview": progress._preview((j["peek"] or "").strip()), "minutes": round((j["duration_s"] or 0) / 60),
                      "ai": bool(j["summary"]) or (pay.get("ai") is not False and not j["private"]), "sent": j["created_at"], "started": first,
                      "finished": j["updated_at"] if j["status"] in ("done", "failed") else None, "p": p,
                      "took": progress.duration_label((datetime.fromisoformat(j["updated_at"]) - datetime.fromisoformat(first)).total_seconds())
@@ -988,7 +991,7 @@ def conversations_export(request: Request, fmt: str, person: int | None = None, 
     ids = [r[0] for r in conn.execute(f"SELECT c.id FROM conversation c WHERE {' AND '.join(where)} ORDER BY "
                                       f"{CONV_ORDERS.get(order, CONV_ORDERS['newest'])[1]} LIMIT {EXPORT_MAX}", args)]
     body = "\n\n---\n\n".join(export.conversation_md(conn, i, transcript=bool(transcript)) for i in ids)
-    return _md(f"# Scribe Bot export · {len(ids)} conversations\n\n" + body, f"Scribe Bot {date.today().isoformat()}", _fmt(fmt))
+    return _md(f"# Scribe Bot export · {len(ids)} talk{'s' if len(ids) != 1 else ''}\n\n" + body, f"Scribe Bot {date.today().isoformat()}", _fmt(fmt))
 
 
 @router.get("/conversations/{cid}/export.{fmt}")
@@ -1108,8 +1111,23 @@ def recorder_title(name: str | None) -> str:
     return re.sub(r"\b(\d{1,2})_(\d{2})\b", r"\1:\2", name)
 
 
+# F87 (500 pass): Costs and the Data Ledger showed the code's own words: task "extract", status "ok", "$0.0000", and
+# token counts without commas ("24879 / 2306") beside the By talk list's "24,879 / 2,306".
+LEDGER_TASKS = {"extract": "AI notes", "ping": "Key test", "console_match": "Matched to the Anthropic console"}
+LEDGER_STATUS = {"ok": "Sent", "blocked": "Blocked, not sent", "failed": "Failed", "adjustment": "Matched"}
+
+
+def usd(v, places: int = 2) -> str:
+    """$0.0291 at 4 places; nothing spent is "$0", not "$0.0000"."""
+    return f"${v:.{places}f}" if v else "$0"
+
+
 templates.env.filters["model_label"] = model_label
 templates.env.filters["ai_label"] = ai_label
+templates.env.filters["ledger_task"] = lambda t: LEDGER_TASKS.get(t, (t or "").replace("_", " ").capitalize())
+templates.env.filters["ledger_status"] = lambda s: LEDGER_STATUS.get(s, (s or "").capitalize())
+templates.env.filters["usd"] = usd
+templates.env.filters["or_list"] = lambda xs: " or ".join([", ".join(xs[:-1]), xs[-1]] if len(xs) > 2 else xs)   # F90: "A, B or C"
 templates.env.filters["recorder_title"] = recorder_title
 templates.env.globals["speaking_levels"] = talk.levels
 templates.env.filters["area_label"] = lambda a: {"work": "Work", "personal": "Home", "school": "School", "other": "Other"}.get(a, a or "")   # Q2: "Home" everywhere
@@ -1138,7 +1156,7 @@ def confirmed(confirm: str) -> bool:
 def rerun_confirm(request: Request, cid: int, conn: sqlite3.Connection = Conn):
     c = get_conversation(conn, cid)
     est = extract.estimate_cost(conn, cid, ending_private=bool(c["private"]))
-    return confirm_page(request, conn, "conversations", heading="Re-run the AI on this conversation?" if c["summary"] else "Summarize this talk?", cost=est["cost_usd_est"],
+    return confirm_page(request, conn, "conversations", heading="Re-run the AI on this talk?" if c["summary"] else "Summarize this talk?", cost=est["cost_usd_est"],
                         model=est["model"], tokens=est["tokens_in_est"], blocked=est["blocked"],
                         detail="Sends the transcript text (never the audio). Edits you already made are kept.",
                         action=f"/conversations/{cid}/rerun", cancel=f"/conversations/{cid}")
@@ -1156,7 +1174,7 @@ def rerun_ai(request: Request, cid: int, confirm: str = Form(""), end_private: s
         return stop
     if c["private"]:
         if end_private != "1":
-            raise HTTPException(400, "Private conversations go to the AI only after you end Private on the confirm step")
+            raise HTTPException(400, "Private talks go to the AI only after you end Private on the confirm step")
         with db.transaction(conn):
             conn.execute("UPDATE conversation SET private = 0, updated_at = ? WHERE id = ?", (db.now(), cid))
             if c["recording_id"]:
@@ -1187,7 +1205,7 @@ def detail_make(request: Request, cid: int, confirm: str = Form(""), conn: sqlit
     if stop := demo_stop(request, "ai", f"/conversations/{cid}"):
         return stop
     if c["private"]:
-        raise HTTPException(400, "Private conversations stay on the M14")
+        raise HTTPException(400, "Private talks stay on the M14")
     ai_jobs.queue_detail(conn, cid)
     return RedirectResponse(f"/conversations/{cid}?notes=detailed", status_code=303)
 
@@ -1214,7 +1232,7 @@ def compare_ai(request: Request, cid: int, confirm: str = Form(""), conn: sqlite
     if stop := demo_stop(request, "ai", f"/conversations/{cid}"):
         return stop
     if c["private"]:
-        raise HTTPException(400, "Private conversations never go to the AI")
+        raise HTTPException(400, "Private talks never go to the AI")
     ai_jobs.queue_compare(conn, cid)
     return RedirectResponse(f"/conversations/{cid}?compare=queued", status_code=303)
 
@@ -1264,7 +1282,7 @@ def edit_summary(request: Request, cid: int, title: str | None = Form(None), sum
         raise HTTPException(400, "A title is needed")
     points = None if takeaways is None else [
         ln.strip().lstrip("-•* ").strip() for ln in takeaways.splitlines() if ln.strip().lstrip("-•* ").strip()]
-    label = "Renamed the conversation" if title is not None and summary is None and takeaways is None else "Edited the summary"
+    label = "Renamed the talk" if title is not None and summary is None and takeaways is None else "Edited the summary"
     with db.transaction(conn):
         undo.save(conn, label, [("conversation", cid)])
         conn.execute("UPDATE conversation SET title = ?, summary = ?, takeaways = ?, updated_at = ? WHERE id = ?",
@@ -1549,7 +1567,7 @@ def fold_speaker(request: Request, sid: int, into: int = Form(...), conn: sqlite
     sp = conn.execute("SELECT * FROM speaker WHERE id = ?", (sid,)).fetchone()
     if sp is None or into == sid or not conn.execute("SELECT 1 FROM speaker WHERE id = ? AND conversation_id = ?",
                                                      (into, sp["conversation_id"])).fetchone():
-        raise HTTPException(400, "Pick another speaker from this conversation")
+        raise HTTPException(400, "Pick another speaker from this talk")
     cid = sp["conversation_id"]
     with db.transaction(conn):
         undo.save(conn, "Moved a short speaker's lines",
@@ -2984,7 +3002,7 @@ def inbox_bulk(request: Request, ids: str = Form(...), what: str = Form(...), me
     needed "Get it ready" first). An older recording is got ready on the way, so AI notes / Transcript only / Delete
     work on any mix. AI notes only from a button that shows the cost (confirm=1) or the confirm step (R5-24)."""
     if what not in ("ai", "local", "skip"):
-        raise HTTPException(400, "Pick AI notes, Transcript only or Delete")
+        raise HTTPException(400, "Pick Summarize, Transcribe or Delete")
     if what == "ai" and not confirmed(confirm):
         return RedirectResponse(f"/inbox-bulk/ai?ids={','.join(x.strip() for x in ids.split(',') if x.strip().isdigit())}", status_code=303)
     if what != "skip" and (stop := demo_stop(request, "run", "/inbox")):
@@ -3095,7 +3113,7 @@ def review_confirm(request: Request, rid: int, meeting_type: str = "", conn: sql
         raise HTTPException(400, "Nothing to confirm")
     if r["conversation_id"]:
         est = extract.estimate_cost(conn, r["conversation_id"])
-        return confirm_page(request, conn, "review", heading="Run the AI on this conversation?", cost=est["cost_usd_est"],
+        return confirm_page(request, conn, "review", heading="Run the AI on this talk?", cost=est["cost_usd_est"],
                             model=est["model"], tokens=est["tokens_in_est"], blocked=est["blocked"],
                             detail="Sends the transcript text (never the audio).", action=f"/review/{rid}/approve", cancel="/review")
     payload = json.loads(r["payload"] or "{}")

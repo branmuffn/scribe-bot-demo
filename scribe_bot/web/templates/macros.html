@@ -181,7 +181,7 @@ method="post" action="{{ action }}"{% if tgt %} hx-post="{{ action }}" hx-target
 {% endmacro %}
 
 {% macro line_link(item, conversation_id=None) -%}
-  {%- if item.line is not none -%}
+  {%- if item.line is number -%}
     <a class="lnk" href="{% if conversation_id %}/conversations/{{ conversation_id }}?tx=1{% endif %}#L{{ item.line }}">line {{ item.line + 1 }}</a>
   {%- endif -%}
 {%- endmacro %}
@@ -235,7 +235,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
       {% if t.confidence is not none and t.confidence < 0.6 %}<form class="inline-form" {{ hx("/tasks/" ~ t.id ~ "/sure", tgt, oob) }}>
         <button class="badge badge-warn" title="The AI wasn't sure about this task. Tap if it looks right; ⋯ to fix or remove it.">Unsure {{ icon("check") }}</button></form>{% endif %}
       {% if t.remind_at and t.status == 'open' %}<span class="badge badge-outline" title="Reminder">{{ icon("clock") }}{{ 'now' if t.remind_at <= now_iso else t.remind_at|when_back }}</span>{% endif %}
-      {% if show_conv and t.conv_title %}<a href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.conv_title }}</a>
+      {% if show_conv and t.conv_title %}<a href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}">{{ t.conv_title }}</a>
       {% elif t.conversation_id %}{{ line_link(t) }}{% endif %}
     </div>
   </div>
@@ -262,7 +262,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
         {% if t.status == 'open' %}<details class="ts-row"><summary><span class="ts-ic" aria-hidden="true">{{ icon("clock") }}</span><span class="grow">Remind me</span><span class="ts-v">{{ ('now' if t.remind_at <= now_iso else t.remind_at|when_back) if t.remind_at else 'Off' }} ›</span></summary>
           <div class="ts-in">{{ snooze_forms("/tasks/" ~ t.id ~ "/remind", "/tasks/" ~ t.id ~ "/remind/now" if t.remind_at and t.remind_at > now_iso else None) }}
             {% if t.remind_at %}<form method="post" action="/tasks/{{ t.id }}/remind/clear"><button class="menu-item">Stop reminding</button></form>{% endif %}</div></details>{% endif %}
-        {% if t.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow cut">{{ t.conv_title or 'Open the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+        {% if t.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow cut">{{ t.conv_title or 'Open the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
       </div>
       <div class="ts-btns">
         {% if t.status == 'done' %}<form {{ hx("/tasks/" ~ t.id ~ "/reopen", tgt, oob) }} class="grow"><button class="btn btn-block">↺ Reopen</button></form>
@@ -280,7 +280,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
    area tag is a small picker (the AI's guess, else Work), ✓ keeps it in that area, ✕ removes it. #}
 {% macro unsure_row(t, tgt=None) %}
 <div class="item unsure-row" id="task-{{ t.id }}">
-  <div class="item-main">{% if t.conversation_id %}<a class="item-title plain" href="/conversations/{{ t.conversation_id }}{% if t.line is not none %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ task_full(t) }}
+  <div class="item-main">{% if t.conversation_id %}<a class="item-title plain" href="/conversations/{{ t.conversation_id }}{% if t.line is number %}?tx=1#L{{ t.line }}{% endif %}">{{ t.short_title or t.title }}</a>{% else %}<div class="item-title">{{ t.short_title or t.title }}</div>{% endif %}{{ task_full(t) }}
     <div class="item-sub">{% if t.owner_person_id and t.owner_person_id != 1 %}<b>{{ t.owner_name }}</b>{% endif %}{% if t.conv_title %}<span>{{ t.conv_title }}</span>{% endif %}</div></div>
   <div class="item-actions">
     <form {{ hx("/tasks/" ~ t.id ~ "/file", tgt) }} class="keep-f">
@@ -315,7 +315,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
           <input name="new_name" placeholder="New person's name" aria-label="New person's name" class="qp-new" hidden data-enter-submits></form>{% endif %}
         <form {{ hx("/facts/" ~ f.id ~ "/kind", tgt, oob) }} class="ts-row ts-pick" data-keep-open><span class="ts-ic" aria-hidden="true">{{ icon("tag") }}</span><span class="grow">Kind</span><span class="ts-v">{{ (f.type or 'other')|capitalize }} ›</span>
           <select name="kind" aria-label="Kind of note" class="qp-native qp-select" data-autosave>{% for k in ["birthday", "family", "event", "preference", "work", "other"] %}<option value="{{ k }}" {{ 'selected' if (f.type or 'other') == k }}>{{ k|capitalize }}</option>{% endfor %}</select></form>
-        {% if show_source and f.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ f.conversation_id }}{% if f.line is not none %}?tx=1#L{{ f.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow">From</span><span class="ts-v cut">{{ f.conv_title or 'the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
+        {% if show_source and f.conversation_id %}<a class="ts-row ts-link" href="/conversations/{{ f.conversation_id }}{% if f.line is number %}?tx=1#L{{ f.line }}{% endif %}"><span class="ts-ic" aria-hidden="true">{{ icon("chat") }}</span><span class="grow">From</span><span class="ts-v cut">{{ f.conv_title or 'the talk' }}</span><span class="chev-r" aria-hidden="true">›</span></a>{% endif %}
       </div>
       <div class="ts-btns">
         {% if people %}<button type="button" class="btn btn-block grow" data-pick-for="fp-{{ f.id }}">Move to someone else</button>{% endif %}
@@ -331,7 +331,7 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 <div class="item" id="decision-{{ d.id }}">
   <div class="item-main"><div class="editable-row"><div {{ editable("/decisions/" ~ d.id ~ "/edit", "text", d.text, "decision", tgt, single=True) }}>{{ d.text }}</div>{{ pencil("decision") }}</div>
     <div class="item-sub">
-      {% if show_conv %}<span>{{ d.at|local_date }}</span><a href="/conversations/{{ d.conversation_id }}{% if d.line is not none %}?tx=1#L{{ d.line }}{% endif %}">{{ d.conv_title }}</a>
+      {% if show_conv %}<span>{{ d.at|local_date }}</span><a href="/conversations/{{ d.conversation_id }}{% if d.line is number %}?tx=1#L{{ d.line }}{% endif %}">{{ d.conv_title }}</a>
       {% else %}{{ line_link(d) }}{% endif %}</div></div>
   <div class="item-actions">{% call menu(d.text) %}
     <details class="edit"><summary>Edit</summary>
@@ -408,10 +408,10 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {# Your speaking over the last 7 and 30 days (the Speaking page and Brian's own person page). #}
 {% macro my_speaking(speaking, head=True) %}
 {# B17: on the Your speaking page the page title already says it, so no second "Your speaking" heading there #}
-{% if head %}{{ section("Your speaking", help="Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.") }}
-{% else %}<p class="section-help">Your lines across conversations; counted on the M14, no AI. Filler counts are a minimum.</p>{% endif %}
+{% if head %}{{ section("Your speaking", help="Your lines across talks; counted on the M14, no AI. Filler counts are a minimum.") }}
+{% else %}<p class="section-help">Your lines across talks; counted on the M14, no AI. Filler counts are a minimum.</p>{% endif %}
 {% for d in (7, 30) %}{% set s = speaking[d] %}{% if s %}
-  <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} conversation{{ 's' if s.conversations != 1 }} · {{ s.seconds|mins }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
+  <h3 class="group-label">Last {{ d }} days · {{ s.conversations }} talk{{ 's' if s.conversations != 1 }} · you spoke {{ s.seconds|mins }}{% if s.conversations < 3 %} · <span class="meta">Early numbers</span>{% endif %}</h3>
   {{ speak_tiles(s) }}{% endif %}{% else %}{% endfor %}
 {% if not (speaking[7] or speaking[30]) %}<div class="card">{{ empty("mic", "No speaking numbers yet", "They appear after your first conversations with you named as a speaker.") }}</div>{% endif %}
 {% endmacro %}
@@ -422,9 +422,9 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
 {# F63 (screen pass): with none counted it said "at least 0"; it says none heard. F62: the group label says "min". #}
 {% set filler_sub %}{% if s.fillers %}at least {{ s.fillers }}{% else %}none heard{% endif %}{% if s.top_fillers %} · {% for f, n in s.top_fillers %}“{{ f }}” {{ n }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}{% endset %}
 <div class="tiles">
-  {{ stat_tile("Pace", (s.wpm|round|int) ~ " words/min", lv.pace, "Normal in conversation: 140–180 words a minute. Above 190, slowing down helps people follow.", sub=pace_sub) }}
+  {{ stat_tile("Pace", (s.wpm|round|int) ~ " words/min", lv.pace, "Normal when talking: 140–180 words a minute. Above 190, slowing down helps people follow.", sub=pace_sub) }}
   {{ stat_tile("Longest stretch", s.longest|duration, lv.longest, "Your longest time talking without a break. Past 2 minutes, try point → reason → example, then hand it back with a question.") }}
-  {{ stat_tile("Questions asked", s.questions, lv.questions, "Questions invite others in. None at all in a long conversation is worth watching.") }}
+  {{ stat_tile("Questions asked", s.questions, lv.questions, "Questions invite others in. None at all in a long talk is worth watching.") }}
   {{ stat_tile("Filler words", '%.1f'|format(s.fillers_per_min) ~ "/min", lv.fillers, "Under 2 a minute is Good. A minimum: the speech engine drops some “um”s.", sub=filler_sub) }}
 </div>
 {% endmacro %}

@@ -106,7 +106,7 @@ def test_edit_in_place_one_field_at_a_time(env):
     client.post("/conversations/1/summary", data={"title": "Renamed only"})
     assert one(conn, "SELECT title FROM conversation WHERE id = 1") == "Renamed only"
     assert one(conn, "SELECT summary || '|' || takeaways FROM conversation WHERE id = 1") == before   # untouched
-    assert "Renamed the conversation" in client.get("/conversations/1").text                         # undo bar label
+    assert "Renamed the talk" in client.get("/conversations/1").text                         # undo bar label
     page = client.get("/conversations/1").text                    # the task's in-place edit carries its owner and due date
     # 2026-11-21: a task's edit lives in its sheet (tap the task), with its owner kept
     assert 'action="/tasks/2/edit"' in page or 'hx-post="/tasks/2/edit"' in page

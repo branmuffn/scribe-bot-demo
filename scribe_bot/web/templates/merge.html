@@ -7,7 +7,7 @@
 <div class="card pad stack">
   <p>Merge <b>{{ pv.from_name }}</b> into <b>{{ pv.into_name }}</b>:
     {{ pv.tasks }} task{{ 's' if pv.tasks != 1 }}, {{ pv.notes }} note{{ 's' if pv.notes != 1 }},
-    {{ pv.conversations }} conversation{{ 's' if pv.conversations != 1 }}{% if pv.decisions %}, {{ pv.decisions }} decision{{ 's' if pv.decisions != 1 }}{% endif %}
+    {{ pv.conversations }} talk{{ 's' if pv.conversations != 1 }}{% if pv.decisions %}, {{ pv.decisions }} decision{{ 's' if pv.decisions != 1 }}{% endif %}
     {% if pv.has_voice %}and their voiceprint{% endif %} move over.</p>
   <p class="meta">"{{ pv.from_name }}" is kept as an alias of {{ pv.into_name }}, then removed from People. This can't be undone.</p>
   <div class="row">

@@ -116,7 +116,7 @@ def test_profile_picker(env):
     page = client.get("/settings/ai").text
     # R1 cards: only companies with a key are listed (the test env has none, so just the current model's card shows)
     assert 'value="all_claude"' in page and "Claude Sonnet" in page and "per meeting" in page
-    assert "Only models with a connected key are listed" in page
+    assert "Other models show up here once their key is connected" in page
     client.post("/settings/profile", data={"profile": "budget_mix"})
     assert one(conn, "SELECT value FROM setting WHERE key = 'ai_profile'") == "budget_mix"
     assert client.post("/settings/profile", data={"profile": "nope"}).status_code == 400

@@ -619,3 +619,13 @@ def test_a_search_hit_by_an_unnamed_voice_says_who(demo):  # noqa: F811
     n = extract.speaker_numbers(conn, row["cid"])[row["sid"]]
     html = demo.get("/search", params={"q": "budget", "conv": row["cid"]}).text
     assert "<span>Speaker %d</span>" % n in html
+
+
+def test_the_demo_bell_agrees_with_costs(demo):  # noqa: F811
+    """F131 (500 dark pass): the demo's bell said "AI spending reached 50% of this month's cap" while Costs showed 8%
+    of the cap. No made-up alert may claim a share of the cap that Costs doesn't show."""
+    conn = demo.db()
+    pct = int(re.search(r"(\d+)% of the \$[\d.]+ monthly cap", demo.get("/costs").text).group(1))
+    for (title,) in conn.execute("SELECT title FROM notification"):
+        m = re.search(r"(\d+)% of (?:this month's|the [^ ]+ monthly) cap", title)
+        assert not m or int(m.group(1)) <= pct, (title, pct)

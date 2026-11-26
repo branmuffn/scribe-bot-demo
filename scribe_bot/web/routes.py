@@ -838,10 +838,13 @@ def conversations_page(request: Request, person: int | None = None, type: str | 
                       trash_days=TRASH_DAYS, f={})
     where, args = conv_where(request, person, type, start, end, unsorted)
     night_q = request.query_params.get("night", "")
-    night = night_q == "1" or bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", night_q))
+    try:   # F70: a date that can't be (2026-02-30, from a mangled link) crashed the list; it's ignored now
+        day = date.today() if night_q == "1" else date.fromisoformat(night_q) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", night_q) else None
+    except ValueError:
+        day = None
+    night = day is not None
     if night:   # the overnight card (S1): just last night's talks; opening this list dismisses the card
-        day = date.fromisoformat(night_q) if night_q != "1" else date.today()   # a date = that morning (from Notifications)
-        s_utc, e_utc = night_window_utc(datetime.combine(day, time(12)))
+        s_utc, e_utc = night_window_utc(datetime.combine(day, time(12)))   # a date = that morning (from Notifications)
         if day == date.today() and setting(conn, "overnight_seen", "") != day.isoformat():
             overnight_seen(conn)
         where.append(f"EXISTS (SELECT 1 FROM job j WHERE j.recording_id = c.recording_id AND {NIGHT_JOB})")
@@ -861,7 +864,7 @@ def conversations_page(request: Request, person: int | None = None, type: str | 
     tag = request.query_params.get("tag", "")
     return render(request, "conversations.html", "conversations", conn, rows=rows, total=total, people=people(conn),
                   unsorted=unsorted, n_unsorted=n_unsorted, all_tags=tags_svc.counts(conn), jobs=now_jobs, night=night,
-                  ai_busy=ai_jobs.pending_ids(conn), night_label=("last night" if not night or night_q == "1" or night_q == date.today().isoformat() else "the night before " + date.fromisoformat(night_q).strftime("%b %-d")),
+                  ai_busy=ai_jobs.pending_ids(conn), night_label=("last night" if not night or day == date.today() else "the night before " + day.strftime("%b %-d")),
                   orders=CONV_ORDERS, f={"person": person, "type": type or "", "start": start or "", "end": end or "",
                                          "order": order if order in CONV_ORDERS else "newest", "tag": tag if tag.isdigit() else "",
                                          "q": (request.query_params.get("q") or "").strip()[:100]})
@@ -955,6 +958,8 @@ def conversation_tag_add(request: Request, cid: int, name: str = Form(...), conn
 @router.post("/conversations/{cid}/tags/{tid}/remove")
 def conversation_tag_remove(request: Request, cid: int, tid: int, conn: sqlite3.Connection = Conn):
     t = conn.execute("SELECT name FROM tag WHERE id = ?", (tid,)).fetchone()
+    if not conn.execute("SELECT 1 FROM conversation_tag WHERE conversation_id = ? AND tag_id = ?", (cid, tid)).fetchone():
+        return back(request, f"/conversations/{cid}")   # F75: removed already (a second tap): no second Undo of nothing
     with db.transaction(conn):
         if t is not None:   # U12 (Brian, 2026-11-25): Undo on every delete, tags included
             uid = undo.save(conn, "Tag removed", [])
@@ -1579,7 +1584,7 @@ def line_speaker(request: Request, seg_id: int, speaker_id: OptId = None, new_na
     if seg is None:
         raise HTTPException(404, "That line isn't here any more")
     cid = seg["conversation_id"]
-    more = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    more = _ids(ids)   # F83: a line listed twice ("5,5") moved its talk time twice
     segs = [seg] + [r for r in (conn.execute("SELECT * FROM segment WHERE id = ? AND conversation_id = ?", (x, cid)).fetchone()
                                 for x in more if x != seg_id) if r]
     before, lo, hi = _window(conn, segs)
@@ -1618,6 +1623,8 @@ def _window(conn: sqlite3.Connection, segs: list) -> tuple[set[int], float, floa
 def _fix_reply(conn: sqlite3.Connection, cid: int, before: set[int], lo: float, hi: float, uid: int) -> JSONResponse:
     rows = conn.execute("SELECT id, idx, start_s, end_s, speaker_id, text FROM segment WHERE conversation_id = ? "
                         "AND start_s BETWEEN ? AND ? ORDER BY idx", (cid, lo, hi)).fetchall()
+    if uid:   # F75: a fix that changed nothing (a second tap) offers no Undo of its own
+        undo.drop_noops(conn, [uid])
     u = conn.execute("SELECT id, label FROM undo_action WHERE id = ?", (uid,)).fetchone() if uid else None
     return JSONResponse({"lines": [dict(r) for r in rows], "removed": sorted(before - {r["id"] for r in rows}),
                          "speakers": [[x["id"], x["name"], x["color"]] for x in speakers_of(conn, cid)],
@@ -1643,7 +1650,7 @@ def _word_bounds(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-REF_TABLES = ("task", "decision", "person_fact")   # rows that point at a transcript line (source_segment_id)
+REF_TABLES = undo.REF_TABLES   # rows that point at a transcript line (source_segment_id)
 
 
 def _other_speaker(conn: sqlite3.Connection, cid: int, current: int | None) -> int | None:
@@ -2128,7 +2135,8 @@ def task_sure(request: Request, tid: int, conn: sqlite3.Connection = Conn):
     """"Unsure" → Looks right: the tag goes and the task leaves the Inbox."""
     t = task_or_404(conn, tid)
     with db.transaction(conn):
-        undo.save(conn, "Marked as right", [("task", tid)])
+        undo.save(conn, "Marked as right", [("task", tid), *(("review_item", r[0]) for r in conn.execute(   # F74: Undo
+            "SELECT id FROM review_item WHERE kind = 'inbox' AND ref_id = ? AND status = 'open'", (tid,)))])   # reopens it
         conn.execute("UPDATE task SET confidence = 1, inbox = 0, updated_at = ? WHERE id = ?", (db.now(), tid))
         conn.execute("UPDATE review_item SET status = 'done', resolved_at = ? WHERE kind = 'inbox' AND ref_id = ? "
                      "AND status = 'open'", (db.now(), tid))
@@ -2163,8 +2171,17 @@ def decisions_page():
     return RedirectResponse("/tasks?tab=decisions", status_code=302)
 
 
+def decision_or_404(conn: sqlite3.Connection, did: int) -> sqlite3.Row:
+    """F77: Remove / Looks right on a decision that's gone (an old page) answered as if it worked."""
+    d = conn.execute("SELECT * FROM decision WHERE id = ?", (did,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "That decision isn't here any more")
+    return d
+
+
 @router.post("/decisions/{did}/wrong")
 def decision_wrong(request: Request, did: int, conn: sqlite3.Connection = Conn):
+    decision_or_404(conn, did)
     with db.transaction(conn):
         undo.save(conn, "Removed a decision", [("decision", did)])
         conn.execute("UPDATE decision SET rated = 'wrong' WHERE id = ?", (did,))
@@ -2175,9 +2192,7 @@ def decision_wrong(request: Request, did: int, conn: sqlite3.Connection = Conn):
 @router.post("/decisions/{did}/edit")
 def decision_edit(request: Request, did: int, text: str = Form(...), conn: sqlite3.Connection = Conn):
     """Fix a decision's wording. Saved as rated 'right' (Brian's version), so a later AI re-run keeps it."""
-    d = conn.execute("SELECT * FROM decision WHERE id = ?", (did,)).fetchone()
-    if d is None:
-        raise HTTPException(404, "That decision isn't here any more")
+    d = decision_or_404(conn, did)
     if not text.strip():
         raise HTTPException(400, "A decision can't be empty")
     with db.transaction(conn):
@@ -2189,6 +2204,7 @@ def decision_edit(request: Request, did: int, text: str = Form(...), conn: sqlit
 
 @router.post("/decisions/{did}/right")
 def decision_right(request: Request, did: int, conn: sqlite3.Connection = Conn):
+    decision_or_404(conn, did)
     conn.execute("UPDATE decision SET rated = 'right' WHERE id = ?", (did,))
     return back(request, "/decisions")
 
@@ -2214,7 +2230,8 @@ def people_page(request: Request, q: str = "", sort: str = "name", n: int = PAGE
     if area != "all":
         where.append("p.area IN (?, 'both')"); args.append(area)
     if q.strip():
-        where.append("(p.name LIKE ? OR p.aliases LIKE ?)"); args += [f"%{q.strip()}%"] * 2
+        # F81: like the other lists' search boxes (N9): "_" or "%" in the box matched every person
+        where.append("(p.name LIKE ? ESCAPE '\\' OR p.aliases LIKE ? ESCAPE '\\')"); args += [like_q(q)] * 2
     else:   # Brian, 2026-11-21: "Speaker 2 from ..." placeholders wait in one row at the top, not mixed into the list
         where.append("p.stands_for_speaker IS NULL")
     page, total = paged(conn, f"SELECT p.id, {TALKED} AS talked FROM person p WHERE {' AND '.join(where)} "
@@ -2362,6 +2379,15 @@ def merge_people(pid: int, into: int = Form(...), conn: sqlite3.Connection = Con
 def people_not_same(pid: int, into: int = Form(...), later: int = Form(0), conn: sqlite3.Connection = Conn):
     """A "Possibly the same person" suggestion: Don't merge (never suggest the pair again) or ✕ (hide it for 30 days).
     Undo brings the suggestion back."""
+    if pid == into:
+        raise HTTPException(400, "Pick two different people")
+    if not all(conn.execute("SELECT 1 FROM person WHERE id = ?", (i,)).fetchone() for i in (pid, into)):
+        raise HTTPException(404, "That person isn't here any more (merged or deleted)")
+    # F76: a second tap (or the other device) added the pair again, so one Undo brought nothing back. Already hidden
+    # for good, or hidden for 30 days and ✕ tapped again: nothing to do.
+    if conn.execute("SELECT 1 FROM person_not_same WHERE a = ? AND b = ? AND (until IS NULL OR (? AND until > ?))",
+                    (min(pid, into), max(pid, into), 1 if later else 0, db.now())).fetchone():
+        return RedirectResponse("/people", status_code=303)
     with db.transaction(conn):
         uid = undo.save(conn, "Suggestion hidden for 30 days" if later else "Marked as different people", [])
         undo.created(conn, uid, "person_not_same", people_svc.not_same(conn, pid, into, 30 if later else None))
@@ -2484,6 +2510,8 @@ def edit_person(request: Request, pid: int, name: str = Form(...), aliases: str 
 
 @router.post("/facts/{fid}/confirm")
 def confirm_fact(request: Request, fid: int, ok: int = Form(...), conn: sqlite3.Connection = Conn):
+    if not conn.execute("SELECT 1 FROM person_fact WHERE id = ?", (fid,)).fetchone():   # F77: an old page said nothing
+        raise HTTPException(404, "That note isn't here any more")
     with db.transaction(conn):
         if not ok:
             undo.save(conn, "Removed a note", [("person_fact", fid)])
@@ -2574,6 +2602,7 @@ def review_data(conn: sqlite3.Connection, area: str = "all", snoozed: bool = Fal
         f"SELECT r.*, coalesce(nullif(c.short_title, ''), c.title) AS conv_title FROM {REVIEW_FROM} WHERE r.status = 'open' AND {scope} "
         f"AND {'NOT ' if snoozed else ''}{AWAKE} ORDER BY r.created_at", [*args, db.now()]).fetchall()
     speakers, inbox, approvals, glossary, recordings = [], [], [], [], []
+    rt = None   # F79: the M14's step times, read once for every card (they were read again for each recording)
     for r in items:
         payload = json.loads(r["payload"] or "{}")
         if r["kind"] == "speaker":
@@ -2588,10 +2617,11 @@ def review_data(conn: sqlite3.Connection, area: str = "all", snoozed: bool = Fal
             dur = conn.execute("SELECT duration_s, title, received_at FROM recording WHERE id = ?",
                                (payload["recording_id"],)).fetchone()
             d = dur[0] if dur and dur[0] else (payload.get("minutes") or 0) * 60
+            rt = rt or progress.rates(conn)
             recordings.append({"r": r, "payload": payload,
                                "when": recorded_at(payload.get("title") or (dur["title"] if dur else None),
                                                    dur["received_at"] if dur else None),
-                               "est": {**progress.choices(conn, [d])[0],
+                               "est": {**progress.choices(conn, [d], rt)[0],
                                                                    "cost": payload.get("ai_cost") or ai_cost(d)},
                                "type_guess": "learning" if LEARNING_WORDS.search(payload.get("title") or "") else ""})
         elif r["kind"] == "approval":
@@ -2605,12 +2635,14 @@ def review_data(conn: sqlite3.Connection, area: str = "all", snoozed: bool = Fal
         (dict(r) for r in conn.execute("SELECT id, title, duration_s, received_at FROM recording WHERE status = 'backlog' "
                                        "ORDER BY received_at DESC, id DESC")),
         key=lambda r: recorded_at(r["title"], r["received_at"]), reverse=True)
-    for r, e in zip(older, progress.choices(conn, [r["duration_s"] for r in older])):
+    if recordings or older:
+        rt = rt or progress.rates(conn)
+    for r, e in zip(older, progress.choices(conn, [r["duration_s"] for r in older], rt) if older else []):
         r["est"] = {**e, "cost": ai_cost(r["duration_s"])}
     return {"speakers": speakers, "inbox": inbox, "approvals": approvals, "glossary": glossary, "recordings": recordings,
             "older": older, "recordings_total": totals(recordings), "older_total": totals(older),
-            "m14_wait": progress.queue_wait_s(conn) if recordings or older else 0,
-            "ai_step_s": progress.rates(conn)["ai_extract"][1] if recordings or older else 0}
+            "m14_wait": progress.queue_wait_s(conn, r=rt) if recordings or older else 0,
+            "ai_step_s": rt["ai_extract"][1] if recordings or older else 0}
 
 
 def review_label(conn: sqlite3.Connection, r: sqlite3.Row) -> tuple[str, str]:
@@ -3029,6 +3061,10 @@ def review_restore(request: Request, rid: int, conn: sqlite3.Connection = Conn):
 @router.post("/review/{rid}/dismiss")
 def review_dismiss(request: Request, rid: int, conn: sqlite3.Connection = Conn):
     r = review_or_404(conn, rid)
+    if r["status"] == "dismissed":   # F75: a second tap (or an old page): skipped already, no second Undo of nothing
+        return back(request, "/review")
+    if r["status"] != "open":   # F75: an old page: it was approved or answered since; Skip would rewrite that as skipped
+        raise HTTPException(409, "That was already done on another page or device. Reload to see where it is now.")
     with db.transaction(conn):
         undo.save(conn, "Moved to Trash" if r["kind"] == "approval" else "Skipped", [("review_item", rid)] + ([("recording", r["ref_id"])] if r["kind"] == "approval" and r["ref_id"] else []))
         if r["kind"] == "approval" and not r["conversation_id"] and r["ref_id"]:  # a waiting recording: leave it unprocessed
@@ -3051,6 +3087,10 @@ LEARNING_WORDS = re.compile(r"\b(class|lecture|sermon|podcast|talk|training|cour
 @router.get("/review/{rid}/confirm", response_class=HTMLResponse)
 def review_confirm(request: Request, rid: int, meeting_type: str = "", conn: sqlite3.Connection = Conn):
     r = review_or_404(conn, rid)
+    if r["status"] != "open":   # F82: Back, or an old link, asked again to pay for one that was sent or skipped since
+        raise HTTPException(409, "Already approved: Home shows how far along it is." if r["status"] == "done" else
+                            "That was moved to Trash since. Restore it there first." if r["kind"] == "approval"
+                            and not r["conversation_id"] else "That was dismissed since. Restore it under Review › Dismissed first.")
     if not spends_money(r, "1"):
         raise HTTPException(400, "Nothing to confirm")
     if r["conversation_id"]:
@@ -3078,6 +3118,11 @@ def review_approve(request: Request, rid: int, ai: str = Form("1"), confirm: str
     Waiting recording (ask-first mode) -> processing queued; ai=0 means transcript only. Anything that spends money must
     come from the confirm step (confirm=1), otherwise Brian is sent there first."""
     r = review_or_404(conn, rid)
+    if r["status"] == "done":   # F72: a second tap or an old page: it was sent already, so nothing is queued (or paid) twice
+        return back(request, "/review")
+    if r["status"] != "open":
+        raise HTTPException(409, "That recording was moved to Trash since. Restore it there first."
+                            if r["kind"] == "approval" and not r["conversation_id"] else "That was dismissed since. Restore it under Review › Dismissed first.")
     if spends_money(r, ai) and not confirmed(confirm):
         return RedirectResponse(f"/review/{rid}/confirm", status_code=303)
     if r["kind"] == "approval" and (stop := demo_stop(request, "ai" if r["conversation_id"] else "run", "/review")):

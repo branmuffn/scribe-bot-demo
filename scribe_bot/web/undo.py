@@ -5,6 +5,7 @@ Every undoable action is a soft change (status, rating, owner, text), so restori
 from __future__ import annotations
 
 import base64
+import contextvars
 import json
 import sqlite3
 from datetime import datetime, timedelta
@@ -25,7 +26,7 @@ COLUMNS = {
     "conversation": ("title", "short_title", "summary", "takeaways", "detailed", "deleted_at", "purge_at", "type", "area",
                      "private"),   # purge_at: Trash › Delete forever waits out the Undo time (2026-11-25)
     "person": ("aliases", "notes", "last_spoken_at", "area"),   # the person a merge keeps (2026-11-25)
-    "person_fact": ("person_id", "person_name", "confirmed", "value"),
+    "person_fact": ("person_id", "person_name", "confirmed", "value", "type"),   # F73: type, so Undo puts back a note's kind
     "segment": ("speaker_id", "text", "idx", "start_s", "end_s"),   # idx/times: split and join (2026-11-20)
     "speaker": ("talk_seconds", "person_id", "confirmed", "match_score", "unknown", "color"),
     "review_item": ("status", "resolved_at", "snoozed_until", "payload"),
@@ -41,8 +42,11 @@ def save(conn: sqlite3.Connection, label: str, rows: list[tuple[str, int]]) -> i
         r = conn.execute(f"SELECT {', '.join(COLUMNS[table])} FROM {table} WHERE id = ?", (rid,)).fetchone()
         if r is not None:
             snap.append({"table": table, "id": rid, "before": dict(r)})
-    return conn.execute("INSERT INTO undo_action (label, snapshot, created_at) VALUES (?, ?, ?)",
-                        (label, json.dumps(snap), db.now())).lastrowid
+    uid = conn.execute("INSERT INTO undo_action (label, snapshot, created_at) VALUES (?, ?, ?)",
+                       (label, json.dumps(snap), db.now())).lastrowid
+    if (made := _made.get()) is not None:   # F75: checked once the request is done (drop_noops)
+        made.append(uid)
+    return uid
 
 
 def add(conn: sqlite3.Connection, uid: int, rows: list[tuple[str, int]]) -> None:
@@ -101,12 +105,19 @@ def transcript(conn: sqlite3.Connection, uid: int, cid: int) -> None:
     """Call before splitting or joining lines: the conversation's whole transcript is saved, and Undo puts it back
     exactly (line numbers, times, words, speakers). Rows are updated in place, so tasks pointing at lines keep them."""
     rows = [dict(r) for r in conn.execute("SELECT * FROM segment WHERE conversation_id = ?", (cid,))]
+    # F78: a join moves the tasks, decisions and notes that pointed at the joined line onto the line it joined; Undo
+    # put the line back but left them pointing at the other line (their "line N" link then opened the wrong line)
+    refs = [[t, r[0], r[1]] for t in REF_TABLES for r in conn.execute(
+        f"SELECT id, source_segment_id FROM {t} WHERE conversation_id = ? AND source_segment_id IS NOT NULL", (cid,))]
     a = conn.execute("SELECT removed FROM undo_action WHERE id = ?", (uid,)).fetchone()
     conn.execute("UPDATE undo_action SET removed = ? WHERE id = ?",
-                 (json.dumps([*json.loads(a["removed"]), {"table": "transcript", "cid": cid, "rows": rows}]), uid))
+                 (json.dumps([*json.loads(a["removed"]), {"table": "transcript", "cid": cid, "rows": rows, "refs": refs}]), uid))
 
 
-def _restore_transcript(conn: sqlite3.Connection, cid: int, rows: list[dict]) -> None:
+REF_TABLES = ("task", "decision", "person_fact")   # rows that point at a transcript line (source_segment_id)
+
+
+def _restore_transcript(conn: sqlite3.Connection, cid: int, rows: list[dict], refs: list | None = None) -> None:
     keep = {r["id"] for r in rows}
     conn.execute("UPDATE segment SET idx = -id WHERE conversation_id = ?", (cid,))   # free every line number first
     for (sid,) in conn.execute("SELECT id FROM segment WHERE conversation_id = ?", (cid,)).fetchall():
@@ -121,12 +132,50 @@ def _restore_transcript(conn: sqlite3.Connection, cid: int, rows: list[dict]) ->
             conn.execute(f"INSERT INTO segment (id, {', '.join(cols)}) VALUES (?, {', '.join('?' * len(cols))})",
                          [r["id"]] + [r[c] for c in cols])
         _reindex(conn, "segment", r["id"])
+    for t, rid, sid in refs or []:   # F78: back to the line they pointed at, if it's back
+        if t in REF_TABLES and sid in keep:
+            conn.execute(f"UPDATE {t} SET source_segment_id = ? WHERE id = ?", (sid, rid))
 
 
 def created(conn: sqlite3.Connection, uid: int, table: str, rid: int) -> None:
     row = conn.execute("SELECT created FROM undo_action WHERE id = ?", (uid,)).fetchone()
     conn.execute("UPDATE undo_action SET created = ? WHERE id = ?",
                  (json.dumps([*json.loads(row["created"]), {"table": table, "id": rid}]), uid))
+
+
+def changed_nothing(conn: sqlite3.Connection, a: sqlite3.Row) -> bool:
+    """True when action `a` left every row it saved as it was (a second tap, an edit saved unchanged, an old page)."""
+    if json.loads(a["created"]) or json.loads(a["removed"]):
+        return False
+    for s in json.loads(a["snapshot"]):
+        cols = [c for c in s["before"] if c in COLUMNS[s["table"]] and c != "updated_at"]
+        r = conn.execute(f"SELECT {', '.join(cols) or 'id'} FROM {s['table']} WHERE id = ?", (s["id"],)).fetchone()
+        if r is None or any(r[c] != s["before"][c] for c in cols):
+            return False
+    return True
+
+
+def drop_noops(conn: sqlite3.Connection, uids: list[int]) -> None:
+    """F75: forget actions `uids` if they changed nothing. A second tap on Done, Delete, Remove tag, Don't know...
+    saved a second Undo of nothing; the bar offered that one, so one Undo press put nothing back and the first tap
+    stayed done. Now the bar keeps offering the action that made the change."""
+    if not uids:
+        return
+    with db.transaction(conn):
+        for a in conn.execute(f"SELECT * FROM undo_action WHERE undone_at IS NULL AND id IN ({','.join('?' * len(uids))})",
+                              uids).fetchall():
+            if changed_nothing(conn, a):
+                conn.execute("DELETE FROM undo_action WHERE id = ?", (a["id"],))
+
+
+_made: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar("undo_made", default=None)
+
+
+def track() -> list[int]:
+    """The app calls this as a request starts: the ids of actions this request saves collect in the list returned."""
+    made: list[int] = []
+    _made.set(made)
+    return made
 
 
 def _since(seconds: int) -> str:
@@ -169,7 +218,7 @@ def undo(conn: sqlite3.Connection, uid: int, cfg=None) -> bool:
         removed_rows = json.loads(a["removed"])
         for d in removed_rows:
             if d["table"] == "transcript":
-                _restore_transcript(conn, d["cid"], d["rows"])
+                _restore_transcript(conn, d["cid"], d["rows"], d.get("refs"))
         later = [d for d in removed_rows if d["table"] == "segment"]   # a joined line returns once the lines below moved back
         for d in [d for d in removed_rows if d["table"] not in ("segment", "transcript")]:   # deleted rows go back first
             if d["table"] == "voiceprint_clear":   # the voiceprint as merge / "This isn't X" left it goes first

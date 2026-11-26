@@ -66,16 +66,16 @@ def rates(conn: sqlite3.Connection) -> dict[str, tuple[str, float]]:
     return out
 
 
-def estimate(conn: sqlite3.Connection, duration_s: float | None) -> dict:
-    """{'stages': {stage: seconds}, 'total_s': seconds} for a recording of this length."""
+def estimate(conn: sqlite3.Connection, duration_s: float | None, r: dict | None = None) -> dict:
+    """{'stages': {stage: seconds}, 'total_s': seconds} for a recording of this length. r: rates() already read."""
     minutes = (duration_s or 0) / 60
-    stages = {s: (v if kind == "flat" else v * minutes) for s, (kind, v) in rates(conn).items()}
+    stages = {s: (v if kind == "flat" else v * minutes) for s, (kind, v) in (r or rates(conn)).items()}
     return {"stages": stages, "total_s": sum(stages.values())}
 
 
-def choices(conn: sqlite3.Connection, durations_s: list[float | None]) -> list[dict]:
+def choices(conn: sqlite3.Connection, durations_s: list[float | None], r: dict | None = None) -> list[dict]:
     """Before you approve a recording: M14 time for "Transcript + AI" and for "Transcript only" (no AI stage), each."""
-    r = rates(conn)
+    r = r or rates(conn)
     out = []
     for d in durations_s:
         stages = {s: (v if kind == "flat" else v * (d or 0) / 60) for s, (kind, v) in r.items()}
@@ -84,12 +84,12 @@ def choices(conn: sqlite3.Connection, durations_s: list[float | None]) -> list[d
     return out
 
 
-def queue_wait_s(conn: sqlite3.Connection, now: datetime | None = None) -> float:
+def queue_wait_s(conn: sqlite3.Connection, now: datetime | None = None, r: dict | None = None) -> float:
     """How long until the M14 is free: what's left of every recording job running or waiting its turn."""
-    return sum(p["remaining_s"] for p in active_jobs(conn, now))
+    return sum(p["remaining_s"] for p in active_jobs(conn, now, r))
 
 
-def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = None) -> dict | None:
+def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = None, r: dict | None = None) -> dict | None:
     now = now or datetime.now(timezone.utc)
     job = conn.execute(
         "SELECT j.*, r.duration_s, r.title AS rec_title, c.id AS conversation_id, coalesce(nullif(c.short_title, ''), c.title) AS conv_title "
@@ -97,7 +97,7 @@ def job_progress(conn: sqlite3.Connection, job_id: int, now: datetime | None = N
         "WHERE j.id = ?", (job_id,)).fetchone()
     if job is None:
         return None
-    est = estimate(conn, job["duration_s"])["stages"]
+    est = estimate(conn, job["duration_s"], r)["stages"]
     runs = {r["stage"]: r for r in conn.execute("SELECT * FROM stage_run WHERE job_id = ?", (job_id,))}
     stages, current, spent_current = [], None, 0.0
     for i, name in enumerate(STAGES):
@@ -174,7 +174,7 @@ def _preview(conn: sqlite3.Connection, rec_id: int | None) -> str:
     return text if len(text) <= 160 else text[:160].rsplit(" ", 1)[0] + "…"
 
 
-def active_jobs(conn: sqlite3.Connection, now: datetime | None = None) -> list[dict]:
+def active_jobs(conn: sqlite3.Connection, now: datetime | None = None, r: dict | None = None) -> list[dict]:
     """Recording jobs that are running or waiting their turn: the running one first, then in the order they'll run.
 
     B39 (Brian, 2026-11-25): the M14 does one recording at a time, so a waiting job's times start when the ones ahead
@@ -184,12 +184,13 @@ def active_jobs(conn: sqlite3.Connection, now: datetime | None = None) -> list[d
         "SELECT id FROM job WHERE kind = 'recording' AND status IN ('running', 'pending') "
         "ORDER BY status = 'running' DESC, id")]
     out, ahead = [], 0.0
+    r = r or (rates(conn) if ids else None)   # F79: read once, not twice per job (the Home page read them 9 times)
     for i in ids:
-        p = job_progress(conn, i, now)
+        p = job_progress(conn, i, now, r)
         if p is None:
             continue
         if not p["started_at"] and ahead:
-            p = job_progress(conn, i, now + timedelta(seconds=ahead))
+            p = job_progress(conn, i, now + timedelta(seconds=ahead), r)
             p["remaining_s"] += ahead
             p["starts"] = local_time(now + timedelta(seconds=ahead))
         out.append(p)

@@ -3186,7 +3186,9 @@ HIT_LINE = (   # where it was said, so a result opens right at that transcript l
     "WHEN 'task' THEN (SELECT g.idx FROM task x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) "
     "WHEN 'decision' THEN (SELECT g.idx FROM decision x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) "
     "WHEN 'fact' THEN (SELECT g.idx FROM person_fact x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) END")
-HIT_SPEAKER = ("(SELECT p.name FROM segment g JOIN speaker sp ON sp.id = g.speaker_id JOIN person p ON p.id = sp.person_id "
+# F130: a line by a voice not named yet says "Speaker N" (the talk's own numbering), not nothing at all
+HIT_SPEAKER = ("(SELECT coalesce(p.name, 'Speaker ' || (SELECT count(*) FROM speaker x WHERE x.conversation_id = sp.conversation_id "
+               "AND x.id <= sp.id)) FROM segment g JOIN speaker sp ON sp.id = g.speaker_id LEFT JOIN person p ON p.id = sp.person_id "
                "WHERE s.kind = 'segment' AND g.id = s.ref_id)")
 
 

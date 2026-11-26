@@ -605,3 +605,17 @@ def test_slash_focuses_a_visible_search_box_without_scrolling():
     branch = branch[:branch.index("} else if", 10)]
     assert "offsetParent !== null" in branch and "focus({ preventScroll: true })" in branch
     assert "document.querySelector('input[name=\"q\"]')" not in branch
+
+
+def test_a_search_hit_by_an_unnamed_voice_says_who(demo):  # noqa: F811
+    """F130 (500 dark pass): Search "budget" › a line said by a voice not named yet showed "Line · line 14" with no
+    speaker, while every other line named one. It now says "Speaker N", the same as the talk page."""
+    from scribe_bot.ai import extract
+    conn = demo.db()
+    row = conn.execute("SELECT g.conversation_id AS cid, g.speaker_id AS sid, g.text FROM segment g JOIN speaker sp ON sp.id = g.speaker_id "
+                       "JOIN conversation c ON c.id = g.conversation_id "
+                       "WHERE sp.person_id IS NULL AND c.deleted_at IS NULL AND g.text LIKE '%budget%' LIMIT 1").fetchone()
+    assert row, "the demo has a line about the budget by an unnamed voice"
+    n = extract.speaker_numbers(conn, row["cid"])[row["sid"]]
+    html = demo.get("/search", params={"q": "budget", "conv": row["cid"]}).text
+    assert "<span>Speaker %d</span>" % n in html

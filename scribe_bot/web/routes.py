@@ -1051,7 +1051,8 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
     has_audio = playable_audio(conn, cid) is not None
     mine = [t for t in tasks if t["owner_person_id"] == ME]
     theirs = [t for t in tasks if t["owner_person_id"] != ME]
-    check = {"mine": len(mine), "theirs": len(theirs), "notes": len(facts),
+    # F132: "What to check" counts only what's still open (a done task read "1 you owe")
+    check = {"mine": sum(t["status"] == "open" for t in mine), "theirs": sum(t["status"] == "open" for t in theirs), "notes": len(facts),
              "unsure": sum(1 for t in tasks if t["status"] == "open"
                            and (t["inbox"] or (t["confidence"] is not None and t["confidence"] < 0.6))),
              "unnamed": sum(1 for s in speakers if s["person_id"] is None and not s["unknown"])}
@@ -1077,7 +1078,7 @@ def conversation_page(request: Request, cid: int, conn: sqlite3.Connection = Con
                   mine=mine, theirs=theirs, check=check, recording_title=rec["title"] if rec else None,
                   decisions=decisions, facts=grouped, n_facts=len(facts), takeaways=json.loads(c["takeaways"] or "[]"),
                   people=people(conn), has_audio=has_audio, preview=preview, rerun_pending=ai_jobs.pending_for(conn, cid), compare_pending=ai_jobs.compare_pending(conn, cid),
-                  compare_ready=extract.compared(conn, cid) is not None, compare_model=model_label((ai_router.HAIKU if "sonnet" in (c["processed_by"] or "") else ai_router.SONNET)[1]),
+                  compare_ready=extract.compared(conn, cid) is not None, compare_model=model_label(extract.other_model(conn, cid)[1]),
                   compare_queued=request.query_params.get("compare") == "queued",
                   rerun_queued=request.query_params.get("rerun") == "queued", processing=processing, ai_calls=ai_calls,
                   meeting_types=prompts.MEETING_TYPES, speaking=(sp := talk.speaking(conn, cid)), speaking_tips=talk.tips(sp) if sp else [],
@@ -3186,7 +3187,9 @@ HIT_LINE = (   # where it was said, so a result opens right at that transcript l
     "WHEN 'task' THEN (SELECT g.idx FROM task x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) "
     "WHEN 'decision' THEN (SELECT g.idx FROM decision x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) "
     "WHEN 'fact' THEN (SELECT g.idx FROM person_fact x JOIN segment g ON g.id = x.source_segment_id WHERE x.id = s.ref_id) END")
-HIT_SPEAKER = ("(SELECT p.name FROM segment g JOIN speaker sp ON sp.id = g.speaker_id JOIN person p ON p.id = sp.person_id "
+# F130: a line by a voice not named yet says "Speaker N" (the talk's own numbering), not nothing at all
+HIT_SPEAKER = ("(SELECT coalesce(p.name, 'Speaker ' || (SELECT count(*) FROM speaker x WHERE x.conversation_id = sp.conversation_id "
+               "AND x.id <= sp.id)) FROM segment g JOIN speaker sp ON sp.id = g.speaker_id LEFT JOIN person p ON p.id = sp.person_id "
                "WHERE s.kind = 'segment' AND g.id = s.ref_id)")
 
 
@@ -3549,7 +3552,7 @@ SCHEDULE_INFO = {
     "export": ("Readable export", "daily 1:30 AM"), "trash-purge": ("Empty old trash", "daily 1:45 AM"),
     "backup": ("Encrypted backup", "daily 2:00 AM"), "reconcile": ("Check for missed recordings", "daily 2:30 AM"),
     "original_cleanup": ("Remove processed phone originals", "daily 3:00 AM"),
-    "restore-test": ("Restore test", "monthly, 3:00 AM"), "briefing": ("Morning briefing", "daily 7:00 AM"),
+    "restore-test": ("Restore test", "monthly 3:00 AM"), "briefing": ("Morning briefing", "daily 7:00 AM"),
     "task-cleanup": ("Tidy old tasks", "Sundays 5:30 PM"), "weekly-review": ("Weekly review", "Sundays 6:00 PM"),
 }
 
@@ -3754,8 +3757,10 @@ def set_offline(request: Request, on: int = Form(...), conn: sqlite3.Connection 
 
 @router.post("/settings/pause")
 def set_pause(request: Request, on: int = Form(...), conn: sqlite3.Connection = Conn):
-    """Pause/resume processing: while paused, new recordings wait (nothing is transcribed or sent); schedules still run."""
-    set_setting(conn, "pipeline_paused", "1" if on else "0")
+    """Pause/resume processing: while paused, new recordings wait (nothing is transcribed or sent); schedules still run.
+    F125: the same pause as Processing's, so a Pause here also drops an earlier "Resume at 1 AM" (it used to keep it,
+    and processing restarted at 1 AM on its own)."""
+    control.pause(conn) if on else control.resume(conn, "now")
     return back(request, "/status")
 
 

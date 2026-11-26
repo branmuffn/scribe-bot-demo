@@ -6,7 +6,9 @@
 {% if trash %}
 {# F97 (500 pass): Trash opened as "‹ Talks", then a "Talks" heading, then a small TRASH label, and the ＋ for a new recording #}
 {% set n = rows|length + skipped|length %}
-<div class="page-head"><div><h1>Trash</h1><div class="meta">{{ n }} item{{ '' if n == 1 else 's' }} · each is removed for good, audio included, {{ trash_days }} days after it lands here</div></div></div>
+<div class="page-head"><div><h1>Trash</h1><div class="meta">{{ n }} item{{ '' if n == 1 else 's' }} · each is removed for good, audio included, {{ trash_days }} days after it lands here</div></div>
+  {# D-SP-1 sweep: a Select button, the same as Tasks, Inbox and People #}
+  {% if items|length > 1 %}<button type="button" class="btn btn-ghost" data-pk-start="trash-list">Select</button>{% endif %}</div>
 {# N4 / A3.3 (Brian, 2026-11-25): pick several, the same way as Inbox and People #}
 <div class="pk2" data-pk-bar="trash-list" hidden role="region" aria-label="Selected items in Trash">
   <div class="pk-top"><button type="button" class="icon-btn" data-pk-done aria-label="Stop selecting">✕</button>

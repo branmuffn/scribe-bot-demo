@@ -45,8 +45,7 @@
 {# Desktop sidebar, Gmail style (Brian picked A1 + A2, 2026-11-23): ☰ folds it to an icon rail (hovering the rail shows
    it in full for a moment); every icon sits in one column and every label starts at the same left edge; rarely used
    places fold under More. #}
-{% set more_places = [("/conversations?trash=1", "trash", "Trash"), ("/speaking", "mic2", "Your speaking"), ("/costs", "dollar", "Costs"),
-                      ("/status", "pulse", "Status"), ("/processing", "clock", "Processing history"), ("/help", "help", "Help"), ("/settings", "gear", "Settings")] %}
+{% set more_places = m.more_places %}
 {% if not in_pane %}
 <aside class="sidebar" aria-label="Main">
   <div class="side-top"><button type="button" class="icon-btn side-toggle" data-side-toggle aria-label="Fold the menu" title="Fold or open the menu">{{ m.icon("menu") }}</button>

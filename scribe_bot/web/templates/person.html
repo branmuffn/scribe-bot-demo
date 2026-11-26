@@ -67,7 +67,9 @@
   <a class="row1" href="#person-facts"><span class="r1-t">Notes</span><span class="r1-v">{{ facts|length }}</span><span class="go">›</span></a>
   <a class="row1" href="#sec-convs"><span class="r1-t">Talks</span><span class="r1-v">{{ n_convs }}</span><span class="go">›</span></a>
   {# F62 (screen pass): durations say "min" everywhere (Talk time said "7 m") #}
-  {% if talk_time %}<div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name|first_name }} {{ (talk_time.their_share * 100)|round|int }}% · you {{ (talk_time.my_share * 100)|round|int }}%</small></span><span class="r1-v">{{ talk_time.seconds|mins }}</span></div>{% endif %}
+  {# D-SP-5 (Brian, 2026-11-26: 5A): say what the minutes cover and who the rest is: "3 talks, 7 min · Priya 40%, you 35%, others 25%" #}
+  {% if talk_time %}{% set th = (talk_time.their_share * 100)|round|int %}{% set me = [(talk_time.my_share * 100)|round|int, 100 - th]|min %}
+  <div class="row1" id="talk-time"><span class="r1-t">Talk time<small>{{ p.name|first_name }} {{ th }}%, you {{ me }}%{% if 100 - th - me > 0 %}, others {{ 100 - th - me }}%{% endif %}</small></span><span class="r1-v">{{ talk_time.conversations }} talk{{ 's' if talk_time.conversations != 1 }}, {{ talk_time.seconds|mins }}</span></div>{% endif %}
 </nav>
 
 <section class="section" id="person-open">

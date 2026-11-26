@@ -472,7 +472,7 @@ details.edit form textarea, details.edit form .field { flex: 1 1 100% }
 .confirm-slot:empty { display: none }
 .confirm-panel { margin: var(--s3) 0; padding: var(--s4); border-radius: var(--r); background: var(--warn-soft);
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); display: grid; gap: var(--s2) }
-.confirm-panel h2 { font-size: var(--fs-base) }
+.confirm-panel h2, .confirm-panel h1 { font-size: var(--fs-base); font-weight: 650 }
 .confirm-cost { margin: 0; font-size: var(--fs-md) }
 .main > .confirm-panel { max-width: 32rem; margin-top: var(--s8) }
 
@@ -663,7 +663,7 @@ button.show-all { width: 100%; text-align: center; border: 0; background: none; 
 .glance-back { margin-bottom: var(--s2) }
 
 /* Settings › AI model cards, R1 (Brian, 2026-11-20) */
-.sub-head { font-size: var(--fs-md); margin: var(--s4) 0 var(--s2) }
+.sub-head { font-size: var(--fs-md); font-weight: 600; margin: var(--s4) 0 var(--s2) }
 .ai-cards { display: grid; gap: var(--s2); margin-bottom: var(--s2) }
 .ai-card { display: flex; gap: var(--s3); align-items: flex-start; text-align: left; width: 100%; padding: var(--s3) var(--s4);
   border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: inherit; font: inherit; cursor: pointer }
@@ -1023,7 +1023,7 @@ h1 { font-size: 1.5rem }
 .check-strip .check-label { display: none }
 .check-strip a { min-height: 30px; padding: 0 10px; font-size: .8rem }
 .fix-help { font-size: .8rem; color: var(--muted); margin: 0 2px 8px } .fix-help b { color: var(--ink-2); font-weight: 600 }
-.jump-glow.section-head, summary.jump-glow, h2.jump-glow { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 9px }
+.jump-glow.section-head, summary.jump-glow, h2.jump-glow:not(.list-head) { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 9px }
 .section-head.jump-glow { padding-top: 4px; padding-bottom: 4px; margin-top: -4px }
 .section-head.jump-glow { margin-bottom: 2px }
 /* second lines: no stray "·" at a wrap or inside a badge; the talk a task came from gets its own short line */
@@ -1101,6 +1101,7 @@ form.toolbar:has(#people-q) { gap: 6px } form.toolbar:has(#people-q) .btn { padd
 /* Help: short folding sections; "what each button does" as a tidy list */
 .help-sec > summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; padding: 6px 0 } .help-sec > summary::-webkit-details-marker { display: none }
 .help-sec > summary h2 { margin: 0; font-size: 1.05rem }
+.help-sec > summary .chev .icon { transition: transform .18s } .help-sec[open] > summary .chev .icon { transform: rotate(90deg) }   /* F127: the open fold still pointed › like a closed one */
 .help-dl h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 6px } .help-dl h3:first-child { margin-top: 0 }
 .help-dl dl { margin: 0; display: grid; gap: 8px } .help-dl dt { font-weight: 650 } .help-dl dd { margin: 0 0 2px; color: var(--ink-2); font-size: .92rem; line-height: 1.4 }
 /* Review / Needs you: a speaker to name is one row (tap = sheet with the clip) */
@@ -1466,8 +1467,6 @@ html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (
 .conv-row .cr-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .cr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; font-size: .82rem; color: var(--muted) }
 .cr-k-ai { color: #2563eb; font-weight: 600 }
-.cr-area::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted) }
-.cr-work::before { background: var(--work) } .cr-personal::before { background: var(--personal) } .cr-school::before { background: color-mix(in srgb, #7c3aed 60%, var(--ink)) }
 .cr-name { color: #b45309; font-weight: 600 }
 #conv-list.picking .conv-row .cr-ic { display: none }
 :root[data-theme="dark"] .cr-k-ai, :root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }
@@ -1502,12 +1501,9 @@ html.typing .tabbar, html.typing .fab, html.typing .pick-bar { display: none !im
   color: var(--ink); background: var(--surface-2); cursor: pointer; list-style: none }
 .tb-ib::-webkit-details-marker { display: none }
 .tb-ib svg { width: 20px; height: 20px }
-a.tb-trash { color: #bd4256; background: color-mix(in srgb, #bd4256 12%, var(--surface)) }
-a.tb-trash:hover { text-decoration: none }
+a.tb-trash:hover { text-decoration: none }   /* D-SP-2 (Brian, 2026-11-26: 2A): grey like Export; it only opens Trash */
 .tb-a .tb-select { padding: 0 8px !important }
 @media (pointer: coarse) { .tb-a .tb-select:not([aria-pressed="true"]) { display: none } }   /* phones: long-press a talk to select */
-:root[data-theme="dark"] a.tb-trash { color: #f28ba0 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) a.tb-trash { color: #f28ba0 } }
 /* "Don't know" speakers (2026-11-22): plain chip with a small ?, not dotted (dotted = still to name) */
 .sp-idk-q { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; font-size: 11px; font-weight: 700;
   background: var(--surface-2); color: var(--muted) }
@@ -1858,10 +1854,7 @@ html.in-pane .jump-bar { top: 0 }
 
 /* E2: top of a talk (Brian, 2026-11-23): back on the left, Summarize and ⋯ on the right; one line of pills that folds */
 .cv-bar { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -4px 0 6px }
-.cv-back { display: inline-flex; align-items: center; gap: 2px; min-height: 40px; padding: 0 10px 0 2px; margin-left: -6px; border-radius: 20px;
-  color: var(--ink-2); font-weight: 600; font-size: .95rem; text-decoration: none }
-.cv-back:hover { background: var(--surface-2); text-decoration: none }
-.cv-back-ic { width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--chev-r) center / 20px 20px no-repeat; mask: var(--chev-r) center / 20px 20px no-repeat; transform: rotate(180deg) }
+.cv-bar .cv-back { margin: 0; min-height: 40px }   /* D-SP-4: a plain "‹ Talks" back link, like every other page */
 html.in-pane .cv-back { display: none }
 .cv-bar .grow { flex: 1 }
 .cv-bar .cv-sum { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 20px; line-height: 1 }
@@ -2039,7 +2032,7 @@ html[data-density="compact"] .conv-row .cr-ic { flex-basis: 32px; width: 32px; h
 .cv-bar > :not(.grow) { flex-shrink: 0 }
 .cv-bar .row-menu { position: relative }
 .cv-bar .row-menu .menu-panel { top: calc(100% + 4px); right: 0; left: auto; width: min(20rem, calc(100vw - 24px)); z-index: 30 }
-@media (max-width: 359px) { .cv-bar .cv-sum { padding: 0 12px } .cv-back { padding-right: 4px } }
+@media (max-width: 359px) { .cv-bar .cv-sum { padding: 0 12px } }
 /* D: a light outline round the whole speaker bar, so many colours still read as one bar */
 .talk.sp-bar { outline: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); outline-offset: 2px }
 /* C1: a narrower drawer (it covered most of the phone) */

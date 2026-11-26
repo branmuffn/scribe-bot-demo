@@ -11,7 +11,8 @@
 <header class="conv-head">
   {# E2 (Brian, 2026-11-23): one row on top: back, then Summarize (talks without AI notes) and ⋯ on the right #}
   <div class="cv-bar">
-    <a class="cv-back" href="/conversations" aria-label="Back to Talks"><span class="cv-back-ic" aria-hidden="true"></span>Talks</a>
+    {# D-SP-4 (Brian, 2026-11-26: 4A): the same text back link as every other page #}
+    <a class="back-link cv-back" href="/conversations">‹ Talks</a>
     <span class="grow"></span>
     {% if not c.summary and preview and not rerun_pending and not c.deleted_at %}{{ m.spend_button("/conversations/" ~ c.id ~ "/rerun/confirm", "Summarize", "rerun-confirm", "btn btn-primary cv-sum", "sparkle") }}{% endif %}
     {% if rerun_pending %}<span class="badge badge-outline">{{ m.icon("clock") }}AI notes on the way</span>{% endif %}

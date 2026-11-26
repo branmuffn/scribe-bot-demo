@@ -101,7 +101,7 @@ def test_f62_durations_say_min(demo):
     person = demo.get("/people/2").text
     m = re.search(r'id="talk-time".*?<span class="r1-v">([^<]+)</span>', person, re.S)
     if m:
-        assert re.fullmatch(r"\d+ (s|min)|\d+ h( \d+ min)?", m.group(1)), m.group(1)
+        assert re.fullmatch(r"\d+ talks?, (\d+ (s|min)|\d+ h( \d+ min)?)", m.group(1)), m.group(1)
     for t in ("person.html", "people.html", "macros.html"):
         assert "|hours" not in _tpl(t)
 
@@ -477,3 +477,280 @@ def test_no_fixed_colour_turns_unreadable_in_dark():
                 if risky and not any(s.strip() in dark for s in sel.split(",")):
                     bad.append(f"{sel} {{ {prop}: {h} }}")
     assert not bad, bad
+
+
+def test_what_me_means_shows_on_a_phone_too(demo):
+    """F121 (500 dark pass): Settings › Summary templates explained "{me}" only in the section help, which phones
+    hide, so on a phone the text box showed "{me}" with no word on what it is. Each template now says it under its box."""
+    page = demo.get("/settings/templates").text
+    notes = re.findall(r'<p class="meta" id="tpl-note-([\w-]+)">\{me\} means you\.', page)
+    boxes = re.findall(r'aria-describedby="tpl-note-([\w-]+)"', page)
+    assert notes and notes == boxes                                   # one note per template, tied to its box
+    assert "{me} means you" not in re.sub(r'<p class="meta" id="tpl-note-.*?</p>', "", page)   # said once each, not twice
+
+
+def test_every_schedule_reads_the_same_way():
+    """F122 (500 dark pass): Settings › Backups & schedules said "monthly, 3:00 AM" while every other schedule
+    reads "daily 2:00 AM" or "Sundays 6:00 PM", with no comma."""
+    from scribe_bot.web.routes import SCHEDULE_INFO
+    odd = [when for _, when in SCHEDULE_INFO.values()
+           if not re.fullmatch(r"(daily|weekly|monthly|(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days) \d{1,2}:\d{2} (AM|PM)", when)]
+    assert not odd, odd
+
+
+def test_the_load_tile_compares_like_with_like():
+    """F123 (500 dark pass): Status › Load showed "0.7 of 8" and "Good" while its tip said "Good under 0.7 · Watch
+    0.7–1": the tile shows the total across 8 threads but the ranges were per thread. The tip now uses the same total."""
+    from scribe_bot.core import machine
+    load = next(t for t in machine.tiles(machine.card({"load1": 0.7, "cpus": 8})) if t["key"] == "load")
+    assert load["value"] == "0.7 of 8" and load["level"] == "ok"
+    assert "Good under 5.6 · Watch 5.6–8 · Problem 8 or more" in load["tip"]
+    assert machine.ranges_text("load") == "Good under 0.7 · Watch 0.7–1 · Problem 1 or more"   # legend: per thread
+
+
+def test_one_pause_per_page(demo):
+    """F124 (500 dark pass): Processing showed ❚❚ Pause in its top bar, on the running recording's card and again in
+    that recording's history row; Status did the same. All of them pause everything. Pages with their own bar now
+    show it once; Today, which has no bar, keeps the card's Pause."""
+    for path in ("/processing", "/status"):
+        page = demo.get(path).text
+        assert 'class="progress-bar"' in page, path                    # a recording is running in the demo
+        assert page.count('action="/processing/pause"') + page.count('action="/settings/pause"') == 1, path
+    assert demo.get("/").text.count('action="/processing/pause"') >= 1
+
+
+def test_pausing_from_status_cancels_a_timed_resume(demo):
+    """F125: Processing › ☾ Resume at 1 AM, then Status › Pause, left the 1 AM restart in place."""
+    from scribe_bot.pipeline import control
+    demo.post("/processing/resume", data={"when": "tonight"})
+    demo.post("/settings/pause", data={"on": "1"})
+    page = demo.get("/processing").text
+    assert "<b>Paused</b>" in page and "until" not in page.split('class="ctl-bar"')[1].split("</div>")[0]
+    demo.post("/settings/pause", data={"on": "0"})
+    assert control is not None and "Processing now" in demo.get("/processing").text
+
+
+def test_headings_never_skip_a_level(demo):  # noqa: F811
+    """F126 (2026-11-26): Inbox, People, Tasks, Processing and Your speaking went from the page title (h1) straight to
+    h3 group headings, and a confirm page opened on its own had no h1, so screen readers' heading lists had gaps. Every
+    page the app links to starts at h1 and never jumps more than one level down."""
+    from urllib.parse import urlsplit
+
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    seen, todo, bad = set(), list(START), []
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        levels = [int(x) for x in re.findall(r"<h([1-6])\b", r.text.split("<main", 1)[-1])]
+        if levels and levels[0] != 1:
+            bad.append((urlsplit(u).path, "starts at h%d" % levels[0]))
+        bad += [(urlsplit(u).path, "h%d then h%d" % (a, b)) for a, b in zip(levels, levels[1:]) if b > a + 1]
+    assert len(seen) > 25 and not bad, bad
+
+
+def test_every_open_fold_turns_its_chevron(demo):  # noqa: F811
+    """F127 (2026-11-26, 500 dark pass): Help's open "What each button does" still pointed › like a closed fold; only
+    Help had no [open] rule. Every fold with a chevron, on every page, turns it when open."""
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    css = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text()
+    seen, todo, classes = set(), list(START), set()
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        for d in re.finditer(r'<details\b([^>]*)>\s*<summary\b[^>]*>(.*?)</summary>', r.text, re.S):
+            if 'class="chev"' in d.group(2):
+                c = re.search(r'class="([^"]*)"', d.group(1))
+                classes.add(c.group(1) if c else "")
+    assert len(classes) >= 5, classes
+    for c in classes:
+        assert any(re.search(r"\.%s\[open\][^{]*\.chev[^{]*\{[^}]*rotate" % re.escape(t), css) for t in c.split()), c
+
+
+def test_every_more_menu_lists_the_same_places(demo):  # noqa: F811
+    """F128 (2026-11-26, 500 dark pass): the More page listed Status, Costs, Processing history, Help and Settings, while
+    ☰ › More also had Trash and Your speaking, in another order, and drew Help with another icon. Every More list now
+    comes from one list."""
+    def places(html, start, end):
+        part = html[html.index(start):]
+        part = part[:part.index(end)]
+        return re.findall(r'<a (?:class="[^"]*" )?href="([^"]+)"[^>]*>\s*(?:<span class="nv-ic">)?<svg[^>]*><use href="[^"#]*#([\w-]+)"', part)
+    more = places(demo.get("/more").text, 'class="card more-page"', "</div>")
+    drawer = places(demo.get("/costs").text, 'aria-label="All places"', "</nav>")
+    assert [h for h, _ in more] == ["/conversations?trash=1", "/speaking", "/costs", "/status", "/processing", "/help", "/settings"]
+    assert more == drawer[-len(more):], (more, drawer)
+
+
+def test_slash_focuses_a_visible_search_box_without_scrolling():
+    """F129 (D-SP-7): "/" on a talk focused the sticky top bar's search box and the browser scrolled the talk back to
+    its top; under 960 px it picked the hidden top-bar box, so nothing happened. It now takes the first box you can see
+    and keeps your place."""
+    js = (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.js").read_text()
+    branch = js[js.index('} else if (e.key === "/") {'):]
+    branch = branch[:branch.index("} else if", 10)]
+    assert "offsetParent !== null" in branch and "focus({ preventScroll: true })" in branch
+    assert "document.querySelector('input[name=\"q\"]')" not in branch
+
+
+def test_a_search_hit_by_an_unnamed_voice_says_who(demo):  # noqa: F811
+    """F130 (500 dark pass): Search "budget" › a line said by a voice not named yet showed "Line · line 14" with no
+    speaker, while every other line named one. It now says "Speaker N", the same as the talk page."""
+    from scribe_bot.ai import extract
+    conn = demo.db()
+    row = conn.execute("SELECT g.conversation_id AS cid, g.speaker_id AS sid, g.text FROM segment g JOIN speaker sp ON sp.id = g.speaker_id "
+                       "JOIN conversation c ON c.id = g.conversation_id "
+                       "WHERE sp.person_id IS NULL AND c.deleted_at IS NULL AND g.text LIKE '%budget%' LIMIT 1").fetchone()
+    assert row, "the demo has a line about the budget by an unnamed voice"
+    n = extract.speaker_numbers(conn, row["cid"])[row["sid"]]
+    html = demo.get("/search", params={"q": "budget", "conv": row["cid"]}).text
+    assert "<span>Speaker %d</span>" % n in html
+
+
+def test_the_demo_bell_agrees_with_costs(demo):  # noqa: F811
+    """F131 (500 dark pass): the demo's bell said "AI spending reached 50% of this month's cap" while Costs showed 8%
+    of the cap. No made-up alert may claim a share of the cap that Costs doesn't show."""
+    conn = demo.db()
+    pct = int(re.search(r"(\d+)% of the \$[\d.]+ monthly cap", demo.get("/costs").text).group(1))
+    for (title,) in conn.execute("SELECT title FROM notification"):
+        m = re.search(r"(\d+)% of (?:this month's|the [^ ]+ monthly) cap", title)
+        assert not m or int(m.group(1)) <= pct, (title, pct)
+
+
+def test_what_to_check_counts_only_open_tasks(demo):  # noqa: F811
+    """F132 (500 dark pass): a talk whose only task of yours was done still said "What to check · 1 you owe"."""
+    conn = demo.db()
+    cid = conn.execute("SELECT id FROM conversation c WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM task t WHERE t.conversation_id = c.id "
+                       "AND t.owner_person_id = 1 AND t.status = 'done') LIMIT 1").fetchone()[0]
+    n_open = conn.execute("SELECT count(*) FROM task WHERE conversation_id = ? AND owner_person_id = 1 AND status = 'open'", (cid,)).fetchone()[0]
+    strip = demo.get(f"/conversations/{cid}").text.split('id="check-strip"', 1)[1].split("</nav>", 1)[0]
+    shown = re.search(r'>(\d+) you owe<', strip)
+    assert (int(shown.group(1)) if shown else 0) == n_open, (cid, n_open, strip)
+
+
+def test_compare_on_a_demo_talk_offers_the_other_model(demo):  # noqa: F811
+    """F133: a demo talk's notes are labelled 'demo', but the ledger says Claude Sonnet made them. The ⋯ menu offered
+    'Compare with Claude Sonnet', the same model. It must offer the one that didn't make the notes."""
+    from scribe_bot.ai import extract
+    conn = demo.db()
+    row = conn.execute("SELECT c.id, l.model FROM conversation c JOIN ledger_entry l ON l.conversation_id = c.id "
+                       "WHERE c.processed_by = 'demo' AND c.deleted_at IS NULL AND l.status = 'ok' "
+                       "AND l.model LIKE 'claude%' LIMIT 1").fetchone()
+    assert row, "demo data has a talk with an AI ledger row"
+    cid, made_by = row
+    other = extract.other_model(conn, cid)[1]
+    assert ("sonnet" in made_by) != ("sonnet" in other), (made_by, other)
+    html = demo.get(f"/conversations/{cid}").text
+    assert "Compare with Claude %s" % ("Sonnet" if "sonnet" in made_by else "Haiku") not in html
+    assert "Compare with Claude" in html
+
+
+def _crawl(demo):  # noqa: F811
+    """Every kind of page the app links to, once each: yields (path, html)."""
+    from urllib.parse import urlsplit
+
+    from tests.unit.test_click_everything import SKIP, START, Page, kind
+    seen, todo = set(), list(START)
+    while todo:
+        u = todo.pop()
+        if not u.startswith("/") or SKIP.search(u) or kind(u) in seen:
+            continue
+        seen.add(kind(u))
+        r = demo.get(u)
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            continue
+        p = Page()
+        p.feed(r.text)
+        todo += sorted(p.links)
+        yield u, r.text
+
+
+def test_every_list_you_can_pick_from_has_a_select_button(demo):  # noqa: F811
+    """D-SP-1 (Brian, 2026-11-26: 1A): Inbox and People had a Select button but Tasks didn't, so on a phone picking was a
+    hidden long-press. Sweep: Trash had the same gap. Every list you can pick from, with 2+ rows, has a Select button."""
+    pages, bad = 0, []
+    for u, html in _crawl(demo):
+        for lid in re.findall(r'id="([\w-]+)"[^>]*\bdata-picker\b', html):
+            pages += 1
+            if html.count("data-pick-id=") > 1 and f'data-pk-start="{lid}"' not in html:
+                bad.append((u, lid))
+    assert pages >= 3 and not bad, bad
+
+
+def test_a_link_that_only_opens_a_page_is_never_red():
+    """D-SP-2 (Brian, 2026-11-26: 2A): the Talks toolbar's Trash link was red, so it read as Delete though it only opens
+    Trash. Red is for buttons that delete; no link (an <a>, which only opens a page) is styled red."""
+    css = re.sub(r"/\*.*?\*/", "", (Path(__file__).resolve().parents[2] / "scribe_bot" / "web" / "static" / "app.css").read_text(), flags=re.S)
+    bad = [sel.strip() for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+           if re.search(r"(^|[\s,>])a([.\[:]|\s*$|\s*,)", sel.strip())
+           and re.search(r"(?<![-\w])color:[^;]*(--bad|#bd4256|#f28ba0|#c0392b|\bred\b)", body)]
+    assert not bad, bad
+
+
+def test_work_and_home_are_the_same_pill_on_every_page(demo):  # noqa: F811
+    """D-SP-3 (Brian, 2026-11-26: 3B): Talks showed the area as a dot and a word, People, Search and Today as a pill.
+    Every page draws it as the same pill."""
+    bad, pills = [], 0
+    for u, html in _crawl(demo):
+        pills += len(re.findall(r'class="badge badge-(?:work|personal|school|other)"', html))
+        if re.search(r'class="cr-area\b', html):
+            bad.append(u)
+    assert pills and not bad, bad
+    assert 'badge badge-work' in demo.get("/conversations").text
+
+
+def test_every_back_link_is_the_same_text_link(demo):  # noqa: F811
+    """D-SP-4 (Brian, 2026-11-26: 4A): most pages said "‹ Today" in grey text, but a talk had an arrow icon and a bold
+    "Talks". Every back link on every page is the same text link: "‹ <where it goes>"."""
+    bad, n = [], 0
+    for u, html in _crawl(demo):
+        for cls, inner in re.findall(r'<a class="([^"]*\b(?:back-link|cv-back)\b[^"]*)"[^>]*>(.*?)</a>', html, re.S):
+            n += 1
+            if "back-link" not in cls.split() or not inner.startswith("‹ ") or "<" in inner:
+                bad.append((u, cls, inner[:60]))
+    assert n > 15 and not bad, bad
+
+
+def test_talk_time_says_what_it_covers_and_who_the_rest_is(demo):  # noqa: F811
+    """D-SP-5 (Brian, 2026-11-26: 5A): "Talk time 7 min · Priya 40% · you 35%" didn't say the minutes are every talk you
+    were both in, or who the other 25% is. Now "3 talks, 7 min" and "Priya 40%, you 35%, others 25%", adding to 100."""
+    seen = 0
+    for (pid,) in demo.db().execute("SELECT id FROM person WHERE id != 1"):
+        html = demo.get(f"/people/{pid}").text
+        m = re.search(r'id="talk-time">.*?<small>(.*?)</small></span><span class="r1-v">(.*?)</span>', html, re.S)
+        if not m:
+            continue
+        seen += 1
+        assert re.fullmatch(r"\d+ talks?, .+", m.group(2)), m.group(2)
+        shares = [int(x) for x in re.findall(r"(\d+)%", m.group(1))]
+        assert ", you " in m.group(1) and sum(shares) == 100 or (len(shares) == 2 and sum(shares) == 100), m.group(1)
+    assert seen
+
+
+def test_right_click_on_a_talk_offers_both_exports_named_like_its_menu(demo):  # noqa: F811
+    """D-SP-6 (Brian, 2026-11-26: 6A): right-clicking a talk in Talks offered only "Export (.md)" while the talk's own ⋯
+    offered .md and PDF. The right-click now offers both, with the same names, and both downloads work."""
+    root = Path(__file__).resolve().parents[2] / "scribe_bot" / "web"
+    js = (root / "static" / "ui.js").read_text()
+    tpl = (root / "templates" / "conversation.html").read_text()
+    for label in ("Export as text file (.md)", "Export as PDF"):
+        assert f'"{label}"' in js and label in tpl, label
+    assert 'dl("md")' in js and 'dl("pdf")' in js
+    cid = demo.db().execute("SELECT id FROM conversation WHERE deleted_at IS NULL AND summary IS NOT NULL LIMIT 1").fetchone()[0]
+    for ext, kind in (("md", "text/"), ("pdf", "application/pdf")):
+        r = demo.get(f"/conversations/{cid}/export.{ext}")
+        assert r.status_code == 200 and r.headers["content-type"].startswith(kind), (ext, r.status_code)

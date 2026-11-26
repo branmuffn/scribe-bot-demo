@@ -241,8 +241,10 @@
       step(e.key);
     } else if (e.key === "/") {
       e.preventDefault();
-      var q = document.querySelector('input[name="q"]');
-      if (q) q.focus(); else location.href = "/search";
+      // F129: the first search box you can see (the computer top bar is hidden under 960 px, so "/" did nothing there),
+      // and without scrolling: focusing the sticky top bar's box jumped a talk back to its top (D-SP-7)
+      var q = [].filter.call(document.querySelectorAll('input[type="search"][name="q"]'), function (el) { return el.offsetParent !== null; })[0];
+      if (q) q.focus({ preventScroll: true }); else location.href = "/search";
     } else if (e.key === "g") {
       goAt = Date.now();
     } else if (e.key === "e" && document.querySelector(".line.cursor")) {   // F111: also the line a link marked

@@ -7,7 +7,7 @@
 {# Step 2 of anything that costs money: shown inline (htmx) or as its own page (no JS). The money is spent only by the
    Confirm button below, never by the first tap. #}
 <div class="confirm-panel" role="alertdialog" aria-labelledby="confirm-title" aria-describedby="confirm-cost">
-  <h2 id="confirm-title">{{ heading }}</h2>
+  {% set hl = 'h2' if fragment else 'h1' %}<{{ hl }} id="confirm-title">{{ heading }}</{{ hl }}>
   <p id="confirm-cost" class="confirm-cost">This will cost about <b>${{ '%.2f'|format(cost) if cost >= 0.01 else '%.3f'|format(cost) }}</b>
     {%- if model %} ({{ model }}{% if tokens %}, ~{{ tokens }} tokens{% endif %}){% endif %}.</p>
   {% if detail %}<p class="meta">{{ detail }}</p>{% endif %}

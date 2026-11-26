@@ -63,7 +63,7 @@ def test_school_and_other_areas(env):
     client, conn, _ = env
     client.post("/conversations/1/area", data={"area": "school"})
     assert one(conn, "SELECT area FROM conversation WHERE id = 1") == "school"
-    assert "School" in client.get("/conversations?area=school").text and 'class="cr-area cr-school"' in client.get("/conversations").text
+    assert "School" in client.get("/conversations?area=school").text and 'class="badge badge-school"' in client.get("/conversations").text
     tid = one(conn, "SELECT min(id) FROM task")
     client.post(f"/tasks/{tid}/file", data={"area": "other"})
     assert one(conn, "SELECT area FROM task WHERE id = ?", tid) == "other"

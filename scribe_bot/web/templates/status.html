@@ -70,7 +70,7 @@
 <section class="section">
   {{ m.section("Processing now", jobs|length) }}
   <div class="card">
-    {% if jobs %}{{ m.progress_list(jobs) }}
+    {% if jobs %}{{ m.progress_list(jobs, ctl=False) }}
     {% else %}{{ m.empty("check-circle", "Nothing processing", "Approved recordings show their progress here.") }}{% endif %}
   </div>
 </section>

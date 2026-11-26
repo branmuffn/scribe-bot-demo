@@ -343,7 +343,7 @@ def test_schedules_last_ran_at_their_own_time(demo):
     """F35: "Encrypted backup · daily 2:00 AM · last ran Wed Nov 25, 11:05 PM": each made-up run now sits at its job's time."""
     import re
     html = demo.get("/settings/backups").text
-    rows = re.findall(r"<span>(?:daily|monthly,|Sundays) (\d+:\d\d [AP]M)</span>\s*<span>last ran [^<]*?, (\d+:\d\d [AP]M)</span>", html)
+    rows = re.findall(r"<span>(?:daily|monthly|Sundays) (\d+:\d\d [AP]M)</span>\s*<span>last ran [^<]*?, (\d+:\d\d [AP]M)</span>", html)
     assert len(rows) == 9
     assert all(when == ran for when, ran in rows), rows
     backups = re.findall(r"<span>Backup</span> <span>[^<]*?, (\d+:\d\d [AP]M)</span>", html)

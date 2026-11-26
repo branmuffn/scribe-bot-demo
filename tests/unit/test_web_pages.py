@@ -462,7 +462,7 @@ def test_talk_time_follows_reassigned_lines_and_shows_on_person_page(env):
     page = client.get("/conversations/1").text
     assert "Alex Example 75%" in page and "75% · 12 s" in page and "1 turn" in page
     person = client.get("/people/2").text
-    assert 'id="talk-time"' in person and "Alex 75% · you 0%" in person
+    assert 'id="talk-time"' in person and "Alex 75%, you 0%, others 25%" in person and "1 talk, " in person
     assert 'id="talk-time"' not in client.get("/people/1").text                 # not on Brian's own page
 
 

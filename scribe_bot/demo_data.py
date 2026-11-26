@@ -375,7 +375,8 @@ def _seed_more(conn, convo, person, ago, due, folder: Path | None, at) -> None:
     for i, (title, link) in enumerate([("Ready: DEMO: 1:1 with Priya, Q3 budget review", "/conversations/2"),
                                        ("3 tasks due today", "/tasks"), ("Overnight: 4 recordings transcribed", "/"),
                                        ("A voice to name in DEMO: Team weekly sync", "/conversations/3"),
-                                       ("AI spending reached 50% of this month's cap", "/costs"),
+                                       # F131: was "AI spending reached 50% of this month's cap" while Costs showed 8%
+                                       ("Reconcile found 2 missed recordings; now queued", "/inbox"),
                                        ("Backup finished (made up)", "/status")]):
         conn.execute("INSERT INTO notification (channel, title, link, status, created_at, sent_at, dismissed_at) "
                      "VALUES (?, ?, ?, 'sent', ?, ?, ?)", ("alerts" if i == 4 else "bot", title, link, ago(0, i * 3),

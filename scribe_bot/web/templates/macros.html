@@ -354,7 +354,8 @@ data-edit-url="{{ url }}" data-edit-field="{{ field }}"{% if not same %} data-ed
     <div class="cr-line">
       {% if c.status in ('transcribing', 'failed') %}{{ status_badge(c.status) }}
       {% endif %}{# Brian, 2026-11-22: no "AI notes" / "Transcript" words; the ✦ / ≡ icon already says it #}
-      {% if c.area %}<span class="cr-area cr-{{ c.area }}">{{ {'work': 'Work', 'personal': 'Home', 'school': 'School', 'other': 'Other'}[c.area] }}</span>{% endif %}
+      {# D-SP-3 (Brian, 2026-11-26: 3B): the same Work/Home pill as People, Search and Today, not a dot #}
+      {{ area_badge(c.area) }}
       {% if c.n_unnamed %}<span class="cr-name" title="Speakers to name">{{ c.n_unnamed }} to name</span>{% endif %}
       {% if c.tags %}<span class="tag-mini">{% for t in c.tags.split('|')[:2] %}#{{ t }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}
     </div>

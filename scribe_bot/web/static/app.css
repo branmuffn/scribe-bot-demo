@@ -1467,8 +1467,6 @@ html, body { overflow-x: clip }   /* nothing can make the page scroll sideways (
 .conv-row .cr-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .cr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; font-size: .82rem; color: var(--muted) }
 .cr-k-ai { color: #2563eb; font-weight: 600 }
-.cr-area::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted) }
-.cr-work::before { background: var(--work) } .cr-personal::before { background: var(--personal) } .cr-school::before { background: color-mix(in srgb, #7c3aed 60%, var(--ink)) }
 .cr-name { color: #b45309; font-weight: 600 }
 #conv-list.picking .conv-row .cr-ic { display: none }
 :root[data-theme="dark"] .cr-k-ai, :root[data-theme="dark"] .conv-row .cr-ai { color: #93b4ff }

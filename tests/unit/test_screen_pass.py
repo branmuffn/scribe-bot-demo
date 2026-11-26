@@ -699,3 +699,15 @@ def test_a_link_that_only_opens_a_page_is_never_red():
            if re.search(r"(^|[\s,>])a([.\[:]|\s*$|\s*,)", sel.strip())
            and re.search(r"(?<![-\w])color:[^;]*(--bad|#bd4256|#f28ba0|#c0392b|\bred\b)", body)]
     assert not bad, bad
+
+
+def test_work_and_home_are_the_same_pill_on_every_page(demo):  # noqa: F811
+    """D-SP-3 (Brian, 2026-11-26: 3B): Talks showed the area as a dot and a word, People, Search and Today as a pill.
+    Every page draws it as the same pill."""
+    bad, pills = [], 0
+    for u, html in _crawl(demo):
+        pills += len(re.findall(r'class="badge badge-(?:work|personal|school|other)"', html))
+        if re.search(r'class="cr-area\b', html):
+            bad.append(u)
+    assert pills and not bad, bad
+    assert 'badge badge-work' in demo.get("/conversations").text

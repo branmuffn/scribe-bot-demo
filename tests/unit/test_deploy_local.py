@@ -43,6 +43,8 @@ def m14(tmp_path):
            "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
     for k in ("DRY_RUN", "SCRIBE_DEPLOY", "SCRIBE_BOT_DATA", "DEPLOY_FROM_COPY", "DEPLOY_HERE"):
         env.pop(k, None)
+    (tmp_path / "tmp").mkdir()                          # its own temp folder: a second test run at the same time
+    env["TMPDIR"] = str(tmp_path / "tmp")               # can't see or leave copies here (the old flaky failure)
     origin = tmp_path / "origin.git"
     sh("git", "init", "-q", "--bare", "-b", "main", str(origin), env=env)
     work = tmp_path / "work"
@@ -79,7 +81,7 @@ def test_deploys_on_the_m14_without_ssh(m14):
     assert [k.rsplit("/", 1)[1] for k in (home / "kicked").read_text().split()] == ["com.scribebot.worker", "com.scribebot.web"]
     log = (home / "scribe-bot-data/logs/deploys.log").read_text()
     assert f"prev={v1} target={v2} result=ok from=local" in log
-    assert not list(Path(os.environ.get("TMPDIR", "/tmp")).glob("scribe-deploy.*"))   # its temporary copy is cleaned up
+    assert not list(Path(env["TMPDIR"]).glob("scribe-deploy.*"))   # its temporary copy is cleaned up
 
 
 def test_dry_run_on_the_m14_changes_nothing(m14):

@@ -427,3 +427,53 @@ def test_every_shared_macro_is_used():
     unused = [n for n in re.findall(r"\{%-? macro (\w+)\(", src)
               if len(re.findall(rf"\b{n}\(", pages)) <= 1 and not re.search(rf"\b{n}\b", py)]
     assert unused == []
+
+
+def _css_rules(css: str):
+    """Every (at-rule context, selector, body) in app.css, comments removed."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules, stack, buf = [], [], ""
+    for ch in css:
+        if ch == "{":
+            stack.append(buf.strip()); buf = ""
+        elif ch == "}":
+            if buf.strip() and stack:
+                rules.append((" ".join(stack[:-1]), stack[-1], buf.strip()))
+            if stack:
+                stack.pop()
+            buf = ""
+        else:
+            buf += ch
+    return rules
+
+
+def _lum(h: str) -> float:
+    h = h.lstrip("#")
+    h = "".join(c * 2 for c in h) if len(h) == 3 else h[:6]
+    r, g, b = (int(h[k:k + 2], 16) / 255 for k in (0, 2, 4))
+    return .2126 * r + .7152 * g + .0722 * b
+
+
+def test_no_fixed_colour_turns_unreadable_in_dark():
+    """F120: a few labels kept light-mode hex colours, so in Dark they were dark on dark (the School badge, the
+    Delete note button, the overnight card's icon) or ignored the theme (the Talks area dots). Any dark text
+    colour or pale background written as a bare hex needs a dark-theme override for the same selector."""
+    rules = _css_rules(_static("app.css"))
+    dark = set()
+    for ctx, sel, _ in rules:
+        if "dark" in ctx + sel:
+            for s in sel.split(","):
+                dark.add(re.sub(r'^:root(\[data-theme="dark"\])?(:not\(\[data-theme="light"\]\))?\s*', "", s.strip()))
+    bad = []
+    for ctx, sel, body in rules:
+        if "dark" in ctx + sel or "print" in ctx or sel.startswith((":root", "@")):
+            continue
+        for prop, val in re.findall(r"(?:^|;)\s*([\w-]+)\s*:\s*([^;]+)", body):
+            if "color-mix(" in val and "var(--" in val:
+                continue                                                # mixed with a theme colour: follows the theme
+            val = re.sub(r"var\([^()]*\)", "", val)                    # a var(--x, #hex) fallback follows the theme
+            for h in re.findall(r"#[0-9a-fA-F]{3,8}\b", val):
+                risky = (prop == "color" and _lum(h) < .45) or (prop in ("background", "background-color") and _lum(h) > .6)
+                if risky and not any(s.strip() in dark for s in sel.split(",")):
+                    bad.append(f"{sel} {{ {prop}: {h} }}")
+    assert not bad, bad

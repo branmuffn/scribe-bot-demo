@@ -192,6 +192,10 @@ def scan_inbound(conn: sqlite3.Connection, cfg: settings.Settings | None = None,
 def approve(conn: sqlite3.Connection, rec_id: int, ai: bool = True, meeting_type: str | None = None) -> int:
     """Brian approved a waiting recording: queue it. ai=False = transcript only (no cloud call). meeting_type = his
     pick (else it comes from the speaker count, and the AI may spot a Learning talk)."""
+    queued = conn.execute("SELECT id FROM job WHERE kind = 'recording' AND recording_id = ? AND status IN ('pending', 'running') "
+                          "ORDER BY id LIMIT 1", (rec_id,)).fetchone()
+    if queued:   # F72: a second tap (or the other device) queued it again: transcribed twice and the paid AI step run twice
+        return queued[0]
     rec = conn.execute("SELECT original_path, duration_s FROM recording WHERE id = ?", (rec_id,)).fetchone()
     path = Path(rec["original_path"])
     started = _started_at(path, rec["duration_s"] or 0) if path.exists() else None

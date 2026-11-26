@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from scribe_bot.core import db, health, machine, progress, settings
 from scribe_bot.core.secrets import KeychainStore
@@ -439,12 +440,27 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
     app.add_middleware(TextGZip)
     app.add_middleware(DropEmptyQuery)
 
+    from scribe_bot.web import undo
+
+    def _drop_noop_undos(made: list[int]) -> None:
+        try:
+            conn = db.connect(cfg.db_path, any_thread=True)
+            try:
+                undo.drop_noops(conn, made)
+            finally:
+                conn.close()
+        except sqlite3.Error:   # a read-only copy (the public demo): nothing to tidy
+            pass
+
     @app.middleware("http")
     async def guard_and_area(request: Request, call_next):
         if request.method not in ("GET", "HEAD", "OPTIONS") and not own_post(request):
             return PlainTextResponse("Cross-site request refused", status_code=403)
         t0 = time.perf_counter()
+        made = undo.track()
         response = await call_next(request)
+        if made:   # F75: a tap that changed nothing leaves no Undo of its own (see undo.drop_noops)
+            await run_in_threadpool(_drop_noop_undos, made)
         # Speed log (Brian, 2026-11-22: "still not loading quickly"): the phone reads this to split M14 time from network
         response.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
         if request.url.path.startswith("/static/") and "v=" in request.url.query and response.status_code == 200:
@@ -577,8 +593,21 @@ def create_app(cfg: settings.Settings | None = None, run=None, secrets_store: Ke
     @app.exception_handler(RequestValidationError)
     async def on_bad_input(request: Request, exc: RequestValidationError):
         # a number in the address that isn't one (/conversations/abc): that page doesn't exist
-        if wants_page(request) and all(e.get("loc", [""])[0] == "path" for e in exc.errors()):
+        where = {e.get("loc", [""])[0] for e in exc.errors()}
+        if wants_page(request) and where == {"path"}:
             return error_page(request, 404, None)
+        if wants_page(request) and where == {"query"} and any(e.get("type") == "missing" for e in exc.errors()):
+            # a page that can't open without a value it wasn't given (/people/2/merge with no ?into=): it doesn't exist as
+            # asked. Dropping the value and trying again would send the page back to itself, round and round.
+            return error_page(request, 404, None)
+        if wants_page(request) and where == {"query"}:
+            # F71: a filter value that isn't what the page takes (?n=abc, ?person=x from an old or mangled link) showed raw
+            # code text ({"detail": ...}). The page opens without those values instead; nothing else in the address changes.
+            from urllib.parse import urlencode
+            from fastapi.responses import RedirectResponse
+            bad = {e["loc"][1] for e in exc.errors() if len(e.get("loc", ())) > 1}
+            kept = [(k, v) for k, v in request.query_params.multi_items() if k not in bad]
+            return RedirectResponse(request.url.path + ("?" + urlencode(kept) if kept else ""), status_code=303)
         return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(OverflowError)

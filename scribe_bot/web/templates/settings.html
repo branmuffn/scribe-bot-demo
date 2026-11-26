@@ -46,7 +46,7 @@
     {% set density = request.cookies.get('density') if request.cookies.get('density') in ('comfortable', 'compact') else 'default' %}
     {% set rpane = request.cookies.get('pane') if request.cookies.get('pane') in ('none', 'below') else 'right' %}
     <div class="item set-row"><div class="item-main"><div class="item-title">Density</div>
-      <div class="item-sub">How much fits in lists: Compact shows one line per row.</div></div>
+      <div class="item-sub">How much fits in lists: Compact has tighter rows (Talks drop their second line).</div></div>
       <div class="item-actions"><span class="seg" role="group" aria-label="Density">
         {% for k in ("default", "comfortable", "compact") %}<button type="button" data-density-set="{{ k }}" class="{{ 'on' if density == k }}"
           aria-pressed="{{ 'true' if density == k else 'false' }}">{{ k|capitalize }}</button>{% endfor %}</span></div></div>

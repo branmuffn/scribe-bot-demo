@@ -392,10 +392,10 @@
     menu = document.createElement("div"); menu.className = "ctx-menu"; menu.setAttribute("role", "menu");
     var task = row.classList.contains("task-row"), talk = row.classList.contains("conv-row");
     // U13: a task's tap already opens its details, and its circle already marks it done: neither is repeated here
-    if (sheet && !task) menu.appendChild(item("open", "Open", function () { sheet.open = true; }));
+    if (sheet && !task) menu.appendChild(item("chev", "Open", function () { sheet.open = true; }));
     if (href) {
       var to = href.split("#")[0], what = task ? "talk" : "";
-      if (!sheet) menu.appendChild(item("open", "Open", function () { location.href = href; }));
+      if (!sheet) menu.appendChild(item("chev", "Open", function () { location.href = href; }));   // F42: its own icon, not the new-tab one
       else if (to) menu.appendChild(item("chat", "Open " + (what || "page"), function () { location.href = href; }));
       if (to) menu.appendChild(item("open", "Open in new tab", function () { window.open(href, "_blank"); }));
     }
@@ -478,7 +478,7 @@
         var l = lines()[0]; if (l) { l.scrollIntoView({ block: "center", behavior: "smooth" }); l.classList.add("flash"); setTimeout(function () { l.classList.remove("flash"); }, 1600); } } },
       lines().length && { i: "copy", t: "Copy what they said", fn: function () {
         copy([].map.call(lines(), function (l) { var w = l.querySelector("[data-edit-url]"); return w ? (w.dataset.editValue || w.textContent).trim() : ""; }).filter(Boolean).join("\n"), name + "'s lines"); } },
-      page && { i: "open", t: page.textContent.replace("›", "").trim(), fn: function () { location.href = page.href; } },
+      page && { i: "chev", t: page.textContent.replace("›", "").trim(), fn: function () { location.href = page.href; } },
       notX && "-", notX && { i: "x", t: notX.textContent.trim(), cls: "danger", fn: function () { notX.click(); } }];
   }
   function other(e) {
@@ -506,7 +506,7 @@
       return show(e, [{ i: "users", t: "Who is it…", fn: function () { chip.open = true; var s = chip.querySelector("select"); if (s) s.focus(); } },
         au && { i: "play", t: "Play their voice", fn: function () { au.play(); } },
         { i: "dots", t: "Color, merge and more", fn: function () { chip.open = true; } },
-        pl && { i: "open", t: pl.textContent.replace("›", "").trim(), fn: function () { location.href = pl.href; } }]); }
+        pl && { i: "chev", t: pl.textContent.replace("›", "").trim(), fn: function () { location.href = pl.href; } }]); }
     var sb = closest(t, ".fx-body"), btns = sb && sb.querySelector(".ts-btns");
     if (btns) {   // U13 (Brian, 2026-11-25): inside a task's or note's details, every row and button is already on screen,
       // so the right-click no longer repeats them: it offers what isn't there (copy, one-click reminders, the talk in a new tab)
@@ -526,7 +526,7 @@
     var link = closest(t, "a[href]:not([href^='#']):not([download])");
     if (link && !closest(link, ".fx-body")) {
       var hr = link.href;
-      return show(e, [{ i: "open", t: "Open", fn: function () { location.href = hr; } },
+      return show(e, [{ i: "chev", t: "Open", fn: function () { location.href = hr; } },
         { i: "open", t: "Open in new tab", fn: function () { window.open(hr, "_blank"); } },
         { i: "copy", t: "Copy link", fn: function () { copy(hr, "Link"); } }]);
     }
@@ -744,8 +744,13 @@ document.addEventListener("click", function (e) {
     var l = listEl(), main = document.querySelector(".main"); if (!l || !main || !main.contains(l)) return;
     for (var n = l; n && n !== main; n = n.parentElement)
       for (var p = n.previousElementSibling; p; p = p.previousElementSibling) if (!p.matches("script, template, [hidden]")) { p.classList.add("dp-wide"); wides.push(p); }
+    // F40: the pane was measured once, before the page above the list finished growing (fonts, pickers filling in), so
+    // it sat ~14 px too high until the first scroll. Re-measure whenever anything above the list changes size.
+    if (window.ResizeObserver) { if (ro) ro.disconnect(); else ro = new ResizeObserver(later); wides.forEach(function (x) { ro.observe(x); }); ro.observe(l); }
     place();
   }
+  var ro = null;
+  function later() { if (!raf) raf = requestAnimationFrame(place); }
   var raf = 0;
   function place() {
     raf = 0; var b = document.body, l = listEl(); if (!b || !l || !b.classList.contains("dp-on") || html.dataset.pane !== "right") return;
@@ -756,8 +761,9 @@ document.addEventListener("click", function (e) {
     });
     b.style.setProperty("--dp-top", Math.round(Math.max(floor, l.getBoundingClientRect().top)) + "px");
   }
-  addEventListener("scroll", function () { if (!raf) raf = requestAnimationFrame(place); }, { passive: true });
-  addEventListener("resize", function () { if (!raf) raf = requestAnimationFrame(place); });
+  addEventListener("scroll", later, { passive: true });
+  addEventListener("resize", later); addEventListener("load", later);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(later);
   // R4-04: answers from the layout itself, not from the class paint() sets a moment later (in that gap a pop-up fit
   // measured the pane and nudged it to the middle of the screen)
   window.ScribeDp = { on: function () { return !!document.body && on(); }, SHEETS: SHEETS };

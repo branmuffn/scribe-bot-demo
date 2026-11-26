@@ -530,10 +530,11 @@ hx-get="{{ action }}" hx-trigger="change, keyup changed delay:350ms from:find in
   <div class="fx-body qs-body" role="group" aria-label="Quick settings"><div class="fx-grab" aria-hidden="true"></div>
     <div class="fx-head"><b>Quick settings</b><a class="qs-all" href="/settings">All settings</a></div>
     <div class="qs-h">Density</div>
-    <div class="qs-opts">{% for k, label, sub in [("default", "Default", "Two lines per row"), ("comfortable", "Comfortable", "More room around each row"), ("compact", "Compact", "One line per row, more on screen")] %}
+    <div class="qs-opts">{% for k, label, sub in [("default", "Default", "Two lines per row"), ("comfortable", "Comfortable", "More room around each row"), ("compact", "Compact", "Tighter rows, more on screen")] %}
       <button type="button" class="qs-opt{{ ' on' if density == k }}" data-density-set="{{ k }}" aria-pressed="{{ 'true' if density == k else 'false' }}"><i class="qs-radio" aria-hidden="true"></i><span><b>{{ label }}</b><small>{{ sub }}</small></span></button>{% endfor %}</div>
+    {# F44: on Talks and People the first choice read "None" here but "Full page" on the preview's own switch #}
     {% if not phone and pane_ok %}<div class="qs-h">Reading pane</div>
-    <div class="qs-panes">{% for k, label in [("none", "Pop up" if qp in ('/', '/inbox', '/tasks') else "None"), ("right", "Right"), ("below", "Below")] %}
+    <div class="qs-panes">{% for k, label in [("none", "Pop up" if qp in ('/', '/inbox', '/tasks') else "Full page"), ("right", "Right"), ("below", "Below")] %}
       <button type="button" class="qs-pane{{ ' on' if rpane == k }}" data-pane-set="{{ k }}" aria-pressed="{{ 'true' if rpane == k else 'false' }}"><i class="qs-thumb qs-t-{{ k }}" aria-hidden="true"><s></s><s></s></i>{{ label }}</button>{% endfor %}</div>{% endif %}
     <div class="qs-h">Theme</div>
     <span class="seg-switch" role="group" aria-label="Theme">{% for t in ("light", "dark", "system") %}<button type="button" class="seg-opt{{ ' on' if theme == t }}" data-theme-set="{{ t }}" aria-pressed="{{ 'true' if theme == t else 'false' }}">{{ t|capitalize }}</button>{% endfor %}</span>

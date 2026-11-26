@@ -1422,7 +1422,9 @@ html.pop-lock { overflow: hidden; overscroll-behavior: none }
    The due date never shrinks; the talk's title gives way first, then the name ends in "…". */
 .item-sub > b:not(:last-child) { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 4em }
 .item-sub > :last-child:not(:first-child):not(.due-v) { flex-shrink: 100 !important }
-.item-sub > .due-v { flex: none }
+/* F41: on Today › Late promises the date is the last thing on the line, so the "last child shrinks" rule above (it is
+   !important) still cut it ("Overdue · due No…") with the reading pane open. The date never shrinks, wherever it sits. */
+.item-sub > .due-v { flex: none !important }
 /* F31: Decisions read "Nov 25  DEMO: Product kickoff" with no "·" between the date and the talk (a link after a span) */
 .item-sub > :is(span, b):not(.badge) + a::before { content: "·"; margin: 0 6px 0 -2px; color: var(--muted); display: inline-block }
 .prog-preview, .inbox-preview { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset !important }

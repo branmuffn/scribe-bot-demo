@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "macros.html" as m with context %}
+{% block title %}{{ it.title|recorder_title }} · Scribe Bot{% endblock %}
 {% block back %}<a class="back-link" href="/inbox">‹ Inbox</a>{% endblock %}
 {% block body %}
 {# The whole Recorder transcript, unedited (Brian, 2026-11-20): read it before choosing what to process. #}
